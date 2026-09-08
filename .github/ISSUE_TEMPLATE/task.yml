@@ -1,0 +1,68 @@
+name: Task
+description: A unit of work. Should be doable in one sitting.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep it small. If this takes more than ~4 hours, it's two tickets.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why does this exist? What's the bigger thing it's part of?
+      placeholder: The scheduler needs to know which nodes are alive before it can place jobs. This is the heartbeat half of that.
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What to do
+      description: The actual work, concretely.
+      placeholder: |
+        - Add a `Heartbeat` message type in `internal/transport`
+        - Agent sends one every 10s
+        - Scheduler records last-seen per node
+    validations:
+      required: true
+
+  - type: textarea
+    id: start
+    attributes:
+      label: Where to start
+      description: Files, functions, docs, or a similar PR. Enough that someone can open the editor and know what to look at.
+      placeholder: |
+        `internal/transport/doc.go` — package is empty, you're the first one in
+        See ADR-002 for why we picked tsnet
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: One or two sentences. How do we know it's finished?
+      placeholder: Scheduler logs "node X last seen Ns ago" and a test covers a missed heartbeat.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: track
+    attributes:
+      label: Track
+      options:
+        - scheduler
+        - agent
+        - cli
+        - ui
+        - shared
+    validations:
+      required: true
+
+  - type: textarea
+    id: related
+    attributes:
+      label: Related
+      description: Other issues, PRs, or links. Optional.
