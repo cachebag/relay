@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -50,4 +51,12 @@ func testRoundTrip(t *testing.T, reg Registry) {
 
 func TestMem(t *testing.T) {
 	testRoundTrip(t, NewMem())
+}
+
+func TestSQLite(t *testing.T) {
+	db, err := NewSQLite(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("NewSQLite: %v", err)
+	}
+	testRoundTrip(t, db)
 }
