@@ -35,6 +35,7 @@ func main() {
 	// if the --version flag is passed while the program is running.
 	if *version {
 		printVersion(os.Stdout)
+		return
 	}
 
 	// Saves any error as a variable called err, and if an error occurs
