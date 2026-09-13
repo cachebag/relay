@@ -58,5 +58,6 @@ func TestSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSQLite: %v", err)
 	}
+	defer db.Close() // Windows locks open files, so TempDir cleanup fails without this.
 	testRoundTrip(t, db)
 }

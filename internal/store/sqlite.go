@@ -68,3 +68,8 @@ func (s *SQLite) List(_ context.Context) ([]Node, error) {
 	}
 	return out, rows.Err()
 }
+
+// Windows locks open files, so TempDir cleanup fails without this.
+func (s *SQLite) Close() error {
+	return s.db.Close()
+}
