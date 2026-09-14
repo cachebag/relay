@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/cachebag/relay/internal/api"
+	"github.com/cachebag/relay/internal/store"
 )
 
 // Package level variable that stores relayd's version number.
@@ -28,6 +29,9 @@ func main() {
 	// Makes the 'flag' package inspect cli arguments.
 	flag.Parse()
 
+	// Creates an in-memory registry to store node information.
+	reg := store.NewMem()
+
 	// Expected output if the server is running correctly: "relayd listening on :8080"
 	log.Println("relayd listening on :8080")
 
@@ -40,7 +44,7 @@ func main() {
 
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program
-	if err := http.ListenAndServe(":8080", api.NewHandler()); err != nil {
+	if err := http.ListenAndServe(":8080", api.NewHandler(reg)); err != nil {
 		log.Fatal(err)
 	}
 
