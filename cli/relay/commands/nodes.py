@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -14,7 +14,7 @@ def fetch(scheduler: str, client: httpx.Client | None = None) -> list[dict]:
 
 def seconds_ago(iso: str) -> int:
     seen = datetime.fromisoformat(iso)
-    return int((datetime.now(timezone.utc) - seen).total_seconds())
+    return int((datetime.now(UTC) - seen).total_seconds())
 
 def run(args) -> None:
     rows = fetch(args.scheduler)
