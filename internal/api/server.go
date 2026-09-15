@@ -25,6 +25,11 @@ func NewHandler(reg store.Registry) http.Handler {
 			return
 		}
 
+		if n.ID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+
 		n.LastSeen = time.Now().UTC()
 
 		if err := reg.Upsert(r.Context(), n); err != nil {
