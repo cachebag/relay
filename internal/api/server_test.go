@@ -134,3 +134,28 @@ func TestNodeHeartbeatInvalidJSON(t *testing.T) {
 		t.Fatalf("expected status 400, got %d", rec.Code)
 	}
 }
+
+// TestNodeListEmpty checks that a fresh registry returns an empty
+// JSON array instead of null when there are no registered nodes.
+func TestNodeListEmpty(t *testing.T) {
+	reg := store.NewMem()
+	handler := NewHandler(reg)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/nodes",
+		nil,
+	)
+
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("expected body [], got %s", rec.Body.String())
+	}
+}
