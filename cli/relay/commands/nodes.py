@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+
 def register(sub) -> None:
     p = sub.add_parser("nodes", help="list nodes in the pool")
     p.set_defaults(func=run)
