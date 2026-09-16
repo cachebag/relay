@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/cachebag/relay/internal/store"
 )
 
 // Sends one heartbeat to the scheduler to inform
 // about node status and node system information.
+// *http.Client argument is what makes this testable.
 func Send(
 	ctx context.Context,
 	client *http.Client,
@@ -52,4 +54,44 @@ func Send(
 		return fmt.Errorf("scheduler returned %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// Heartbeat that collects the node's system information, then sends
+// a heartbeat that includes that system information to
+// the scheduler every 'interval'. Since the scheduler being unreachable
+// is a normal condition, errors codes returned by the 'Send' function
+// are logged and the loop continues. The HTTP Client's 'Timeout'
+// will stop the loop after 5 seconds of having a hung connection.
+func Run(
+	ctx context.Context,
+	schedulerURL string,
+	interval time.Duration) error {
+
+	// Collection of node's system information
+	n, err := Collect()
+	if err != nil {
+		return err
+	}
+
+	// Creation of HTTP Client and Ticker
+	client := &http.Client{Timeout: 5 * time.Second}
+	ticker := time.NewTicker(interval)
+
+	// Stops ticker when current function exits,
+	// prevents unnecessary resource consumption.
+	defer ticker.Stop()
+
+	// Heartbeat loop
+	for {
+		if err := Send(ctx, client, schedulerURL, n); err != nil {
+			fmt.Printf("heartbeat failed: %v", err)
+		} else {
+			fmt.Printf("heartbeat sent to %s", schedulerURL)
+		}
+		select {
+		case <-ticker.C:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
