@@ -24,33 +24,36 @@ func NewSQLite(path string) (*SQLite, error) {
 		arch      TEXT NOT NULL,
 		cpus      INTEGER NOT NULL,
 		mem_bytes INTEGER NOT NULL,
-		last_seen INTEGER NOT NULL
+		last_seen INTEGER NOT NULL,
+		pool_id   TEXT NOT NULL DEFAULT ''
 	)`)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
+	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN pool_id TEXT NOT NULL DEFAULT ''`)
 	return &SQLite{db: db}, nil
 }
 
 func (s *SQLite) Upsert(_ context.Context, n Node) error {
 	_, err := s.db.Exec(
-		`INSERT INTO nodes (id, hostname, os, arch, cpus, mem_bytes, last_seen)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO nodes (id, hostname, os, arch, cpus, mem_bytes, last_seen, pool_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   hostname=excluded.hostname,
 		   os=excluded.os,
 		   arch=excluded.arch,
 		   cpus=excluded.cpus,
 		   mem_bytes=excluded.mem_bytes,
-		   last_seen=excluded.last_seen`,
-		n.ID, n.Hostname, n.OS, n.Arch, n.CPUs, n.MemBytes, n.LastSeen.Unix(),
+		   last_seen=excluded.last_seen,
+		   pool_id=excluded.pool_id`,
+		n.ID, n.Hostname, n.OS, n.Arch, n.CPUs, n.MemBytes, n.LastSeen.Unix(), n.PoolID,
 	)
 	return err
 }
 
 func (s *SQLite) List(_ context.Context) ([]Node, error) {
-	rows, err := s.db.Query(`SELECT id, hostname, os, arch, cpus, mem_bytes, last_seen FROM nodes ORDER BY hostname`)
+	rows, err := s.db.Query(`SELECT id, hostname, os, arch, cpus, mem_bytes, last_seen, pool_id FROM nodes ORDER BY hostname`)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +63,7 @@ func (s *SQLite) List(_ context.Context) ([]Node, error) {
 	for rows.Next() {
 		var n Node
 		var sec int64
-		if err := rows.Scan(&n.ID, &n.Hostname, &n.OS, &n.Arch, &n.CPUs, &n.MemBytes, &sec); err != nil {
+		if err := rows.Scan(&n.ID, &n.Hostname, &n.OS, &n.Arch, &n.CPUs, &n.MemBytes, &sec, &n.PoolID); err != nil {
 			return nil, err
 		}
 		n.LastSeen = time.Unix(sec, 0).UTC()

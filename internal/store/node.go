@@ -2,14 +2,18 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+var ErrNotFound = errors.New("not found")
 
 // Node is a single machine known to the control plane. The JSON tags are part
 // of the wire format the agents and the API share, so renaming a field here is
 // a breaking change for anything already on the network.
 type Node struct {
 	ID       string    `json:"id"`
+	PoolID   string    `json:"pool_id"`
 	Hostname string    `json:"hostname"`
 	OS       string    `json:"os"`
 	Arch     string    `json:"arch"`
