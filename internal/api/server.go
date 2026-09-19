@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -9,26 +10,101 @@ import (
 )
 
 // NewHandler creates and returns the HTTP handler for the relay API.
-func NewHandler(reg store.Registry) http.Handler {
+func NewHandler(reg store.Registry, pools store.PoolStore) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
 
-	//heartbeat endpoint for nodes to report their status
-	mux.HandleFunc("POST /nodes/heartbeat", func(w http.ResponseWriter, r *http.Request) {
-		var n store.Node
+	// Creates a new pool.
+	mux.HandleFunc("POST /pools", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Name string `json:"name"`
+		}
 
-		if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
+		// Read the pool name from the request.
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+
+		// Create the pool with a new ID and token.
+		p := store.Pool{
+			ID:        store.NewID(),
+			Name:      req.Name,
+			Token:     store.NewToken(),
+			CreatedAt: time.Now().UTC(),
+		}
+
+		// Save the new pool.
+		if err := pools.Create(r.Context(), p); err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		// Return the created pool.
+		// This is the only endpoint that returns the pool token.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(p)
+	})
+
+	// Lists all pools.
+	mux.HandleFunc("GET /pools", func(w http.ResponseWriter, r *http.Request) {
+		ps, err := pools.List(r.Context())
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		// Hide each pool's token before sending the list.
+		for i := range ps {
+			ps[i].Token = ""
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ps)
+	})
+
+	// Heartbeat endpoint for nodes to report their status.
+	mux.HandleFunc("POST /nodes/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+
+		// Heartbeats now include the normal node information
+		// plus the pool token.
+		var req struct {
+			store.Node
+			PoolToken string `json:"pool_token"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
+
+		n := req.Node
 
 		if n.ID == "" {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
+
+		// Find the pool that owns this token.
+		p, err := pools.GetByToken(r.Context(), req.PoolToken)
+
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "invalid pool token", http.StatusForbidden)
+			return
+		}
+
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		// The node does not choose its pool ID.
+		// The server gets it from the pool token.
+		n.PoolID = p.ID
 
 		n.LastSeen = time.Now().UTC()
 
@@ -40,12 +116,28 @@ func NewHandler(reg store.Registry) http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	//list all nodes endpoint for clients to retrieve the list of registered nodes
+	// List all nodes endpoint for clients to retrieve registered nodes.
 	mux.HandleFunc("GET /nodes", func(w http.ResponseWriter, r *http.Request) {
 		nodes, err := reg.List(r.Context())
 		if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
+		}
+
+		// Check whether a specific pool was requested.
+		poolID := r.URL.Query().Get("pool")
+
+		if poolID != "" {
+			filtered := make([]store.Node, 0)
+
+			// Only keep nodes that belong to the requested pool.
+			for _, n := range nodes {
+				if n.PoolID == poolID {
+					filtered = append(filtered, n)
+				}
+			}
+
+			nodes = filtered
 		}
 
 		w.Header().Set("Content-Type", "application/json")
