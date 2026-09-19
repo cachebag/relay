@@ -84,9 +84,9 @@ func Run(
 	// Heartbeat loop
 	for {
 		if err := Send(ctx, client, schedulerURL, n); err != nil {
-			fmt.Printf("heartbeat failed: %v", err)
+			log.Printf("heartbeat failed: %v", err)
 		} else {
-			fmt.Printf("heartbeat sent to %s", schedulerURL)
+			log.Printf("heartbeat sent to %s", schedulerURL)
 		}
 		select {
 		case <-ticker.C:
