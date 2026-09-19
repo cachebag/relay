@@ -1,0 +1,33 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64, ext: "" }
+          - { goos: darwin,  goarch: arm64, ext: "" }
+          - { goos: darwin,  goarch: amd64, ext: "" }
+          - { goos: windows, goarch: amd64, ext: ".exe" }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: |
+          mkdir -p dist
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -o dist/relay-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/relay-agent
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -o dist/relayd-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/relayd
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
