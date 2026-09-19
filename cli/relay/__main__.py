@@ -13,9 +13,9 @@ def main() -> None:
         version=f"relay {version('relay')}",
         help="show relay version",
     )
-    parser.parse_args()
-    parser.add_argument("--version", action="version", version=f"relay {version('relay')}")
-    parser.add_argument("--scheduler", default="http://localhost:8080", help="scheduler base URL")
+    parser.add_argument(
+        "--scheduler", default="http://localhost:8080", help="scheduler base URL"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     nodes.register(sub)
     args = parser.parse_args()
