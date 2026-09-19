@@ -6,6 +6,14 @@ from relay.commands import nodes
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="relay")
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"relay {version('relay')}",
+        help="show relay version",
+    )
+    parser.parse_args()
     parser.add_argument("--version", action="version", version=f"relay {version('relay')}")
     parser.add_argument("--scheduler", default="http://localhost:8080", help="scheduler base URL")
     sub = parser.add_subparsers(dest="command", required=True)
