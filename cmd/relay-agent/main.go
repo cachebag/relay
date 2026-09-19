@@ -1,12 +1,23 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
+	"time"
+
+	"github.com/cachebag/relay/internal/agent"
 )
 
 func main() {
+	// Pointer to command-line 'scheduler' flag
+	scheduler := flag.String(
+		"scheduler",
+		"http://localhost:8080",
+		"scheduler base URL")
+
 	// Pointer to command-line 'pool-token' flag
 	poolToken := flag.String(
 		"pool-token",
@@ -21,4 +32,11 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Repeatedly sends a heartbeat every 10 seconds to scheduler
+	if err := agent.Run(
+		context.Background(),
+		*scheduler,
+		10*time.Second); err != nil {
+		log.Fatal(err)
+	}
 }
