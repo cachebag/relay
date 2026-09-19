@@ -36,6 +36,7 @@ func main() {
 	if err := agent.Run(
 		context.Background(),
 		*scheduler,
+		*poolToken,
 		10*time.Second); err != nil {
 		log.Fatal(err)
 	}
