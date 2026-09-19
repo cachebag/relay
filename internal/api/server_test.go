@@ -17,6 +17,9 @@ func TestHealthz(t *testing.T) {
 	// Create an in-memory registry for the API handler.
 	reg := store.NewMem()
 
+	// Creates an in-memory store for pools.
+	pools := store.NewMemPools()
+
 	// Create a fake HTTP response recorder.
 	// This records what our server sends back without needing
 	// to actually start a server on port 8080.
@@ -28,7 +31,7 @@ func TestHealthz(t *testing.T) {
 
 	// Create our API handler and send the fake request to it.
 	// The response produced by the handler is stored in rec.
-	NewHandler(reg).ServeHTTP(rec, req)
+	NewHandler(reg, pools).ServeHTTP(rec, req)
 
 	// Check that the server returned HTTP status 200 OK.
 	if rec.Code != http.StatusOK {
@@ -45,7 +48,8 @@ func TestHealthz(t *testing.T) {
 // and then appear in the list of registered nodes.
 func TestNodeHeartbeatAndList(t *testing.T) {
 	reg := store.NewMem()
-	handler := NewHandler(reg)
+	pools := store.NewMemPools()
+	handler := NewHandler(reg, pools)
 
 	// JSON representing a node sending a heartbeat.
 	body := `{
@@ -117,7 +121,8 @@ func TestNodeHeartbeatAndList(t *testing.T) {
 // is rejected with HTTP 400 Bad Request.
 func TestNodeHeartbeatInvalidJSON(t *testing.T) {
 	reg := store.NewMem()
-	handler := NewHandler(reg)
+	pools := store.NewMemPools()
+	handler := NewHandler(reg, pools)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -139,7 +144,8 @@ func TestNodeHeartbeatInvalidJSON(t *testing.T) {
 // JSON array instead of null when there are no registered nodes.
 func TestNodeListEmpty(t *testing.T) {
 	reg := store.NewMem()
-	handler := NewHandler(reg)
+	pools := store.NewMemPools()
+	handler := NewHandler(reg, pools)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
