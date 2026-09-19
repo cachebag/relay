@@ -33,8 +33,9 @@ Run
 
 ### Windows
 
-Run
-`relay-agent-windows-amd64.exe`
+Run from PowerShell:
+
+`.\relay-agent-windows-amd64.exe --scheduler http://<scheduler>:8080 --pool-token <token>`
 
 
 ## Stack
