@@ -4,7 +4,6 @@ from importlib.metadata import version
 from relay.commands import nodes, pool
 
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(prog="relay")
     parser.add_argument(
@@ -19,6 +18,7 @@ def main() -> None:
     )
     sub = parser.add_subparsers(dest="command", required=True)
     nodes.register(sub)
+    pool.register(sub)
     args = parser.parse_args()
     args.func(args)
 
