@@ -14,9 +14,29 @@ using and it becomes a node. Anyone in the pool can submit jobs to it.
 Contributing also earns credits; submitting spends them, and the more
 points someone has, the higher priority their jobs get.
 
+
 # For developers
 
 Please read the [setup guide](docs/SETUP.md) to get your development environment setup.
+
+
+# Contribute a machine
+
+First download the binary for your OS from the latest release, then
+
+### Linux and macOS
+
+Run
+`./relay-agent --scheduler http://<scheduler>:8080 --pool-token <token>`
+
+ > macOS will refuse to run an unsigned download until you right-click → Open once.
+
+### Windows
+
+Run from PowerShell:
+
+`.\relay-agent-windows-amd64.exe --scheduler http://<scheduler>:8080 --pool-token <token>`
+
 
 ## Stack
 

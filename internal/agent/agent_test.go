@@ -3,9 +3,9 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/cachebag/relay/internal/store"
@@ -45,8 +45,7 @@ func TestSend(t *testing.T) {
 
 	// Subtest for when the agent can successfully reach the scheduler.
 	t.Run("204 response (success)", func(t *testing.T) {
-		var receivedBody []byte
-		var receivedNode store.Node
+		var receivedHeartbeat heartbeat
 
 		// Creates temporary server with a handler that captures
 		// the request body and responds with 204 (success).
@@ -54,13 +53,12 @@ func TestSend(t *testing.T) {
 			http.HandlerFunc(
 				func(w http.ResponseWriter, r *http.Request) {
 
-					body, err := io.ReadAll(r.Body)
+					// Decodes request body into heartbeat struct.
+					err := json.NewDecoder(r.Body).Decode(&receivedHeartbeat)
 					if err != nil {
-						t.Errorf("Failed to read request body: %v", err)
+						t.Errorf("Failed to decode request body: %v", err)
 						return
 					}
-
-					receivedBody = body
 
 					// Responds with 204
 					w.WriteHeader(http.StatusNoContent)
@@ -74,24 +72,30 @@ func TestSend(t *testing.T) {
 			Hostname: "test",
 		}
 
+		token := "test-token"
+
 		// Testing Send() function
-		err := Send(context.Background(), srv.Client(), srv.URL, node)
+		err := Send(context.Background(), srv.Client(), srv.URL, node, token)
 		if err != nil {
 			t.Fatalf("Send() error: %v", err)
 		}
 
-		// Testing whether received body causes errors being unmarshalled.
-		err = json.Unmarshal(receivedBody, &receivedNode)
-		if err != nil {
-			t.Fatalf("Failed to unmarshal received body: %v", err)
-		}
-
-		// Testing whether heartbeat contains correct Hostname
-		if receivedNode.Hostname != node.Hostname {
+		// Testing whether heartbeat contains correct Hostname.
+		if receivedHeartbeat.Hostname != node.Hostname {
 			t.Errorf(
 				"Expected Hostname: %q. Actual Hostname: %q",
-				node.Hostname, receivedNode.Hostname)
+				node.Hostname,
+				receivedHeartbeat.Hostname,
+			)
+		}
 
+		// Testing whether heartbeat contains correct pool token.
+		if receivedHeartbeat.PoolToken != token {
+			t.Errorf(
+				"Expected pool_token: %q. Actual pool_token: %q",
+				token,
+				receivedHeartbeat.PoolToken,
+			)
 		}
 	})
 
@@ -113,11 +117,14 @@ func TestSend(t *testing.T) {
 			Hostname: "test",
 		}
 
+		token := "test-token"
+
 		err := Send(
 			context.Background(),
 			srv.Client(),
 			srv.URL,
 			node,
+			token,
 		)
 		if err == nil {
 			t.Fatal(
@@ -126,4 +133,46 @@ func TestSend(t *testing.T) {
 		}
 
 	})
+
+	// Subtest for when scheduler rejects the pool token.
+	t.Run("403 response (invalid token)", func(t *testing.T) {
+
+		// Creates temporary server that always responds with 403.
+		srv := httptest.NewServer(
+			http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusForbidden)
+				}))
+
+		defer srv.Close()
+
+		node := store.Node{
+			Hostname: "test",
+		}
+
+		token := "reject-token"
+
+		err := Send(
+			context.Background(),
+			srv.Client(),
+			srv.URL,
+			node,
+			token,
+		)
+
+		if err == nil {
+			t.Fatal(
+				"Expected Send() to return an error for 403, got nil.",
+			)
+		}
+
+		// The error should mention 403.
+		if !strings.Contains(err.Error(), "403") {
+			t.Errorf(
+				"Expected error to mention 403. Actual error: %v",
+				err,
+			)
+		}
+	})
+
 }

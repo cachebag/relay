@@ -12,6 +12,11 @@ import (
 	"github.com/cachebag/relay/internal/store"
 )
 
+type heartbeat struct {
+	store.Node
+	PoolToken string `json:"pool_token"`
+}
+
 // Sends one heartbeat to the scheduler to inform
 // about node status and node system information.
 // *http.Client argument is what makes this testable.
@@ -19,10 +24,11 @@ func Send(
 	ctx context.Context,
 	client *http.Client,
 	schedulerURL string,
-	n store.Node) error {
+	n store.Node,
+	token string) error {
 
-	// Converts the node into JSON format.
-	body, err := json.Marshal(n)
+	// Converts the heartbeat into JSON format.
+	body, err := json.Marshal(heartbeat{Node: n, PoolToken: token})
 	if err != nil {
 		return err
 	}
@@ -66,6 +72,7 @@ func Send(
 func Run(
 	ctx context.Context,
 	schedulerURL string,
+	token string,
 	interval time.Duration) error {
 
 	// Collection of node's system information
@@ -84,7 +91,7 @@ func Run(
 
 	// Heartbeat loop
 	for {
-		if err := Send(ctx, client, schedulerURL, n); err != nil {
+		if err := Send(ctx, client, schedulerURL, n, token); err != nil {
 			log.Printf("heartbeat failed: %v", err)
 		} else {
 			log.Printf("heartbeat sent to %s", schedulerURL)
