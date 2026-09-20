@@ -5,6 +5,7 @@ import httpx
 
 def register(sub) -> None:
     p = sub.add_parser("nodes", help="list nodes in the pool")
+    p.add_argument("--pool", help="Only show nodes in this pool id")
     p.set_defaults(func=run)
 
 
@@ -18,6 +19,9 @@ def fetch(scheduler: str, client: httpx.Client | None = None) -> list[dict]:
 def seconds_ago(iso: str) -> int:
     seen = datetime.fromisoformat(iso)
     return int((datetime.now(UTC) - seen).total_seconds())
+
+def status(iso: str) -> str:
+    return "online" if seconds_ago(iso) < 30 else "offline"
 
 
 def run(args) -> None:
