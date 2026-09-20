@@ -1,7 +1,8 @@
 import argparse
 from importlib.metadata import version
 
-from relay.commands import nodes
+from relay.commands import nodes, pool
+
 
 
 def main() -> None:
