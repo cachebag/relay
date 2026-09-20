@@ -21,5 +21,5 @@ def run_create(args) -> None:
     print(f"pool id:    {p['id']}")
     print(f"join token: {p['token']}")
     print()
-    print(f"share the token with contributors; they run:")
-    print(f"  relay-agent --scheduler {args.scheduler} --pool-token {p['token']}")
+    print("share the token with contributors; they run:")
+    print("relay-agent --scheduler {args.scheduler} --pool-token {p['token']}")
