@@ -1,7 +1,7 @@
 import argparse
 from importlib.metadata import version
 
-from relay.commands import nodes, pool
+from relay.commands import nodes, pool, dash
 
 
 def main() -> None:
@@ -19,6 +19,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     nodes.register(sub)
     pool.register(sub)
+    dash.register(sub)
     args = parser.parse_args()
     args.func(args)
 
