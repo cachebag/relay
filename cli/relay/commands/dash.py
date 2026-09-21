@@ -1,6 +1,10 @@
+from typing import ClassVar
+
+import httpx
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
+from textual.binding import BindingType
 from textual.containers import Horizontal
 from textual.widgets import DataTable, Footer, Header, Input, Label
 
@@ -31,7 +35,7 @@ class Dashboard(App):
     DataTable { height: 1fr; }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[BindingType]] = [
         ("r", "refresh", "Refresh"),
         ("q", "quit", "Quit"),
     ]
@@ -66,7 +70,7 @@ class Dashboard(App):
         try:
             rows = fetch(self.scheduler, self.pool)
             self.error = None
-        except Exception as exc:
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             rows = self.rows
             self.error = f"{type(exc).__name__}: {exc}"
         self.rows = rows
@@ -83,7 +87,7 @@ class Dashboard(App):
                 title=f"created {name}",
                 timeout=30,
             )
-        except Exception as exc:
+        except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             self.error = f"create failed - {type(exc).__name__}: {exc}"
         self.refresh_nodes()
 
