@@ -343,3 +343,104 @@ func TestNodeHeartbeatInvalidPoolToken(t *testing.T) {
 		t.Fatalf("expected status 403, got %d", rec.Code)
 	}
 }
+
+// TestJobCreate checks that a job can be submitted
+// and is stored with a generated ID and queued status.
+func TestJobCreate(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	// Submit a new job.
+	body := `{
+		"command":["echo","hi"]
+	}`
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	// Creating a job should return 201 Created.
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+
+	// Decode the response returned by POST /jobs.
+	var response struct {
+		ID     string          `json:"id"`
+		Status store.JobStatus `json:"status"`
+	}
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to decode job response: %v", err)
+	}
+
+	// Make sure the server generated a 12-character job ID.
+	if len(response.ID) != 12 {
+		t.Errorf("expected job ID length 12, got %d", len(response.ID))
+	}
+
+	// New jobs should always start in the queued state.
+	if response.Status != store.JobQueued {
+		t.Errorf("expected status %q, got %q", store.JobQueued, response.Status)
+	}
+
+	// Make sure the job was actually saved in the job store.
+	created, err := jobs.Get(req.Context(), response.ID)
+	if err != nil {
+		t.Fatalf("failed to get created job from store: %v", err)
+	}
+
+	// Make sure the submitted command was stored correctly.
+	if len(created.Command) != 2 ||
+		created.Command[0] != "echo" ||
+		created.Command[1] != "hi" {
+		t.Errorf("expected command [echo hi], got %v", created.Command)
+	}
+
+	// The server should assign the queued status.
+	if created.Status != store.JobQueued {
+		t.Errorf("expected stored status %q, got %q", store.JobQueued, created.Status)
+	}
+
+	// The server should assign a creation time.
+	if created.CreatedAt.IsZero() {
+		t.Error("expected CreatedAt to be set")
+	}
+}
+
+// TestJobCreateEmptyCommand checks that a job without a command
+// is rejected with HTTP 400 Bad Request.
+func TestJobCreateEmptyCommand(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	body := `{
+		"command":[]
+	}`
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+}

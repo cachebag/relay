@@ -144,5 +144,47 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		json.NewEncoder(w).Encode(nodes)
 	})
 
+	// Creates a new job.
+	mux.HandleFunc("POST /jobs", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Command []string `json:"command"`
+		}
+
+		// Read the command from the request.
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+
+		if len(req.Command) == 0 {
+			http.Error(w, "command is required", http.StatusBadRequest)
+			return
+		}
+
+		// Create the job with a server-generated ID and queued status.
+		j := store.Job{
+			ID:        store.NewID(),
+			Command:   req.Command,
+			Status:    store.JobQueued,
+			CreatedAt: time.Now().UTC(),
+		}
+
+		// Save the new job.
+		if err := jobs.Create(r.Context(), j); err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(struct {
+			ID     string          `json:"id"`
+			Status store.JobStatus `json:"status"`
+		}{
+			ID:     j.ID,
+			Status: j.Status,
+		})
+	})
+
 	return mux
 }
