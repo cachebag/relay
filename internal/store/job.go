@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+// JobStatus tracks a job through its lifecycle: queued on submission, assigned
+// once the scheduler picks a node, running once that node starts it, then done
+// or failed. Only these five values are ever stored.
 type JobStatus string
 
 const (
@@ -23,6 +26,15 @@ type Job struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// JobStore is the storage contract for jobs, mirroring Registry for nodes:
+// MemJobs here, SQLite later, and callers never depend on which one they got.
+//
+// Implementations must hold to what the shared test in jobstore_test.go checks:
+//   - Create returns ErrExists if the ID is already taken.
+//   - Get and Update return ErrNotFound for an unknown ID.
+//   - List returns a stable ordering, oldest first.
+//   - Stored jobs are independent of the caller's Job value, so mutating a
+//     Command slice after the call can't reach into the store.
 type JobStore interface {
 	Create(ctx context.Context, j Job) error
 	Get(ctx context.Context, id string) (Job, error)

@@ -6,9 +6,12 @@ import (
 	"time"
 )
 
-var ErrNotFound = errors.New("not found")
-
-var ErrExists = errors.New("already exists")
+// Sentinel errors every backend returns, so callers can use errors.Is instead
+// of matching on driver-specific error text.
+var (
+	ErrNotFound = errors.New("not found")
+	ErrExists   = errors.New("already exists")
+)
 
 // Node is a single machine known to the control plane. The JSON tags are part
 // of the wire format the agents and the API share, so renaming a field here is
