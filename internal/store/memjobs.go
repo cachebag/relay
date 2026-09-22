@@ -19,6 +19,9 @@ func NewMemJobs() *MemJobs {
 func (m *MemJobs) Create(_ context.Context, j Job) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if _, ok := m.jobs[j.ID]; ok {
+		return ErrExists
+	}
 	j.Command = slices.Clone(j.Command)
 	m.jobs[j.ID] = j
 	return nil
@@ -55,6 +58,9 @@ func (m *MemJobs) List(_ context.Context) ([]Job, error) {
 func (m *MemJobs) Update(_ context.Context, j Job) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if _, ok := m.jobs[j.ID]; !ok {
+		return ErrNotFound
+	}
 	j.Command = slices.Clone(j.Command)
 	m.jobs[j.ID] = j
 	return nil

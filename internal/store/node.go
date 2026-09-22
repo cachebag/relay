@@ -8,6 +8,8 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
+var ErrExists = errors.New("already exists")
+
 // Node is a single machine known to the control plane. The JSON tags are part
 // of the wire format the agents and the API share, so renaming a field here is
 // a breaking change for anything already on the network.

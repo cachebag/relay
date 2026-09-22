@@ -39,6 +39,10 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 		t.Fatalf("want created_at %v, got %v", j.CreatedAt, got.CreatedAt)
 	}
 
+	if err := js.Create(ctx, j); !errors.Is(err, ErrExists) {
+		t.Fatalf("want ErrExists for duplicate id, got %v", err)
+	}
+
 	j.Status = JobAssigned
 	j.NodeID = "node-a"
 	if err := js.Update(ctx, j); err != nil {
@@ -69,6 +73,10 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 
 	if _, err := js.Get(ctx, "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+
+	if err := js.Update(ctx, Job{ID: "nope"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound updating missing job, got %v", err)
 	}
 }
 
