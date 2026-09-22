@@ -10,7 +10,7 @@ import (
 )
 
 // NewHandler creates and returns the HTTP handler for the relay API.
-func NewHandler(reg store.Registry, pools store.PoolStore) http.Handler {
+func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {

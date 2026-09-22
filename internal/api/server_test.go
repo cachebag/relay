@@ -32,7 +32,7 @@ func TestHealthz(t *testing.T) {
 
 	// Create our API handler and send the fake request to it.
 	// The response produced by the handler is stored in rec.
-	NewHandler(reg, pools).ServeHTTP(rec, req)
+	NewHandler(reg, pools, store.NewMemJobs()).ServeHTTP(rec, req)
 
 	// Check that the server returned HTTP status 200 OK.
 	if rec.Code != http.StatusOK {
@@ -50,7 +50,7 @@ func TestHealthz(t *testing.T) {
 func TestNodeHeartbeatAndList(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	// Create a pool first so we can get a valid pool token.
 	poolBody := `{
@@ -180,7 +180,7 @@ func TestNodeHeartbeatAndList(t *testing.T) {
 func TestNodeHeartbeatInvalidJSON(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -203,7 +203,7 @@ func TestNodeHeartbeatInvalidJSON(t *testing.T) {
 func TestNodeListEmpty(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -229,7 +229,7 @@ func TestNodeListEmpty(t *testing.T) {
 func TestPoolCreateAndList(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	// Create a new pool.
 	body := `{
@@ -316,7 +316,7 @@ func TestPoolCreateAndList(t *testing.T) {
 func TestNodeHeartbeatInvalidPoolToken(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	body := `{
 		"id":"node-1",
