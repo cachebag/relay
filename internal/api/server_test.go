@@ -444,3 +444,94 @@ func TestJobCreateEmptyCommand(t *testing.T) {
 		t.Fatalf("expected status 400, got %d", rec.Code)
 	}
 }
+
+// TestJobGet checks that a submitted job can be retrieved by its ID.
+func TestJobGet(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	// Create a job first.
+	body := `{
+		"command":["echo","hi"]
+	}`
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+
+	// Decode the ID returned when the job was created.
+	var created struct {
+		ID string `json:"id"`
+	}
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode job response: %v", err)
+	}
+
+	// Retrieve the job using its ID.
+	req = httptest.NewRequest(
+		http.MethodGet,
+		"/jobs/"+created.ID,
+		nil,
+	)
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var job store.Job
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &job); err != nil {
+		t.Fatalf("failed to decode job: %v", err)
+	}
+
+	if job.ID != created.ID {
+		t.Errorf("expected job ID %q, got %q", created.ID, job.ID)
+	}
+
+	if len(job.Command) != 2 ||
+		job.Command[0] != "echo" ||
+		job.Command[1] != "hi" {
+		t.Errorf("expected command [echo hi], got %v", job.Command)
+	}
+
+	if job.Status != store.JobQueued {
+		t.Errorf("expected status %q, got %q", store.JobQueued, job.Status)
+	}
+}
+
+// TestJobGetNotFound checks that requesting an unknown job
+// returns HTTP 404 Not Found.
+func TestJobGetNotFound(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/jobs/doesnotexist",
+		nil,
+	)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", rec.Code)
+	}
+}

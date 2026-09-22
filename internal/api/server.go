@@ -186,5 +186,25 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		})
 	})
 
+	// Gets a job by ID.
+	mux.HandleFunc("GET /jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+
+		j, err := jobs.Get(r.Context(), id)
+
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(j)
+	})
+
 	return mux
 }
