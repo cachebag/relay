@@ -43,7 +43,12 @@ func (m *MemJobs) List(_ context.Context) ([]Job, error) {
 		j.Command = slices.Clone(j.Command)
 		out = append(out, j)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
 	return out, nil
 }
 
