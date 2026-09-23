@@ -10,6 +10,9 @@ The API currently supports:
 - Node heartbeats
 - Node listing
 - Filtering nodes by pool
+- Job creation
+- Job lookup by ID
+- Job listing
 
 
 ## Health Check
@@ -354,3 +357,310 @@ GET /nodes
 ```
 
 all registered nodes are returned.
+
+
+## Create a Job
+
+### POST /jobs
+
+Creates a new job and places it in the queued state.
+
+The client provides the command to run. The server generates the job ID, sets the initial status, and records the creation time.
+
+#### Request
+
+```http
+POST /jobs
+Content-Type: application/json
+```
+
+Example body:
+
+```json
+{
+  "command": ["echo", "hi"]
+}
+```
+
+The `command` field is required and must contain at least one value.
+
+#### Success Response
+
+Status:
+
+```text
+201 Created
+```
+
+Example response:
+
+```json
+{
+  "id": "40ca4109f082",
+  "status": "queued"
+}
+```
+
+#### Error Responses
+
+If the JSON request is malformed or the command is empty:
+
+```text
+400 Bad Request
+```
+
+If the job cannot be stored:
+
+```text
+500 Internal Server Error
+```
+
+
+## Get a Job
+
+### GET /jobs/{id}
+
+Returns a specific job using its ID.
+
+#### Request
+
+Example:
+
+```http
+GET /jobs/40ca4109f082
+```
+
+No request body is required.
+
+#### Success Response
+
+Status:
+
+```text
+200 OK
+```
+
+Example response:
+
+```json
+{
+  "id": "40ca4109f082",
+  "command": ["echo", "hi"],
+  "status": "queued",
+  "node_id": "",
+  "created_at": "2026-09-23T15:01:03.320292Z"
+}
+```
+
+#### Error Responses
+
+If the requested job does not exist:
+
+```text
+404 Not Found
+```
+
+If the job cannot be retrieved:
+
+```text
+500 Internal Server Error
+```
+
+
+## List Jobs
+
+### GET /jobs
+
+Returns all stored jobs.
+
+#### Request
+
+```http
+GET /jobs
+```
+
+No request body is required.
+
+#### Success Response
+
+Status:
+
+```text
+200 OK
+```
+
+Example response:
+
+```json
+[
+  {
+    "id": "40ca4109f082",
+    "command": ["echo", "hi"],
+    "status": "queued",
+    "node_id": "",
+    "created_at": "2026-09-23T15:01:03.320292Z"
+  }
+]
+```
+
+If no jobs exist, the response is an empty JSON array:
+
+```json
+[]
+```
+
+#### Error Response
+
+If the jobs cannot be retrieved:
+
+```text
+500 Internal Server Error
+```
+
+
+## Manual Job Endpoint Testing
+
+Start the Relay server before testing the job endpoints:
+
+```bash
+go run ./cmd/relayd
+```
+
+The server should be available at:
+
+```text
+http://localhost:8080
+```
+
+
+### Linux and macOS
+
+#### Create a Job
+
+```bash
+curl -s -X POST http://localhost:8080/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"command":["echo","hi"]}'
+```
+
+Example response:
+
+```json
+{"id":"40ca4109f082","status":"queued"}
+```
+
+Copy the returned job ID for the next command.
+
+#### Get a Job by ID
+
+Replace `JOB_ID` with the returned job ID:
+
+```bash
+curl -s http://localhost:8080/jobs/JOB_ID
+```
+
+#### List All Jobs
+
+```bash
+curl -s http://localhost:8080/jobs
+```
+
+#### Test a Missing Job
+
+```bash
+curl -i http://localhost:8080/jobs/doesnotexist
+```
+
+Expected status:
+
+```text
+404 Not Found
+```
+
+
+### Windows PowerShell
+
+PowerShell and `curl.exe` can handle inline JSON quoting differently, so the request body can be stored in a temporary JSON file.
+
+#### Create the Request File
+
+```powershell
+'{"command":["echo","hi"]}' | Set-Content -NoNewline job.json
+```
+
+Verify the file contents:
+
+```powershell
+Get-Content job.json
+```
+
+Expected:
+
+```json
+{"command":["echo","hi"]}
+```
+
+#### Create a Job
+
+```powershell
+curl.exe -s -X POST http://localhost:8080/jobs -H "Content-Type: application/json" --data-binary "@job.json"
+```
+
+Example response:
+
+```json
+{"id":"40ca4109f082","status":"queued"}
+```
+
+Copy the returned job ID.
+
+#### Get a Job by ID
+
+Replace `JOB_ID` with the returned job ID:
+
+```powershell
+curl.exe -s http://localhost:8080/jobs/JOB_ID
+```
+
+#### List All Jobs
+
+```powershell
+curl.exe -s http://localhost:8080/jobs
+```
+
+#### Test a Missing Job
+
+```powershell
+curl.exe -i http://localhost:8080/jobs/doesnotexist
+```
+
+Expected status:
+
+```text
+404 Not Found
+```
+
+The temporary JSON file can be removed after testing:
+
+```powershell
+Remove-Item job.json
+```
+
+
+## Automated Testing
+
+Run the complete test suite from the repository root:
+
+```bash
+go test ./...
+```
+
+The job API tests verify that:
+
+- Jobs can be created with `POST /jobs`.
+- New jobs receive a generated ID and begin with the `queued` status.
+- Jobs without a command are rejected with `400 Bad Request`.
+- Jobs can be retrieved by ID with `GET /jobs/{id}`.
+- Unknown job IDs return `404 Not Found`.
+- All jobs can be retrieved with `GET /jobs`.
+- A fresh job store returns an empty JSON array.
