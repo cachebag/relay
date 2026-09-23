@@ -535,3 +535,127 @@ func TestJobGetNotFound(t *testing.T) {
 		t.Fatalf("expected status 404, got %d", rec.Code)
 	}
 }
+
+// TestJobList checks that submitted jobs can be retrieved
+// from the job list endpoint.
+func TestJobList(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	// Create the first job.
+	body := `{
+		"command":["echo","first"]
+	}`
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+
+	// Create the second job.
+	body = `{
+		"command":["echo","second"]
+	}`
+
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+
+	// Request the list of jobs.
+	req = httptest.NewRequest(
+		http.MethodGet,
+		"/jobs",
+		nil,
+	)
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	// Decode the returned jobs.
+	var listed []store.Job
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode job list: %v", err)
+	}
+
+	// We created two jobs.
+	if len(listed) != 2 {
+		t.Fatalf("expected 2 jobs, got %d", len(listed))
+	}
+
+	// Make sure the first command was stored correctly.
+	// Make sure both submitted commands appear in the list.
+	foundFirst := false
+	foundSecond := false
+
+	for _, job := range listed {
+		if len(job.Command) == 2 &&
+			job.Command[0] == "echo" &&
+			job.Command[1] == "first" {
+			foundFirst = true
+		}
+
+		if len(job.Command) == 2 &&
+			job.Command[0] == "echo" &&
+			job.Command[1] == "second" {
+			foundSecond = true
+		}
+	}
+
+	if !foundFirst {
+		t.Error("expected to find command [echo first]")
+	}
+
+	if !foundSecond {
+		t.Error("expected to find command [echo second]")
+	}
+}
+
+// TestJobListEmpty checks that a fresh job store returns
+// an empty JSON array instead of null.
+func TestJobListEmpty(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/jobs",
+		nil,
+	)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("expected body [], got %s", rec.Body.String())
+	}
+}

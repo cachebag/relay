@@ -206,5 +206,17 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		json.NewEncoder(w).Encode(j)
 	})
 
+	// Lists all jobs.
+	mux.HandleFunc("GET /jobs", func(w http.ResponseWriter, r *http.Request) {
+		jobsList, err := jobs.List(r.Context())
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(jobsList)
+	})
+
 	return mux
 }
