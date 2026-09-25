@@ -15,6 +15,10 @@ type Scheduler struct {
 	jobs  store.JobStore
 }
 
+func New(nodes store.Registry, jobs store.JobStore) *Scheduler {
+	return &Scheduler{nodes: nodes, jobs: jobs}
+}
+
 // Tick does one round of assignment. It is separate from Run so tests can call it directly.
 func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 	nodes, err := s.nodes.List(ctx)
@@ -49,4 +53,20 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 		log.Printf("assigned job %s to node %s", j.ID, j.NodeID)
 	}
 	return nil
+}
+
+// Run calls Tick on an interval until ctx is cancelled.
+func (s *Scheduler) Run(ctx context.Context, interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			if err := s.Tick(ctx, time.Now()); err != nil {
+				log.Printf("scheduler tick: %v", err)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
