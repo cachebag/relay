@@ -47,7 +47,7 @@ func main() {
 	// Creates an in-memory store for pools.
 	pools := store.NewMemPools()
 
-	// Creates an in-memory store for jobs
+	// Creates an in-memory store for jobs.
 	jobs := store.NewMemJobs()
 
 	// Expected output if the server is running correctly: "relayd listening on :8080"
@@ -58,7 +58,7 @@ func main() {
 
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program
-	if err := http.ListenAndServe(":8080", api.NewHandler(reg, pools)); err != nil {
+	if err := http.ListenAndServe(":8080", api.NewHandler(reg, pools, jobs)); err != nil {
 		log.Fatal(err)
 	}
 }

@@ -32,7 +32,7 @@ func TestHealthz(t *testing.T) {
 
 	// Create our API handler and send the fake request to it.
 	// The response produced by the handler is stored in rec.
-	NewHandler(reg, pools).ServeHTTP(rec, req)
+	NewHandler(reg, pools, store.NewMemJobs()).ServeHTTP(rec, req)
 
 	// Check that the server returned HTTP status 200 OK.
 	if rec.Code != http.StatusOK {
@@ -50,7 +50,7 @@ func TestHealthz(t *testing.T) {
 func TestNodeHeartbeatAndList(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	// Create a pool first so we can get a valid pool token.
 	poolBody := `{
@@ -180,7 +180,7 @@ func TestNodeHeartbeatAndList(t *testing.T) {
 func TestNodeHeartbeatInvalidJSON(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -203,7 +203,7 @@ func TestNodeHeartbeatInvalidJSON(t *testing.T) {
 func TestNodeListEmpty(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -229,7 +229,7 @@ func TestNodeListEmpty(t *testing.T) {
 func TestPoolCreateAndList(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	// Create a new pool.
 	body := `{
@@ -316,7 +316,7 @@ func TestPoolCreateAndList(t *testing.T) {
 func TestNodeHeartbeatInvalidPoolToken(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs())
 
 	body := `{
 		"id":"node-1",
@@ -341,5 +341,321 @@ func TestNodeHeartbeatInvalidPoolToken(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("expected status 403, got %d", rec.Code)
+	}
+}
+
+// TestJobCreate checks that a job can be submitted
+// and is stored with a generated ID and queued status.
+func TestJobCreate(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	// Submit a new job.
+	body := `{
+		"command":["echo","hi"]
+	}`
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	// Creating a job should return 201 Created.
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+
+	// Decode the response returned by POST /jobs.
+	var response struct {
+		ID     string          `json:"id"`
+		Status store.JobStatus `json:"status"`
+	}
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to decode job response: %v", err)
+	}
+
+	// Make sure the server generated a 12-character job ID.
+	if len(response.ID) != 12 {
+		t.Errorf("expected job ID length 12, got %d", len(response.ID))
+	}
+
+	// New jobs should always start in the queued state.
+	if response.Status != store.JobQueued {
+		t.Errorf("expected status %q, got %q", store.JobQueued, response.Status)
+	}
+
+	// Make sure the job was actually saved in the job store.
+	created, err := jobs.Get(req.Context(), response.ID)
+	if err != nil {
+		t.Fatalf("failed to get created job from store: %v", err)
+	}
+
+	// Make sure the submitted command was stored correctly.
+	if len(created.Command) != 2 ||
+		created.Command[0] != "echo" ||
+		created.Command[1] != "hi" {
+		t.Errorf("expected command [echo hi], got %v", created.Command)
+	}
+
+	// The server should assign the queued status.
+	if created.Status != store.JobQueued {
+		t.Errorf("expected stored status %q, got %q", store.JobQueued, created.Status)
+	}
+
+	// The server should assign a creation time.
+	if created.CreatedAt.IsZero() {
+		t.Error("expected CreatedAt to be set")
+	}
+}
+
+// TestJobCreateEmptyCommand checks that a job without a command
+// is rejected with HTTP 400 Bad Request.
+func TestJobCreateEmptyCommand(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	body := `{
+		"command":[]
+	}`
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+}
+
+// TestJobGet checks that a submitted job can be retrieved by its ID.
+func TestJobGet(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	// Create a job first.
+	body := `{
+		"command":["echo","hi"]
+	}`
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+
+	// Decode the ID returned when the job was created.
+	var created struct {
+		ID string `json:"id"`
+	}
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode job response: %v", err)
+	}
+
+	// Retrieve the job using its ID.
+	req = httptest.NewRequest(
+		http.MethodGet,
+		"/jobs/"+created.ID,
+		nil,
+	)
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var job store.Job
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &job); err != nil {
+		t.Fatalf("failed to decode job: %v", err)
+	}
+
+	if job.ID != created.ID {
+		t.Errorf("expected job ID %q, got %q", created.ID, job.ID)
+	}
+
+	if len(job.Command) != 2 ||
+		job.Command[0] != "echo" ||
+		job.Command[1] != "hi" {
+		t.Errorf("expected command [echo hi], got %v", job.Command)
+	}
+
+	if job.Status != store.JobQueued {
+		t.Errorf("expected status %q, got %q", store.JobQueued, job.Status)
+	}
+}
+
+// TestJobGetNotFound checks that requesting an unknown job
+// returns HTTP 404 Not Found.
+func TestJobGetNotFound(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/jobs/doesnotexist",
+		nil,
+	)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", rec.Code)
+	}
+}
+
+// TestJobList checks that submitted jobs can be retrieved
+// from the job list endpoint.
+func TestJobList(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	// Create the first job.
+	body := `{
+		"command":["echo","first"]
+	}`
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+
+	// Create the second job.
+	body = `{
+		"command":["echo","second"]
+	}`
+
+	req = httptest.NewRequest(
+		http.MethodPost,
+		"/jobs",
+		strings.NewReader(body),
+	)
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+
+	// Request the list of jobs.
+	req = httptest.NewRequest(
+		http.MethodGet,
+		"/jobs",
+		nil,
+	)
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	// Decode the returned jobs.
+	var listed []store.Job
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("failed to decode job list: %v", err)
+	}
+
+	// We created two jobs.
+	if len(listed) != 2 {
+		t.Fatalf("expected 2 jobs, got %d", len(listed))
+	}
+
+	// Make sure the first command was stored correctly.
+	// Make sure both submitted commands appear in the list.
+	foundFirst := false
+	foundSecond := false
+
+	for _, job := range listed {
+		if len(job.Command) == 2 &&
+			job.Command[0] == "echo" &&
+			job.Command[1] == "first" {
+			foundFirst = true
+		}
+
+		if len(job.Command) == 2 &&
+			job.Command[0] == "echo" &&
+			job.Command[1] == "second" {
+			foundSecond = true
+		}
+	}
+
+	if !foundFirst {
+		t.Error("expected to find command [echo first]")
+	}
+
+	if !foundSecond {
+		t.Error("expected to find command [echo second]")
+	}
+}
+
+// TestJobListEmpty checks that a fresh job store returns
+// an empty JSON array instead of null.
+func TestJobListEmpty(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	jobs := store.NewMemJobs()
+	handler := NewHandler(reg, pools, jobs)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/jobs",
+		nil,
+	)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("expected body [], got %s", rec.Body.String())
 	}
 }
