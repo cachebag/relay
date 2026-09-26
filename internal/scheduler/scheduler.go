@@ -19,26 +19,39 @@ func New(nodes store.Registry, jobs store.JobStore) *Scheduler {
 	return &Scheduler{nodes: nodes, jobs: jobs}
 }
 
-// Tick does one round of assignment. It is separate from Run so tests can call it directly.
+// Does one round of job assignment for scheduler.
+// Assigns queued jobs to online nodes and updates their status and NodeID accordingly.
+// Kept separate from Run so tests can call it directly.
 func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
+
+	// Collects and stores list of online nodes.
 	nodes, err := s.nodes.List(ctx)
 	if err != nil {
 		return err
 	}
+
+	// Filters out offline nodes based on their LastSeen timestamp.
 	online := nodes[:0]
 	for _, n := range nodes {
 		if now.Sub(n.LastSeen) < nodeTimeout {
 			online = append(online, n)
 		}
 	}
+
+	// Checks to see if there are any online nodes. If not, return early.
 	if len(online) == 0 {
 		return nil
 	}
 
+	// Collects and stores list of jobs.
 	jobs, err := s.jobs.List(ctx)
 	if err != nil {
 		return err
 	}
+
+	// Assigns queued jobs to online nodes by assigning jobs to nodes with
+	// the fewest current jobs running, then by iterating through the list
+	// of online nodes and assigning jobs in respect to the order of the list.
 	i := 0
 	for _, j := range jobs {
 		if j.Status != store.JobQueued {
@@ -55,10 +68,14 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 	return nil
 }
 
-// Run calls Tick on an interval until ctx is cancelled.
+// Run continuously attempts to assign queued jobs to online nodes at the specified interval.
 func (s *Scheduler) Run(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
+
+	// Stops the ticker once the function stops running.
 	defer t.Stop()
+
+	// Main loop for job assignment.
 	for {
 		select {
 		case <-t.C:
