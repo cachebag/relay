@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -20,12 +21,26 @@ func printVersion(w io.Writer) {
 	logger.Println("relayd", Version)
 }
 
+// Verifies that the specified port is within the valid range (1-65535).
+func verifyPort(w io.Writer, port *int) {
+	if *port <= 0 || *port > 65535 {
+		fmt.Fprintf(w, "Invalid port: %d, must be between 1 and 65535\n", *port)
+	}
+}
+
 func main() {
 	// Creation of version flag
 	version := flag.Bool(
 		"version",
 		false,
 		"Prints what version of relayd is being used")
+
+	// Creation of port flag
+	port := flag.Int(
+		"port",
+		8080,
+		"Port for relayd to listen on",
+	)
 	// Makes the 'flag' package inspect cli arguments.
 	flag.Parse()
 
@@ -47,12 +62,12 @@ func main() {
 	// Creates an in-memory store for jobs.
 	jobs := store.NewMemJobs()
 
-	// Expected output if the server is running correctly: "relayd listening on :8080"
-	log.Println("relayd listening on :8080")
+	verifyPort(os.Stdout, port)
+	log.Printf("relayd listening on :%d", *port)
 
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program
-	if err := http.ListenAndServe(":8080", api.NewHandler(reg, pools, jobs)); err != nil {
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), api.NewHandler(reg, pools, jobs)); err != nil {
 		log.Fatal(err)
 	}
 }
