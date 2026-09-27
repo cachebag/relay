@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 
@@ -21,10 +22,14 @@ func printVersion(w io.Writer) {
 	logger.Println("relayd", Version)
 }
 
-// Verifies that the specified port is within the valid range (1-65535).
-func verifyPort(w io.Writer, port *int) {
-	if *port <= 0 || *port > 65535 {
-		fmt.Fprintf(w, "Invalid port: %d, must be between 1 and 65535\n", *port)
+// Verifies that the specified port is within the valid range (0-65535).
+func verifyPort(w io.Writer, port int) {
+	// Throws error and exits if port number is invalid
+	if port < 0 || port > 65535 {
+		logger := log.New(w, "", 0)
+		logger.SetOutput(os.Stderr)
+		logger.Printf("Invalid port %d, port must be between 0 and 65535\n", port)
+		os.Exit(2)
 	}
 }
 
@@ -62,12 +67,18 @@ func main() {
 	// Creates an in-memory store for jobs.
 	jobs := store.NewMemJobs()
 
-	verifyPort(os.Stdout, port)
-	log.Printf("relayd listening on :%d", *port)
+	verifyPort(os.Stdout, *port)
+
+	// Starts listening on the specified port.
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("relayd listening on :%d", ln.Addr().(*net.TCPAddr).Port)
 
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", *port), api.NewHandler(reg, pools, jobs)); err != nil {
+	if err := http.Serve(ln, api.NewHandler(reg, pools, jobs)); err != nil {
 		log.Fatal(err)
 	}
 }
