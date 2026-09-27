@@ -49,9 +49,7 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 		return err
 	}
 
-	// Assigns queued jobs to online nodes by assigning jobs to nodes with
-	// the fewest current jobs running, then by iterating through the list
-	// of online nodes and assigning jobs in respect to the order of the list.
+	// Assigns queued jobs round-robin across online nodes, oldest job first.
 	i := 0
 	for _, j := range jobs {
 		if j.Status != store.JobQueued {
