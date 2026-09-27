@@ -8,7 +8,7 @@ def register(sub) -> None:
 
 
 def submit(
-        scheduler: str, command: list[str], client: httpx.Client | None = None
+    scheduler: str, command: list[str], client: httpx.Client | None = None
 ) -> dict:
     client = client or httpx.Client(timeout=5)
     r = client.post(f"{scheduler}/jobs", json={"command": command})

@@ -29,6 +29,7 @@ def test_fetch_returns_nodes():
 def test_seconds_ago_is_positive_for_past():
     assert seconds_ago("2020-01-01T00:00:00Z") > 0
 
+
 def test_old_node_is_offline():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
