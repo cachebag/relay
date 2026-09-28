@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -23,14 +25,34 @@ func printVersion(w io.Writer) {
 	logger.Println("relayd", Version)
 }
 
+// Returns an error if the port is outside 0-65535. 0 lets the OS pick a free port.
+func validPort(p int) error {
+	if p < 0 || p > 65535 {
+		return fmt.Errorf("invalid port %d, must be between 0 and 65535", p)
+	}
+	return nil
+}
+
 func main() {
 	// Creation of version flag
 	version := flag.Bool(
 		"version",
 		false,
 		"Prints what version of relayd is being used")
+
+	// Creation of port flag
+	port := flag.Int(
+		"port",
+		8080,
+		"Port for relayd to listen on",
+	)
 	// Makes the 'flag' package inspect cli arguments.
 	flag.Parse()
+
+	if err := validPort(*port); err != nil {
+		fmt.Fprintln(os.Stderr, "relayd:", err)
+		os.Exit(2)
+	}
 
 	// Tells the printVersion function to print relayd's version number
 	// if the --version flag is passed while the program is running.
@@ -50,15 +72,19 @@ func main() {
 	// Creates an in-memory store for jobs.
 	jobs := store.NewMemJobs()
 
-	// Expected output if the server is running correctly: "relayd listening on :8080"
-	log.Println("relayd listening on :8080")
+	// Starts listening on the specified port.
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("relayd listening on :%d", ln.Addr().(*net.TCPAddr).Port)
 
 	// Starts the scheduler in the background.
 	go scheduler.New(reg, jobs).Run(context.Background(), 2*time.Second)
 
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program
-	if err := http.ListenAndServe(":8080", api.NewHandler(reg, pools, jobs)); err != nil {
+	if err := http.Serve(ln, api.NewHandler(reg, pools, jobs)); err != nil {
 		log.Fatal(err)
 	}
 }
