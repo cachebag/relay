@@ -97,7 +97,10 @@ class Dashboard(App):
 
         rows = sorted(
             self.rows,
-            key=lambda n: (status(n["last_seen"]) != "online", n["hostname"]),
+            key=lambda n: (
+                (n.get("status") or status(n["last_seen"])) != "online",
+                n["hostname"],
+            ),
         )
 
         online = 0
@@ -105,7 +108,7 @@ class Dashboard(App):
         mem = 0.0
         for n in rows:
             secs = seconds_ago(n["last_seen"])
-            state = status(n["last_seen"])
+            state = n.get("status") or status(n["last_seen"])
             if state == "online":
                 online += 1
                 cores += n.get("cpus", 0)

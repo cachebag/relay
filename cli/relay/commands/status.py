@@ -17,4 +17,9 @@ def fetch(scheduler: str, job_id: str, client: httpx.Client | None = None) -> di
 def run(args) -> None:
     j = fetch(args.scheduler, args.job_id)
     node = j["node_id"] or "-"
-    print(f"{j['id']}  {j['status']:<9} node={node}  {' '.join(j['command'])}")
+    attempts = j.get("attempts", 0)
+
+    print(
+        f"{j['id']}  {j['status']:<9} node={node}  "
+        f"attempts={attempts}  {' '.join(j['command'])}"
+    )

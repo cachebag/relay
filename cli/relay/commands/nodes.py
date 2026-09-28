@@ -35,5 +35,11 @@ def run(args) -> None:
     for n in rows:
         gb = n["mem_bytes"] / 1e9
         print(
-            f"{n['hostname']:<16} {status(n['last_seen']):<8} {n['os'] + '/' + n['arch']:<14} {n['cpus']:>4} {gb:>6.1f}GB  {seconds_ago(n['last_seen']):>4}s ago  {n.get('pool_id', ''):<16}"
-        )
+        f"{n['hostname']:<16} "
+        f"{n.get('status') or status(n['last_seen']):<8} "
+        f"{n['os'] + '/' + n['arch']:<14} "
+        f"{n['cpus']:>4} "
+        f"{gb:>6.1f}GB  "
+        f"{seconds_ago(n['last_seen']):>4}s ago  "
+        f"{n.get('pool_id', ''):<16}"
+    )
