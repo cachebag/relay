@@ -120,7 +120,7 @@ class Dashboard(App):
                 f"{n.get('mem_bytes', 0) / 1e9:.1f}GB",
                 human_ago(secs),
                 n.get("pool_id", "") or "-",
-                )
+            )
 
         self.query_one("#summary", Label).update(
             f"{online} online / {len(rows) - online} offline   "

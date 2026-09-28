@@ -10,7 +10,7 @@ def register(sub) -> None:
 
 
 def fetch(
-        scheduler: str, pool: str | None = None, client: httpx.Client | None = None
+    scheduler: str, pool: str | None = None, client: httpx.Client | None = None
 ) -> list[dict]:
     client = client or httpx.Client(timeout=5)
     r = client.get(f"{scheduler}/nodes", params={"pool": pool} if pool else None)
