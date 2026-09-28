@@ -19,40 +19,14 @@ func TestPrintVersion(t *testing.T) {
 	}
 }
 
-// Tests if the verifyPort function correctly validates port numbers.
-func TestPortVerification(t *testing.T) {
-	var testOutput bytes.Buffer
-
-	// Testing allowing the os to choose the port by specifying 0.
-	validPort := 0
-	verifyPort(&testOutput, validPort)
-	if testOutput.String() != "" {
-		t.Errorf("expected no error message for valid port, but got one")
+// Tests that validPort accepts 0-65535 and rejects everything else.
+func TestValidPort(t *testing.T) {
+	for _, tc := range []struct {
+		port int
+		ok   bool
+	}{{-1, false}, {0, true}, {1, true}, {8080, true}, {65535, true}, {65536, false}} {
+		if err := validPort(tc.port); (err == nil) != tc.ok {
+			t.Errorf("validPort(%d): got err=%v, want ok=%v", tc.port, err, tc.ok)
+		}
 	}
-	testOutput.Reset()
-
-	// Tests a valid number on the lower boundary.
-	validPort = 1
-	verifyPort(&testOutput, validPort)
-	if testOutput.String() != "" {
-		t.Errorf("expected no error message for valid port, but got one")
-	}
-	testOutput.Reset()
-
-	// Tests a valid port number.
-	validPort = 8080
-	verifyPort(&testOutput, validPort)
-	if testOutput.String() != "" {
-		t.Errorf("expected no error message for valid port, but got one")
-	}
-	testOutput.Reset()
-
-	// Tests a valid number on the upper boundary.
-	validPort = 65535
-	verifyPort(&testOutput, validPort)
-	if testOutput.String() != "" {
-		t.Errorf("expected no error message for valid port, but got one")
-	}
-	testOutput.Reset()
-
 }
