@@ -27,6 +27,16 @@ type Node struct {
 	LastSeen time.Time `json:"last_seen"`
 }
 
+// NodeTimeout is how long a node may go without a heartbeat before it is
+// treated as offline. It lives here rather than in the scheduler so every
+// caller (scheduler, API, tests) shares one definition of "online".
+const NodeTimeout = 30 * time.Second
+
+// Online reports whether n has heartbeated within NodeTimeout of now.
+func Online(n Node, now time.Time) bool {
+	return now.Sub(n.LastSeen) < NodeTimeout
+}
+
 // Registry is the storage contract every backend implements: Mem here, SQLite
 // next. Keeping it this narrow means callers never depend on which one
 // they got, and the shared test in registry_test.go can exercise any of them.

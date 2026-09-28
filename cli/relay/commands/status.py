@@ -18,6 +18,10 @@ def run(args) -> None:
     j = fetch(args.scheduler, args.job_id)
     node = j["node_id"] or "-"
     attempts = j.get("attempts", 0)
+    print(
+        f"{j['id']}  {j['status']:<9} node={node}  attempts={attempts}  "
+        f"{' '.join(j['command'])}"
+    )
 
     print(
         f"{j['id']}  {j['status']:<9} node={node}  "
