@@ -77,11 +77,16 @@ func TestJobAssigned(t *testing.T) {
 			got[0].NodeID,
 		)
 	}
+
+	// Testing that the placement was counted.
+	if got[0].Attempts != 1 {
+		t.Errorf("expected Attempts 1, got %d", got[0].Attempts)
+	}
 }
 
 // Test:
 // One node whose LastSeen was 60 seconds ago.
-// Since nodeTimeout is 30 seconds, the node is offline.
+// Since store.NodeTimeout is 30 seconds, the node is offline.
 // The queued job should remain queued and its NodeID should remain empty.
 func TestNodeOffline(t *testing.T) {
 	ctx := context.Background()
@@ -323,5 +328,157 @@ func TestNoJobsQueued(t *testing.T) {
 			"node-1",
 			got[0].NodeID,
 		)
+	}
+}
+
+// Builds a scheduler over the given nodes and jobs, runs one Tick at now,
+// and returns the job with the given ID afterwards.
+func tickAndGet(t *testing.T, now time.Time, nodes []store.Node, jobs []store.Job, id string) store.Job {
+	t.Helper()
+	ctx := context.Background()
+
+	reg := store.NewMem()
+	js := store.NewMemJobs()
+
+	for _, n := range nodes {
+		if err := reg.Upsert(ctx, n); err != nil {
+			t.Fatalf("adding node %s: %v", n.ID, err)
+		}
+	}
+	for _, j := range jobs {
+		if err := js.Create(ctx, j); err != nil {
+			t.Fatalf("adding job %s: %v", j.ID, err)
+		}
+	}
+
+	if err := New(reg, js).Tick(ctx, now); err != nil {
+		t.Fatalf("Tick() error: %v", err)
+	}
+
+	got, err := js.Get(ctx, id)
+	if err != nil {
+		t.Fatalf("getting job %s: %v", id, err)
+	}
+	return got
+}
+
+// Test:
+// A job assigned to a node that stopped heartbeating 60 seconds ago, and no
+// other node to take it. After Tick the job is back in the queue with no
+// NodeID, and Attempts is unchanged because nothing placed it again.
+func TestRequeueLost(t *testing.T) {
+	now := time.Now()
+
+	offline := store.Node{ID: "node-1", LastSeen: now.Add(-60 * time.Second)}
+	job := store.Job{ID: "job-1", Status: store.JobAssigned, NodeID: "node-1", Attempts: 1}
+
+	got := tickAndGet(t, now, []store.Node{offline}, []store.Job{job}, "job-1")
+
+	if got.Status != store.JobQueued {
+		t.Errorf("expected status %q, got %q", store.JobQueued, got.Status)
+	}
+	if got.NodeID != "" {
+		t.Errorf("expected NodeID to be cleared, got %q", got.NodeID)
+	}
+	if got.Attempts != 1 {
+		t.Errorf("expected Attempts 1, got %d", got.Attempts)
+	}
+}
+
+// Test:
+// Same as above, but a second node is online. One Tick both requeues the job
+// and places it on the online node, so Attempts goes to 2.
+func TestRequeueLostReassigned(t *testing.T) {
+	now := time.Now()
+
+	offline := store.Node{ID: "node-1", LastSeen: now.Add(-60 * time.Second)}
+	online := store.Node{ID: "node-2", LastSeen: now}
+	job := store.Job{ID: "job-1", Status: store.JobRunning, NodeID: "node-1", Attempts: 1}
+
+	got := tickAndGet(t, now, []store.Node{offline, online}, []store.Job{job}, "job-1")
+
+	if got.Status != store.JobAssigned {
+		t.Errorf("expected status %q, got %q", store.JobAssigned, got.Status)
+	}
+	if got.NodeID != online.ID {
+		t.Errorf("expected NodeID %q, got %q", online.ID, got.NodeID)
+	}
+	if got.Attempts != 2 {
+		t.Errorf("expected Attempts 2, got %d", got.Attempts)
+	}
+}
+
+// Test:
+// A job that has already been placed maxAttempts times loses its node again.
+// Rather than requeue it a fourth time, the scheduler marks it failed, and an
+// online node standing by does not pick it up.
+func TestRequeueLostFailsAfterMaxAttempts(t *testing.T) {
+	now := time.Now()
+
+	offline := store.Node{ID: "node-1", LastSeen: now.Add(-60 * time.Second)}
+	online := store.Node{ID: "node-2", LastSeen: now}
+	job := store.Job{ID: "job-1", Status: store.JobAssigned, NodeID: "node-1", Attempts: maxAttempts}
+
+	got := tickAndGet(t, now, []store.Node{offline, online}, []store.Job{job}, "job-1")
+
+	if got.Status != store.JobFailed {
+		t.Errorf("expected status %q, got %q", store.JobFailed, got.Status)
+	}
+	if got.NodeID != "" {
+		t.Errorf("expected NodeID to be cleared, got %q", got.NodeID)
+	}
+	if got.Attempts != maxAttempts {
+		t.Errorf("expected Attempts %d, got %d", maxAttempts, got.Attempts)
+	}
+}
+
+// Test:
+// A job whose NodeID was never registered has nowhere to run, so it is
+// treated the same as a job on an offline node and requeued.
+func TestRequeueLostUnknownNode(t *testing.T) {
+	now := time.Now()
+
+	job := store.Job{ID: "job-1", Status: store.JobAssigned, NodeID: "ghost", Attempts: 1}
+
+	got := tickAndGet(t, now, nil, []store.Job{job}, "job-1")
+
+	if got.Status != store.JobQueued {
+		t.Errorf("expected status %q, got %q", store.JobQueued, got.Status)
+	}
+	if got.NodeID != "" {
+		t.Errorf("expected NodeID to be cleared, got %q", got.NodeID)
+	}
+}
+
+// Test:
+// Jobs that are not lost are left alone: a running job on an online node,
+// and finished jobs on an offline node, whose outcome is already recorded.
+func TestRequeueLostUntouched(t *testing.T) {
+	now := time.Now()
+
+	online := store.Node{ID: "node-1", LastSeen: now}
+	offline := store.Node{ID: "node-2", LastSeen: now.Add(-60 * time.Second)}
+
+	cases := []store.Job{
+		{ID: "running-online", Status: store.JobRunning, NodeID: "node-1", Attempts: 1},
+		{ID: "assigned-online", Status: store.JobAssigned, NodeID: "node-1", Attempts: 1},
+		{ID: "done-offline", Status: store.JobDone, NodeID: "node-2", Attempts: 1},
+		{ID: "failed-offline", Status: store.JobFailed, NodeID: "node-2", Attempts: 3},
+	}
+
+	for _, want := range cases {
+		t.Run(want.ID, func(t *testing.T) {
+			got := tickAndGet(t, now, []store.Node{online, offline}, []store.Job{want}, want.ID)
+
+			if got.Status != want.Status {
+				t.Errorf("expected status %q, got %q", want.Status, got.Status)
+			}
+			if got.NodeID != want.NodeID {
+				t.Errorf("expected NodeID %q, got %q", want.NodeID, got.NodeID)
+			}
+			if got.Attempts != want.Attempts {
+				t.Errorf("expected Attempts %d, got %d", want.Attempts, got.Attempts)
+			}
+		})
 	}
 }
