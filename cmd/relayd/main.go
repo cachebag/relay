@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/cachebag/relay/internal/api"
+	"github.com/cachebag/relay/internal/scheduler"
 	"github.com/cachebag/relay/internal/store"
 )
 
@@ -49,6 +52,9 @@ func main() {
 
 	// Expected output if the server is running correctly: "relayd listening on :8080"
 	log.Println("relayd listening on :8080")
+
+	// Starts the scheduler in the background.
+	go scheduler.New(reg, jobs).Run(context.Background(), 2*time.Second)
 
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program
