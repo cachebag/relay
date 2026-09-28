@@ -13,6 +13,7 @@ def test_fetch_returns_job():
                 "command": ["echo", "hi"],
                 "status": "queued",
                 "node_id": "",
+                "attempts": 0,
                 "created_at": "2026-09-23T15:01:03.320292Z",
             },
         )

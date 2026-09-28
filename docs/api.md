@@ -448,9 +448,14 @@ Example response:
   "command": ["echo", "hi"],
   "status": "queued",
   "node_id": "",
+  "attempts": 0,
   "created_at": "2026-09-23T15:01:03.320292Z"
 }
 ```
+
+`node_id` is the node the scheduler placed the job on, or empty while the job is queued.
+
+`attempts` counts how many times the scheduler has placed the job on a node. If a node stops heartbeating for 30 seconds while holding an `assigned` or `running` job, the scheduler clears `node_id` and puts the job back to `queued` so the next tick can place it elsewhere, which bumps `attempts` again. After 3 placements the job is marked `failed` instead of being requeued.
 
 #### Error Responses
 
@@ -498,6 +503,7 @@ Example response:
     "command": ["echo", "hi"],
     "status": "queued",
     "node_id": "",
+    "attempts": 0,
     "created_at": "2026-09-23T15:01:03.320292Z"
   }
 ]
