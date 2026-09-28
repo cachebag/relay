@@ -19,10 +19,14 @@ const (
 )
 
 type Job struct {
-	ID        string    `json:"id"`
-	Command   []string  `json:"command"`
-	Status    JobStatus `json:"status"`
-	NodeID    string    `json:"node_id"`
+	ID      string    `json:"id"`
+	Command []string  `json:"command"`
+	Status  JobStatus `json:"status"`
+	NodeID  string    `json:"node_id"`
+	// Attempts counts how many times the scheduler has placed this job on a
+	// node. It is bumped on every assignment, including reassignments after a
+	// node goes offline, and the scheduler gives up once it reaches its cap.
+	Attempts  int       `json:"attempts"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

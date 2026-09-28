@@ -8,8 +8,6 @@ import (
 	"github.com/cachebag/relay/internal/store"
 )
 
-const nodeTimeout = 30 * time.Second
-
 type Scheduler struct {
 	nodes store.Registry
 	jobs  store.JobStore
@@ -33,7 +31,7 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 	// Filters out offline nodes based on their LastSeen timestamp.
 	online := nodes[:0]
 	for _, n := range nodes {
-		if now.Sub(n.LastSeen) < nodeTimeout {
+		if store.Online(n, now) {
 			online = append(online, n)
 		}
 	}
