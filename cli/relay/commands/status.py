@@ -23,7 +23,3 @@ def run(args) -> None:
         f"{' '.join(j['command'])}"
     )
 
-    print(
-        f"{j['id']}  {j['status']:<9} node={node}  "
-        f"attempts={attempts}  {' '.join(j['command'])}"
-    )

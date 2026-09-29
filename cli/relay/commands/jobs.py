@@ -62,7 +62,7 @@ def run(args) -> None:
         print(
             f"{job['id']:<16} "
             f"{job['status']:<10} "
-            f"{job.get('node_id', ''):<16} "
+            f"{job.get('node_id') or '-':<16} "
             f"{job.get('attempts', 0):>8} "
             f"{age(job['created_at']):>6}  "
             f"{shorten(command)}"
