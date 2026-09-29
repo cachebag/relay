@@ -107,10 +107,7 @@ class Dashboard(App):
             self.error = f"{type(exc).__name__}: {exc}"
 
         # Remember which node each previously displayed job was assigned to.
-        old_nodes = {
-            job["id"]: job.get("node_id", "")
-            for job in self.job_rows
-        }
+        old_nodes = {job["id"]: job.get("node_id", "") for job in self.job_rows}
 
         # Notify the user when an existing job moves from one node to another.
         for job in job_rows:
