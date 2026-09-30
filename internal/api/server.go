@@ -144,6 +144,16 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		json.NewEncoder(w).Encode(nodes)
 	})
 
+
+    // this reject a stale job results
+    if (j.Status != store.JobAssigned && j.Status != store.JobRunning) ||
+        j.NodeID != req.NodeID || j.Attempts != req.Attempt {
+        log.Printf("stale result for job %s from %s (attempt %d, current %d)", j.ID, req.NodeID, req.Attempt, j.Attempts)
+        http.Error(w, "stale result: job was reassigned", http.StatusConflict)
+        return
+    }
+
+
 	// Creates a new job.
 	mux.HandleFunc("POST /jobs", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
