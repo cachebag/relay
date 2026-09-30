@@ -22,3 +22,4 @@ def run(args) -> None:
         f"{j['id']}  {j['status']:<9} node={node}  attempts={attempts}  "
         f"{' '.join(j['command'])}"
     )
+
