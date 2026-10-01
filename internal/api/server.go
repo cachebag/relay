@@ -8,7 +8,36 @@ import (
 
 	"github.com/cachebag/relay/internal/store"
 )
+type nodeView struct {
+    store.Node
+    Status string `json:"status"`
+}
 
+func handleGetNodes(w http.ResponseWriter, r *http.Request, s *store.Store) {
+    pool := r.URL.Query().Get("pool")
+
+    nodes, err := s.Nodes(r.Context(), pool)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    now := time.Now()
+    views := make([]nodeView, len(nodes))
+    for i, n := range nodes {
+        status := "offline"
+        if s.Online(n, now) {
+            status = "online"
+        }
+        views[i] = nodeView{
+            Node:   n,
+            Status: status,
+        }
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(views)
+}
 // NewHandler creates and returns the HTTP handler for the relay API.
 func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) http.Handler {
 	mux := http.NewServeMux()
