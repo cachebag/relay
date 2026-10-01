@@ -670,3 +670,51 @@ The job API tests verify that:
 - Unknown job IDs return `404 Not Found`.
 - All jobs can be retrieved with `GET /jobs`.
 - A fresh job store returns an empty JSON array.
+
+### POST /jobs/{id}/result
+
+Submit a job result from an agent.
+
+**Request body:**
+```json
+{
+  "node_id": "node-123",
+  "attempt": 1,
+  "output": "job result data"
+}
+```
+
+**Response:**
+- `204 No Content` - Result accepted, job marked done
+- `409 Conflict` - Stale result (job was reassigned to another node)
+
+---
+
+### GET /nodes
+
+List all nodes with their current online/offline status.
+
+**Query parameters:**
+- `pool` - Filter by pool name (optional)
+
+**Response:**
+```json
+[
+  {
+    "id": "node-1",
+    "pool": "default",
+    "status": "online",
+    "last_seen": "2026-09-30T13:54:00Z"
+  },
+  {
+    "id": "node-2",
+    "pool": "default",
+    "status": "offline",
+    "last_seen": "2026-09-30T13:00:00Z"
+  }
+]
+```
+
+**Status values:**
+- `online` - Node seen within the last 60 seconds
+- `offline` - Node not seen for 60+ seconds

@@ -659,3 +659,102 @@ func TestJobListEmpty(t *testing.T) {
 		t.Fatalf("expected body [], got %s", rec.Body.String())
 	}
 }
+
+// tests if jobs are stale and rejects them
+func TestPostJobResultStale(t *testing.T) {
+    s := setup(t)
+    defer s.Close()
+
+    job := &store.Job{ID: "job1", Status: store.JobAssigned, Attempts: 2, NodeID: "node1"}
+    s.CreateJob(context.Background(), job)
+
+    t.Run("correct node and attempt returns 204", func(t *testing.T) {
+        body := []byte(`{"node_id":"node1","attempt":2}`)
+        req := httptest.NewRequest("POST", "/jobs/job1/result", bytes.NewReader(body))
+        w := httptest.NewRecorder()
+
+        handlePostJobResult(w, req, s)
+
+        if w.Code != http.StatusNoContent {
+            t.Errorf("expected 204, got %d", w.Code)
+        }
+    })
+
+    t.Run("stale attempt returns 409", func(t *testing.T) {
+        body := []byte(`{"node_id":"node1","attempt":1}`)
+        req := httptest.NewRequest("POST", "/jobs/job1/result", bytes.NewReader(body))
+        w := httptest.NewRecorder()
+
+        handlePostJobResult(w, req, s)
+
+        if w.Code != http.StatusConflict {
+            t.Errorf("expected 409, got %d", w.Code)
+        }
+    })
+
+    t.Run("wrong node_id returns 409", func(t *testing.T) {
+        body := []byte(`{"node_id":"node2","attempt":2}`)
+        req := httptest.NewRequest("POST", "/jobs/job1/result", bytes.NewReader(body))
+        w := httptest.NewRecorder()
+
+        handlePostJobResult(w, req, s)
+
+        if w.Code != http.StatusConflict {
+            t.Errorf("expected 409, got %d", w.Code)
+        }
+    })
+
+    t.Run("done job result returns 409", func(t *testing.T) {
+        doneJob := &store.Job{ID: "job2", Status: store.JobDone, Attempts: 1, NodeID: "node1"}
+        s.CreateJob(context.Background(), doneJob)
+
+        body := []byte(`{"node_id":"node1","attempt":1}`)
+        req := httptest.NewRequest("POST", "/jobs/job2/result", bytes.NewReader(body))
+        w := httptest.NewRecorder()
+
+        handlePostJobResult(w, req, s)
+
+        if w.Code != http.StatusConflict {
+            t.Errorf("expected 409, got %d", w.Code)
+        }
+    })
+}
+
+func TestGetNodesStatus(t *testing.T) {
+    s := setup(t)
+    defer s.Close()
+
+    online := &store.Node{
+        ID:       "online-node",
+        LastSeen: time.Now().Add(-30 * time.Second),
+    }
+    offline := &store.Node{
+        ID:       "offline-node",
+        LastSeen: time.Now().Add(-90 * time.Second),
+    }
+    s.CreateNode(context.Background(), online)
+    s.CreateNode(context.Background(), offline)
+
+    req := httptest.NewRequest("GET", "/nodes", nil)
+    w := httptest.NewRecorder()
+
+    handleGetNodes(w, req, s)
+
+    if w.Code != http.StatusOK {
+        t.Fatalf("expected 200, got %d", w.Code)
+    }
+
+    var views []nodeView
+    if err := json.NewDecoder(w.Body).Decode(&views); err != nil {
+        t.Fatalf("failed to decode response: %v", err)
+    }
+
+    for _, v := range views {
+        if v.ID == "online-node" && v.Status != "online" {
+            t.Errorf("online-node should have status 'online', got '%s'", v.Status)
+        }
+        if v.ID == "offline-node" && v.Status != "offline" {
+            t.Errorf("offline-node should have status 'offline', got '%s'", v.Status)
+        }
+    }
+}
