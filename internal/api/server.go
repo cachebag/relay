@@ -133,7 +133,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		views := make([]nodeView, len(nodes))
 		for i, n := range nodes {
 			status := "offline"
-			if reg.Online(n, now) {
+			if store.Online(n, now) {
 				status = "online"
 			}
 			views[i] = nodeView{
