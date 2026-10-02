@@ -3,11 +3,17 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/cachebag/relay/internal/store"
 )
+
+// maxResultBytes caps a POST /jobs/{id}/result body. It leaves room for a
+// 1 MiB stdout and a 1 MiB stderr even if every byte JSON-escapes to six
+// (\u00XX): 2 MiB * 6 = 12 MiB, plus headroom.
+const maxResultBytes = 16 << 20
 
 // NewHandler creates and returns the HTTP handler for the relay API.
 func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) http.Handler {
@@ -204,6 +210,161 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(j)
+	})
+
+	// Hands a node the oldest job placed on it that has not finished.
+	// An assigned job is marked running first. A running job is handed back as
+	// is, so a node that restarted mid-job gets its work back; the scheduler
+	// only requeues jobs when a node goes offline, not when it restarts.
+	// The node does not need to be in the registry: an unknown node simply has
+	// no jobs.
+	mux.HandleFunc("GET /nodes/{id}/jobs/next", func(w http.ResponseWriter, r *http.Request) {
+		nodeID := r.PathValue("id")
+
+		// List returns jobs oldest first, so the first match is the oldest.
+		list, err := jobs.List(r.Context())
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		for _, j := range list {
+			if j.NodeID != nodeID {
+				continue
+			}
+			if j.Status != store.JobAssigned && j.Status != store.JobRunning {
+				continue
+			}
+
+			// Attempts is left alone: handing a job to its node is not a new
+			// placement by the scheduler.
+			if j.Status == store.JobAssigned {
+				j.Status = store.JobRunning
+				if err := jobs.Update(r.Context(), j); err != nil {
+					http.Error(w, "store error", http.StatusInternalServerError)
+					return
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(j)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	// Stores the result a node reports for a job and finishes it.
+	mux.HandleFunc("POST /jobs/{id}/result", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+
+		// Read the whole body under the cap rather than streaming it into the
+		// decoder, so an oversized body is a 413 whatever it contains and
+		// trailing data after the JSON value can't slip through.
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxResultBytes))
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				http.Error(w, "result too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+
+		// ExitCode is a pointer so a body that leaves it out can be told apart
+		// from a real exit code 0 and not read as success.
+		var req struct {
+			ExitCode *int   `json:"exit_code"`
+			Stdout   string `json:"stdout"`
+			Stderr   string `json:"stderr"`
+		}
+
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+
+		if req.ExitCode == nil {
+			http.Error(w, "exit_code is required", http.StatusBadRequest)
+			return
+		}
+
+		// Keep the Get and Update adjacent: validation of who is reporting
+		// belongs between them.
+		j, err := jobs.Get(r.Context(), id)
+
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		j.ExitCode = *req.ExitCode
+		j.Stdout = req.Stdout
+		j.Stderr = req.Stderr
+
+		if j.ExitCode == 0 {
+			j.Status = store.JobDone
+		} else {
+			j.Status = store.JobFailed
+		}
+
+		if err := jobs.Update(r.Context(), j); err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	// Returns the output of a finished job. This is the endpoint `relay logs`
+	// reads.
+	mux.HandleFunc("GET /jobs/{id}/output", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+
+		j, err := jobs.Get(r.Context(), id)
+
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		// Queued, assigned and running jobs have no output yet.
+		if j.Status != store.JobDone && j.Status != store.JobFailed {
+			http.Error(w, "job has not finished", http.StatusConflict)
+			return
+		}
+
+		out := struct {
+			Stdout   string `json:"stdout"`
+			Stderr   string `json:"stderr"`
+			ExitCode int    `json:"exit_code"`
+		}{
+			Stdout:   j.Stdout,
+			Stderr:   j.Stderr,
+			ExitCode: j.ExitCode,
+		}
+
+		// A reported failure always has a non-zero exit code, so a failed job
+		// with exit code 0 was failed by the scheduler and never reported.
+		// Answer -1 so `relay logs` exits non-zero instead of printing nothing
+		// and exiting 0 as if the job had succeeded.
+		if j.Status == store.JobFailed && j.ExitCode == 0 {
+			out.ExitCode = -1
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(out)
 	})
 
 	// Lists all jobs.

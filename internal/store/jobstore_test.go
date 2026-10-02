@@ -45,6 +45,9 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 
 	j.Status = JobAssigned
 	j.NodeID = "node-a"
+	j.ExitCode = 3
+	j.Stdout = "out\n"
+	j.Stderr = "err\n"
 	if err := js.Update(ctx, j); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -59,6 +62,15 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	if got.NodeID != "node-a" {
 		t.Fatalf("want node_id %q, got %q", "node-a", got.NodeID)
 	}
+	if got.ExitCode != 3 {
+		t.Fatalf("want exit code 3, got %d", got.ExitCode)
+	}
+	if got.Stdout != "out\n" {
+		t.Fatalf("want stdout %q, got %q", "out\n", got.Stdout)
+	}
+	if got.Stderr != "err\n" {
+		t.Fatalf("want stderr %q, got %q", "err\n", got.Stderr)
+	}
 
 	list, err := js.List(ctx)
 	if err != nil {
@@ -69,6 +81,10 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	}
 	if list[0].ID != j.ID {
 		t.Fatalf("want id %q, got %q", j.ID, list[0].ID)
+	}
+	if list[0].ExitCode != 3 || list[0].Stdout != "out\n" || list[0].Stderr != "err\n" {
+		t.Fatalf("list lost the result: exit %d, stdout %q, stderr %q",
+			list[0].ExitCode, list[0].Stdout, list[0].Stderr)
 	}
 
 	if _, err := js.Get(ctx, "nope"); !errors.Is(err, ErrNotFound) {
