@@ -129,7 +129,6 @@ func (d *DockerRunner) Run(ctx context.Context, j store.Job) (Result, error) {
 			return Result{}, ctx.Err()
 		}
 		res.ExitCode = exitTimeout
-		res.Stderr += fmt.Sprintf("\nrelay: job timed out after %s")
 		return res, nil
 	}
 
