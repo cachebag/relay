@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/cachebag/relay/internal/agent"
@@ -23,6 +24,18 @@ func main() {
 		"pool-token",
 		"", "join token for the pool (required)")
 
+	// Container image every job runs in.
+	image := flag.String(
+		"image",
+		"alpine:3.20",
+		"docker image jobs run in")
+
+	// Docker network mode for job containers.
+	network := flag.String(
+		"network",
+		"none",
+		"docker network mode for job containers (none disables networking)")
+
 	// Makes the 'flag' package inspect command-line argument
 	flag.Parse()
 
@@ -32,12 +45,36 @@ func main() {
 		os.Exit(2)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	// Jobs only ever run inside docker, so refuse to start without it.
+	runner := agent.NewDockerRunner(*image, *network)
+	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	err := runner.Check(checkCtx)
+	cancel()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	node, err := agent.Collect()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Picks up assigned jobs and runs them in containers.
+	go func() {
+		if err := agent.RunJobs(ctx, *scheduler, node.ID, runner, 2*time.Second); err != nil && ctx.Err() == nil {
+			log.Fatal(err)
+		}
+	}()
+
 	// Repeatedly sends a heartbeat every 10 seconds to scheduler
 	if err := agent.Run(
-		context.Background(),
+		ctx,
 		*scheduler,
 		*poolToken,
-		10*time.Second); err != nil {
+		10*time.Second); err != nil && ctx.Err() == nil {
 		log.Fatal(err)
 	}
 }
