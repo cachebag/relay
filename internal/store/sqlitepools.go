@@ -26,16 +26,30 @@ func NewSQLitePools(db *sql.DB) (*SQLitePools, error) {
 }
 
 func (s *SQLitePools) Create(ctx context.Context, p Pool) error {
-	_, err := s.db.ExecContext(
+	result, err := s.db.ExecContext(
 		ctx,
-		`INSERT INTO pools (id, name, token, created_at)
+		`INSERT OR IGNORE INTO pools (id, name, token, created_at)
 		 VALUES (?, ?, ?, ?)`,
 		p.ID,
 		p.Name,
 		p.Token,
 		p.CreatedAt.Unix(),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	// No row was inserted because a pool with this ID or token already exists.
+	if rowsAffected == 0 {
+		return ErrExists
+	}
+
+	return nil
 }
 
 func (s *SQLitePools) Get(ctx context.Context, id string) (Pool, error) {
