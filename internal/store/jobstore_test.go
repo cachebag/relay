@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -82,4 +83,21 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 
 func TestMemJobs(t *testing.T) {
 	testJobRoundTrip(t, NewMemJobs())
+}
+
+func TestSQLiteJobs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "relay.db")
+
+	db, err := NewSQLite(path)
+	if err != nil {
+		t.Fatalf("new sqlite: %v", err)
+	}
+	defer db.Close()
+
+	jobs, err := NewSQLiteJobs(db.DB())
+	if err != nil {
+		t.Fatalf("new sqlite jobs: %v", err)
+	}
+
+	testJobRoundTrip(t, jobs)
 }

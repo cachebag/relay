@@ -13,10 +13,14 @@ type SQLite struct {
 }
 
 func NewSQLite(path string) (*SQLite, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open(
+		"sqlite",
+		"file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)",
+	)
 	if err != nil {
 		return nil, err
 	}
+
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS nodes (
 		id        TEXT PRIMARY KEY,
 		hostname  TEXT NOT NULL,
@@ -31,7 +35,9 @@ func NewSQLite(path string) (*SQLite, error) {
 		db.Close()
 		return nil, err
 	}
+
 	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN pool_id TEXT NOT NULL DEFAULT ''`)
+
 	return &SQLite{db: db}, nil
 }
 
@@ -69,7 +75,12 @@ func (s *SQLite) List(_ context.Context) ([]Node, error) {
 		n.LastSeen = time.Unix(sec, 0).UTC()
 		out = append(out, n)
 	}
+
 	return out, rows.Err()
+}
+
+func (s *SQLite) DB() *sql.DB {
+	return s.db
 }
 
 // Windows locks open files, so TempDir cleanup fails without this.
