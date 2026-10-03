@@ -101,7 +101,7 @@ func (s *SQLitePools) List(ctx context.Context) ([]Pool, error) {
 		ctx,
 		`SELECT id, name, token, created_at
 		 FROM pools
-		 ORDER BY created_at`,
+		 ORDER BY created_at ASC, id ASC`,
 	)
 	if err != nil {
 		return nil, err
