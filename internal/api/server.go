@@ -3,11 +3,18 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/cachebag/relay/internal/store"
 )
+
+// nodeView is a node plus its online/offline status, as returned by GET /nodes.
+type nodeView struct {
+	store.Node
+	Status string `json:"status"`
+}
 
 // NewHandler creates and returns the HTTP handler for the relay API.
 func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) http.Handler {
@@ -140,8 +147,22 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			nodes = filtered
 		}
 
+		// Mark each node online or offline from its last heartbeat.
+		now := time.Now()
+		views := make([]nodeView, len(nodes))
+		for i, n := range nodes {
+			status := "offline"
+			if store.Online(n, now) {
+				status = "online"
+			}
+			views[i] = nodeView{
+				Node:   n,
+				Status: status,
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(nodes)
+		json.NewEncoder(w).Encode(views)
 	})
 
 	// Creates a new job.
@@ -216,6 +237,51 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(jobsList)
+	})
+
+	// Accepts a job result from the node running it.
+	mux.HandleFunc("POST /jobs/{id}/result", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+
+		var req struct {
+			NodeID  string `json:"node_id"`
+			Attempt int    `json:"attempt"`
+		}
+
+		// Read the node ID and attempt number from the request.
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+
+		j, err := jobs.Get(r.Context(), id)
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		// Reject the result if the job is no longer active on this node
+		// for this attempt. It was requeued or reassigned.
+		if (j.Status != store.JobAssigned && j.Status != store.JobRunning) ||
+			j.NodeID != req.NodeID || j.Attempts != req.Attempt {
+			log.Printf("stale result for job %s from %s (attempt %d, current %d)", j.ID, req.NodeID, req.Attempt, j.Attempts)
+			http.Error(w, "stale result: job was reassigned", http.StatusConflict)
+			return
+		}
+
+		// Mark the job done.
+		j.Status = store.JobDone
+		if err := jobs.Update(r.Context(), j); err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	})
 
 	return mux
