@@ -255,7 +255,7 @@ If the node cannot be stored:
 
 ### GET /nodes
 
-Returns all registered nodes.
+Returns all registered nodes with their current online/offline status.
 
 #### Request
 
@@ -283,10 +283,31 @@ Example response:
     "cpus": 4,
     "mem_bytes": 8000000000,
     "pool_id": "pool-id",
-    "last_seen": "2026-09-19T12:00:00Z"
+    "last_seen": "2026-09-19T12:00:00Z",
+    "status": "online"
+  },
+  {
+    "id": "node-2",
+    "hostname": "old-host",
+    "os": "darwin",
+    "arch": "arm64",
+    "cpus": 8,
+    "mem_bytes": 16000000000,
+    "pool_id": "pool-id",
+    "last_seen": "2026-09-19T11:00:00Z",
+    "status": "offline"
   }
 ]
 ```
+
+`status` is computed by the server on each request:
+
+| Value | Meaning |
+| --- | --- |
+| `online` | The node's last heartbeat was within the last 30 seconds |
+| `offline` | The node has not sent a heartbeat in 30 seconds or more |
+
+The 30-second window is `store.NodeTimeout`, the same value the scheduler uses to decide whether a node can receive jobs.
 
 If no nodes have been registered, the endpoint returns:
 
@@ -339,7 +360,8 @@ Example:
     "cpus": 4,
     "mem_bytes": 8000000000,
     "pool_id": "pool-id",
-    "last_seen": "2026-09-19T12:00:00Z"
+    "last_seen": "2026-09-19T12:00:00Z",
+    "status": "online"
   }
 ]
 ```
@@ -524,6 +546,82 @@ If the jobs cannot be retrieved:
 ```
 
 
+## Submit a Job Result
+
+### POST /jobs/{id}/result
+
+Reports that a job has finished on the node it was assigned to.
+
+The server only accepts the result if it comes from the node currently holding the job, for the job's current attempt. This prevents a node that went offline, and whose job was requeued and placed elsewhere, from overwriting the newer attempt when it comes back.
+
+#### Request
+
+Example:
+
+```http
+POST /jobs/40ca4109f082/result
+Content-Type: application/json
+```
+
+Example body:
+
+```json
+{
+  "node_id": "node-1",
+  "attempt": 1
+}
+```
+
+### Request Fields
+
+| Field | Description |
+| --- | --- |
+| `node_id` | ID of the node reporting the result |
+| `attempt` | The job's `attempts` value when the node received it |
+
+#### Success Response
+
+Status:
+
+```text
+204 No Content
+```
+
+The result was accepted and the job is marked `done`. No response body is returned.
+
+#### Error Responses
+
+If the JSON request is malformed:
+
+```text
+400 Bad Request
+```
+
+If the requested job does not exist:
+
+```text
+404 Not Found
+```
+
+If the result is stale:
+
+```text
+409 Conflict
+```
+
+A result is stale when any of the following is true:
+
+- The job's status is not `assigned` or `running`.
+- `node_id` does not match the job's `node_id`.
+- `attempt` does not match the job's current `attempts`.
+
+If the job cannot be retrieved or updated:
+
+```text
+500 Internal Server Error
+```
+
+
 ## Manual Job Endpoint Testing
 
 Start the Relay server before testing the job endpoints:
@@ -670,51 +768,3 @@ The job API tests verify that:
 - Unknown job IDs return `404 Not Found`.
 - All jobs can be retrieved with `GET /jobs`.
 - A fresh job store returns an empty JSON array.
-
-### POST /jobs/{id}/result
-
-Submit a job result from an agent.
-
-**Request body:**
-```json
-{
-  "node_id": "node-123",
-  "attempt": 1,
-  "output": "job result data"
-}
-```
-
-**Response:**
-- `204 No Content` - Result accepted, job marked done
-- `409 Conflict` - Stale result (job was reassigned to another node)
-
----
-
-### GET /nodes
-
-List all nodes with their current online/offline status.
-
-**Query parameters:**
-- `pool` - Filter by pool name (optional)
-
-**Response:**
-```json
-[
-  {
-    "id": "node-1",
-    "pool": "default",
-    "status": "online",
-    "last_seen": "2026-09-30T13:54:00Z"
-  },
-  {
-    "id": "node-2",
-    "pool": "default",
-    "status": "offline",
-    "last_seen": "2026-09-30T13:00:00Z"
-  }
-]
-```
-
-**Status values:**
-- `online` - Node seen within the last 60 seconds
-- `offline` - Node not seen for 60+ seconds

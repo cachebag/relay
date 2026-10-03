@@ -10,6 +10,7 @@ import (
 	"github.com/cachebag/relay/internal/store"
 )
 
+// nodeView is a node plus its online/offline status, as returned by GET /nodes.
 type nodeView struct {
 	store.Node
 	Status string `json:"status"`
@@ -29,11 +30,13 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			Name string `json:"name"`
 		}
 
+		// Read the pool name from the request.
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
 		}
 
+		// Create the pool with a new ID and token.
 		p := store.Pool{
 			ID:        store.NewID(),
 			Name:      req.Name,
@@ -41,11 +44,14 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			CreatedAt: time.Now().UTC(),
 		}
 
+		// Save the new pool.
 		if err := pools.Create(r.Context(), p); err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
 		}
 
+		// Return the created pool.
+		// This is the only endpoint that returns the pool token.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(p)
@@ -59,6 +65,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			return
 		}
 
+		// Hide each pool's token before sending the list.
 		for i := range ps {
 			ps[i].Token = ""
 		}
@@ -69,6 +76,9 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 
 	// Heartbeat endpoint for nodes to report their status.
 	mux.HandleFunc("POST /nodes/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+
+		// Heartbeats now include the normal node information
+		// plus the pool token.
 		var req struct {
 			store.Node
 			PoolToken string `json:"pool_token"`
@@ -86,6 +96,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			return
 		}
 
+		// Find the pool that owns this token.
 		p, err := pools.GetByToken(r.Context(), req.PoolToken)
 
 		if errors.Is(err, store.ErrNotFound) {
@@ -98,7 +109,10 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			return
 		}
 
+		// The node does not choose its pool ID.
+		// The server gets it from the pool token.
 		n.PoolID = p.ID
+
 		n.LastSeen = time.Now().UTC()
 
 		if err := reg.Upsert(r.Context(), n); err != nil {
@@ -109,7 +123,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// List all nodes with online/offline status
+	// List all nodes endpoint for clients to retrieve registered nodes.
 	mux.HandleFunc("GET /nodes", func(w http.ResponseWriter, r *http.Request) {
 		nodes, err := reg.List(r.Context())
 		if err != nil {
@@ -117,18 +131,23 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			return
 		}
 
+		// Check whether a specific pool was requested.
 		poolID := r.URL.Query().Get("pool")
 
 		if poolID != "" {
 			filtered := make([]store.Node, 0)
+
+			// Only keep nodes that belong to the requested pool.
 			for _, n := range nodes {
 				if n.PoolID == poolID {
 					filtered = append(filtered, n)
 				}
 			}
+
 			nodes = filtered
 		}
 
+		// Mark each node online or offline from its last heartbeat.
 		now := time.Now()
 		views := make([]nodeView, len(nodes))
 		for i, n := range nodes {
@@ -152,6 +171,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			Command []string `json:"command"`
 		}
 
+		// Read the command from the request.
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
@@ -162,6 +182,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			return
 		}
 
+		// Create the job with a server-generated ID and queued status.
 		j := store.Job{
 			ID:        store.NewID(),
 			Command:   req.Command,
@@ -169,6 +190,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			CreatedAt: time.Now().UTC(),
 		}
 
+		// Save the new job.
 		if err := jobs.Create(r.Context(), j); err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
@@ -217,7 +239,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		json.NewEncoder(w).Encode(jobsList)
 	})
 
-	// Submit a job result - reject stale results with 409
+	// Accepts a job result from the node running it.
 	mux.HandleFunc("POST /jobs/{id}/result", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 
@@ -226,6 +248,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			Attempt int    `json:"attempt"`
 		}
 
+		// Read the node ID and attempt number from the request.
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
@@ -242,6 +265,8 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			return
 		}
 
+		// Reject the result if the job is no longer active on this node
+		// for this attempt. It was requeued or reassigned.
 		if (j.Status != store.JobAssigned && j.Status != store.JobRunning) ||
 			j.NodeID != req.NodeID || j.Attempts != req.Attempt {
 			log.Printf("stale result for job %s from %s (attempt %d, current %d)", j.ID, req.NodeID, req.Attempt, j.Attempts)
@@ -249,6 +274,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			return
 		}
 
+		// Mark the job done.
 		j.Status = store.JobDone
 		if err := jobs.Update(r.Context(), j); err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
