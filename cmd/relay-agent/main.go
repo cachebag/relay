@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/cachebag/relay/internal/agent"
@@ -37,10 +39,15 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Cancels the context on Ctrl-C or SIGTERM, which kills a running job
+	// and lets Run wait for it before the agent exits.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Every 10 seconds, sends a heartbeat to the scheduler, then fetches,
 	// runs and reports the node's next job.
 	a := agent.New(*scheduler, *poolToken, node)
-	if err := a.Run(context.Background(), 10*time.Second); err != nil {
+	if err := a.Run(ctx, 10*time.Second); err != nil && ctx.Err() == nil {
 		log.Fatal(err)
 	}
 }

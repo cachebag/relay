@@ -41,11 +41,11 @@ func RunCommand(ctx context.Context, argv []string) Result {
 			Stderr:   stderr.String(),
 		}
 	default:
-		return Result{ExitCode: -1, Stdout: stdout.String(), Stderr: err.Error()}
+		return Result{ExitCode: -1, Stdout: stdout.String(), Stderr: err.Error() + "\n"}
 	}
 }
 
-// capWriter keeps the first maxOutput bytes written to it and drops the rest.
+// CapWriter keeps the first maxOutput bytes written to it and drops the rest.
 // It never returns an error, so the process keeps running (and its pipe keeps
 // draining) even when it produces far more output than we keep.
 type CapWriter struct {
