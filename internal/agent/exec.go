@@ -14,16 +14,16 @@ const (
 	truncatedMarker = "\n[output truncated]\n"
 )
 
-// runCommand runs argv directly (no shell) as the agent's user, with no
+// Runs argv directly (no shell) as the agent's user, with no
 // sandbox, and captures stdout and stderr separately. The exit code comes
 // from the process; if it can't be started at all, the exit code is -1 and
 // stderr holds the error text.
-func runCommand(ctx context.Context, argv []string) Result {
+func RunCommand(ctx context.Context, argv []string) Result {
 	if len(argv) == 0 {
 		return Result{ExitCode: -1, Stderr: "empty command"}
 	}
 
-	var stdout, stderr capWriter
+	var stdout, stderr CapWriter
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -48,12 +48,12 @@ func runCommand(ctx context.Context, argv []string) Result {
 // capWriter keeps the first maxOutput bytes written to it and drops the rest.
 // It never returns an error, so the process keeps running (and its pipe keeps
 // draining) even when it produces far more output than we keep.
-type capWriter struct {
+type CapWriter struct {
 	buf       bytes.Buffer
 	truncated bool
 }
 
-func (w *capWriter) Write(p []byte) (int, error) {
+func (w *CapWriter) Write(p []byte) (int, error) {
 	n := len(p)
 	if room := maxOutput - w.buf.Len(); room > 0 {
 		keep := min(room, len(p))
@@ -66,7 +66,7 @@ func (w *capWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (w *capWriter) String() string {
+func (w *CapWriter) String() string {
 	if w.truncated {
 		return w.buf.String() + truncatedMarker
 	}

@@ -41,7 +41,7 @@ func New(schedulerURL, poolToken string, n store.Node) *Agent {
 		poolToken:    poolToken,
 		node:         n,
 		client:       &http.Client{Timeout: 5 * time.Second},
-		run:          runCommand,
+		run:          RunCommand,
 	}
 }
 
