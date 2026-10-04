@@ -22,11 +22,20 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 		status     TEXT NOT NULL,
 		node_id    TEXT NOT NULL,
 		attempts   INTEGER NOT NULL,
-		created_at INTEGER NOT NULL
+		created_at INTEGER NOT NULL,
+		exit_code  INTEGER NOT NULL DEFAULT 0,
+		stdout     TEXT NOT NULL DEFAULT '',
+		stderr     TEXT NOT NULL DEFAULT ''
 	)`)
 	if err != nil {
 		return nil, err
 	}
+
+	// Databases created before results were stored lack these columns. Adding
+	// one that already exists fails harmlessly, so the errors are ignored.
+	_, _ = db.Exec(`ALTER TABLE jobs ADD COLUMN exit_code INTEGER NOT NULL DEFAULT 0`)
+	_, _ = db.Exec(`ALTER TABLE jobs ADD COLUMN stdout TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE jobs ADD COLUMN stderr TEXT NOT NULL DEFAULT ''`)
 
 	return &SQLiteJobs{db: db}, nil
 }
@@ -52,15 +61,21 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 			status,
 			node_id,
 			attempts,
-			created_at
+			created_at,
+			exit_code,
+			stdout,
+			stderr
 		)
-		VALUES (?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		j.ID,
 		string(command),
 		j.Status,
 		j.NodeID,
 		j.Attempts,
 		j.CreatedAt.Unix(),
+		j.ExitCode,
+		j.Stdout,
+		j.Stderr,
 	)
 	if err != nil {
 		return err
@@ -90,7 +105,7 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, command, status, node_id, attempts, created_at
+		`SELECT id, command, status, node_id, attempts, created_at, exit_code, stdout, stderr
 		 FROM jobs
 		 WHERE id = ?`,
 		id,
@@ -101,6 +116,9 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 		&j.NodeID,
 		&j.Attempts,
 		&createdAt,
+		&j.ExitCode,
+		&j.Stdout,
+		&j.Stderr,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -128,7 +146,7 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, command, status, node_id, attempts, created_at
+		`SELECT id, command, status, node_id, attempts, created_at, exit_code, stdout, stderr
 		 FROM jobs
 		 ORDER BY created_at ASC, id ASC`,
 	)
@@ -151,6 +169,9 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 			&j.NodeID,
 			&j.Attempts,
 			&createdAt,
+			&j.ExitCode,
+			&j.Stdout,
+			&j.Stderr,
 		); err != nil {
 			return nil, err
 		}
@@ -190,13 +211,19 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		     status = ?,
 		     node_id = ?,
 		     attempts = ?,
-		     created_at = ?
+		     created_at = ?,
+		     exit_code = ?,
+		     stdout = ?,
+		     stderr = ?
 		 WHERE id = ?`,
 		string(command),
 		j.Status,
 		j.NodeID,
 		j.Attempts,
 		j.CreatedAt.Unix(),
+		j.ExitCode,
+		j.Stdout,
+		j.Stderr,
 		j.ID,
 	)
 	if err != nil {
