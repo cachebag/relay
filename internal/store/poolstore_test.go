@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -61,6 +62,23 @@ func testPoolRoundTrip(t *testing.T, ps PoolStore) {
 
 func TestMemPools(t *testing.T) {
 	testPoolRoundTrip(t, NewMemPools())
+}
+
+func TestSQLitePools(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "relay.db")
+
+	db, err := NewSQLite(path)
+	if err != nil {
+		t.Fatalf("new sqlite: %v", err)
+	}
+	defer db.Close()
+
+	pools, err := NewSQLitePools(db.DB())
+	if err != nil {
+		t.Fatalf("new sqlite pools: %v", err)
+	}
+
+	testPoolRoundTrip(t, pools)
 }
 
 func TestNewToken(t *testing.T) {

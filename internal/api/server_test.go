@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cachebag/relay/internal/store"
 )
@@ -657,5 +659,136 @@ func TestJobListEmpty(t *testing.T) {
 
 	if strings.TrimSpace(rec.Body.String()) != "[]" {
 		t.Fatalf("expected body [], got %s", rec.Body.String())
+	}
+}
+
+// postResult sends a result for a job and returns the response status code.
+func postResult(handler http.Handler, jobID, body string) int {
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/jobs/"+jobID+"/result",
+		strings.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	return rec.Code
+}
+
+// TestPostJobResultStale checks that results from the wrong node,
+// an old attempt, or an already-done job are rejected with 409.
+func TestPostJobResultStale(t *testing.T) {
+	newHandler := func(j store.Job) (http.Handler, store.JobStore) {
+		jobs := store.NewMemJobs()
+		if err := jobs.Create(context.Background(), j); err != nil {
+			t.Fatalf("failed to create job: %v", err)
+		}
+		return NewHandler(store.NewMem(), store.NewMemPools(), jobs), jobs
+	}
+
+	assigned := store.Job{
+		ID:       "job1",
+		Command:  []string{"echo", "hi"},
+		Status:   store.JobAssigned,
+		NodeID:   "node1",
+		Attempts: 2,
+	}
+
+	t.Run("correct node and attempt returns 204", func(t *testing.T) {
+		handler, jobs := newHandler(assigned)
+
+		code := postResult(handler, "job1", `{"node_id":"node1","attempt":2}`)
+		if code != http.StatusNoContent {
+			t.Fatalf("expected 204, got %d", code)
+		}
+
+		j, err := jobs.Get(context.Background(), "job1")
+		if err != nil {
+			t.Fatalf("failed to get job: %v", err)
+		}
+		if j.Status != store.JobDone {
+			t.Errorf("expected job status %q, got %q", store.JobDone, j.Status)
+		}
+	})
+
+	t.Run("older attempt returns 409 and job is unchanged", func(t *testing.T) {
+		handler, jobs := newHandler(assigned)
+
+		code := postResult(handler, "job1", `{"node_id":"node1","attempt":1}`)
+		if code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d", code)
+		}
+
+		j, _ := jobs.Get(context.Background(), "job1")
+		if j.Status != store.JobAssigned {
+			t.Errorf("expected job to stay %q, got %q", store.JobAssigned, j.Status)
+		}
+	})
+
+	t.Run("wrong node_id returns 409", func(t *testing.T) {
+		handler, _ := newHandler(assigned)
+
+		code := postResult(handler, "job1", `{"node_id":"node2","attempt":2}`)
+		if code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d", code)
+		}
+	})
+
+	t.Run("already done job returns 409", func(t *testing.T) {
+		done := assigned
+		done.Status = store.JobDone
+
+		handler, _ := newHandler(done)
+
+		code := postResult(handler, "job1", `{"node_id":"node1","attempt":2}`)
+		if code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d", code)
+		}
+	})
+}
+
+// TestNodeListStatus checks that GET /nodes reports online for a
+// recently seen node and offline for one last seen 60 seconds ago.
+func TestNodeListStatus(t *testing.T) {
+	reg := store.NewMem()
+	handler := NewHandler(reg, store.NewMemPools(), store.NewMemJobs())
+
+	fresh := store.Node{ID: "fresh", LastSeen: time.Now().UTC()}
+	old := store.Node{ID: "old", LastSeen: time.Now().UTC().Add(-60 * time.Second)}
+
+	for _, n := range []store.Node{fresh, old} {
+		if err := reg.Upsert(context.Background(), n); err != nil {
+			t.Fatalf("failed to upsert node: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/nodes", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var got []struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	status := map[string]string{}
+	for _, n := range got {
+		status[n.ID] = n.Status
+	}
+
+	if status["fresh"] != "online" {
+		t.Errorf("expected fresh node online, got %q", status["fresh"])
+	}
+	if status["old"] != "offline" {
+		t.Errorf("expected old node offline, got %q", status["old"])
 	}
 }

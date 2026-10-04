@@ -46,6 +46,7 @@ func main() {
 		8080,
 		"Port for relayd to listen on",
 	)
+
 	// Makes the 'flag' package inspect cli arguments.
 	flag.Parse()
 
@@ -61,16 +62,24 @@ func main() {
 		return
 	}
 
+	// Opens the SQLite database used by nodes, pools, and jobs.
 	reg, err := store.NewSQLite("relay.db")
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer reg.Close()
 
-	// Creates an in-memory store for pools.
-	pools := store.NewMemPools()
+	// Creates a SQLite-backed store for pools using the shared database.
+	pools, err := store.NewSQLitePools(reg.DB())
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// Creates an in-memory store for jobs.
-	jobs := store.NewMemJobs()
+	// Creates a SQLite-backed store for jobs using the shared database.
+	jobs, err := store.NewSQLiteJobs(reg.DB())
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Starts listening on the specified port.
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
@@ -83,7 +92,7 @@ func main() {
 	go scheduler.New(reg, jobs).Run(context.Background(), 2*time.Second)
 
 	// Saves any error as a variable called err, and if an error occurs
-	// it will print the error and stop the program
+	// it will print the error and stop the program.
 	if err := http.Serve(ln, api.NewHandler(reg, pools, jobs)); err != nil {
 		log.Fatal(err)
 	}
