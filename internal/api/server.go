@@ -282,7 +282,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		id := r.PathValue("id")
 
 		// ExitCode is a pointer so an empty body can't read as success.
-		// NodeID and Attempt are optional, but whensent they must match.
+		// NodeID and Attempt are required.
 		var req struct {
 			NodeID   string `json:"node_id"`
 			Attempt  int    `json:"attempt"`
