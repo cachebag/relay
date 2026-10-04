@@ -13,6 +13,9 @@ The API currently supports:
 - Job creation
 - Job lookup by ID
 - Job listing
+- Handing a node its next job
+- Accepting job results
+- Serving job output
 
 
 ## Health Check
@@ -550,7 +553,7 @@ If the jobs cannot be retrieved:
 
 ### POST /jobs/{id}/result
 
-Reports that a job has finished on the node it was assigned to.
+Reports that a job has finished on the node it was assigned to with its exit code and output.
 
 The server only accepts the result if it comes from the node currently holding the job, for the job's current attempt. This prevents a node that went offline, and whose job was requeued and placed elsewhere, from overwriting the newer attempt when it comes back.
 
@@ -568,7 +571,10 @@ Example body:
 ```json
 {
   "node_id": "node-1",
-  "attempt": 1
+  "attempt": 1,
+  "exit_code": 0,
+  "stdout": "hi\n",
+  "stderr": ""
 }
 ```
 
@@ -578,6 +584,11 @@ Example body:
 | --- | --- |
 | `node_id` | ID of the node reporting the result |
 | `attempt` | The job's `attempts` value when the node received it |
+| `exit_code` | Exit code of the job. Required, so an empty body cannot read as success |
+| `stdout` | Standard output of the job |
+| `stderr` | Standard error of the job |
+
+The body may be at most 16 MiB.
 
 #### Success Response
 
@@ -587,11 +598,11 @@ Status:
 204 No Content
 ```
 
-The result was accepted and the job is marked `done`. No response body is returned.
+The result was accepted and stored. The job is marked `done` if `exit_code` is 0, otherwise `failed`. No response body is returned.
 
 #### Error Responses
 
-If the JSON request is malformed:
+If the JSON request is malformed or `exit_code` is missing:
 
 ```text
 400 Bad Request
@@ -601,6 +612,12 @@ If the requested job does not exist:
 
 ```text
 404 Not Found
+```
+
+If the request body is larger than 16 MiB:
+
+```text
+413 Request Entity Too Large
 ```
 
 If the result is stale:
@@ -617,6 +634,96 @@ A result is stale when any of the following is true:
 
 If the job cannot be retrieved or updated:
 
+```text
+500 Internal Server Error
+```
+
+## Get a Node's Next Job
+
+### GET /nodes/{id}/jobs/next
+
+Returns the oldest job placed on the node that is still `assigned` or `running`. A node calls this to pick up work.
+
+#### Request
+
+Example:
+```http
+GET /nodes/node-1/jobs/next
+```
+
+No request body is required.
+
+#### Success Response
+
+Status:
+
+```text
+200 OK
+```
+
+Example response, in the same shape as `GET /jobs/{id}`:
+
+```json
+{
+  "id": "40ca4109f082",
+  "command": ["echo", "hi"],
+  "status": "running",
+  "node_id": "node-1",
+  "attempts": 1,
+  "created_at": "2026-09-23T15:01:03.320292Z"
+}
+```
+
+If the job was `assigned`, it is set to `running` before the response is sent. `attempts` is not changed.
+
+A `running` job is returned again on every call until a result is reported. A node that restarts mid-job gets its work back this way.
+
+If there is nothing for the node, including a node the registry does not know:
+
+```text
+204 No Content
+```
+
+#### Error Response
+
+If the jobs cannot be retrieved or updated:
+```text
+500 Internal Server Error
+```
+## Get Job Output
+### GET /jobs/{id}/output
+Returns the output a node reported for a finished job. `relay logs` calls this.
+#### Request
+Example:
+```http
+GET /jobs/40ca4109f082/output
+```
+No request body is required.
+#### Success Response
+Status:
+```text
+200 OK
+```
+Example response:
+```json
+{
+  "stdout": "hi\n",
+  "stderr": "",
+  "exit_code": 0
+}
+```
+The output is available once the job is `done` or `failed`.
+A job the scheduler failed after 3 attempts never reported a result, so it has no output. The response has empty `stdout` and `stderr` and an `exit_code` of `-1`, so `relay logs` exits non-zero.
+#### Error Responses
+If the requested job does not exist:
+```text
+404 Not Found
+```
+If the job is still `queued`, `assigned` or `running`:
+```text
+409 Conflict
+```
+If the job cannot be retrieved:
 ```text
 500 Internal Server Error
 ```

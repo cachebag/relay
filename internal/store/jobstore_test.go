@@ -46,6 +46,9 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 
 	j.Status = JobAssigned
 	j.NodeID = "node-a"
+	j.ExitCode = 3
+	j.Stdout = "hi\n"
+	j.Stderr = "boom \u00e9\n"
 	if err := js.Update(ctx, j); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -59,6 +62,15 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	}
 	if got.NodeID != "node-a" {
 		t.Fatalf("want node_id %q, got %q", "node-a", got.NodeID)
+	}
+	if got.ExitCode != 3 {
+		t.Fatalf("want exit_code 3, got %d", got.ExitCode)
+	}
+	if got.Stdout != "hi\n" {
+		t.Fatalf("want stdout %q, got %q", "hi\n", got.Stdout)
+	}
+	if got.Stderr != "boom \u00e9\n" {
+		t.Fatalf("want stderr %q, got %q", "boom \u00e9\n", got.Stderr)
 	}
 
 	list, err := js.List(ctx)

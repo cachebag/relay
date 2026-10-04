@@ -28,6 +28,14 @@ type Job struct {
 	// node goes offline, and the scheduler gives up once it reaches its cap.
 	Attempts  int       `json:"attempts"`
 	CreatedAt time.Time `json:"created_at"`
+	// ExitCode, Stdout and Stderr hold the result a node reported. A reported
+	// failure always has a non-zero ExitCode, so a failed job with ExitCode 0
+	// never reported (the scheduler gave up on it). Stdout and Stderr stay out
+	// of the JSON because the dashboard polls the job list every 2 seconds;
+	// GET /jobs/{id}/output serves them instead.
+	ExitCode int    `json:"-"`
+	Stdout   string `json:"-"`
+	Stderr   string `json:"-"`
 }
 
 // JobStore is the storage contract for jobs, mirroring Registry for nodes:

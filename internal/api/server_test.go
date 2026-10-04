@@ -699,7 +699,7 @@ func TestPostJobResultStale(t *testing.T) {
 	t.Run("correct node and attempt returns 204", func(t *testing.T) {
 		handler, jobs := newHandler(assigned)
 
-		code := postResult(handler, "job1", `{"node_id":"node1","attempt":2}`)
+		code := postResult(handler, "job1", `{"node_id":"node1","attempt":2,"exit_code":0}`)
 		if code != http.StatusNoContent {
 			t.Fatalf("expected 204, got %d", code)
 		}
@@ -716,7 +716,7 @@ func TestPostJobResultStale(t *testing.T) {
 	t.Run("older attempt returns 409 and job is unchanged", func(t *testing.T) {
 		handler, jobs := newHandler(assigned)
 
-		code := postResult(handler, "job1", `{"node_id":"node1","attempt":1}`)
+		code := postResult(handler, "job1", `{"node_id":"node1","attempt":1,"exit_code":0}`)
 		if code != http.StatusConflict {
 			t.Fatalf("expected 409, got %d", code)
 		}
@@ -730,7 +730,7 @@ func TestPostJobResultStale(t *testing.T) {
 	t.Run("wrong node_id returns 409", func(t *testing.T) {
 		handler, _ := newHandler(assigned)
 
-		code := postResult(handler, "job1", `{"node_id":"node2","attempt":2}`)
+		code := postResult(handler, "job1", `{"node_id":"node2","attempt":2,"exit_code":0}`)
 		if code != http.StatusConflict {
 			t.Fatalf("expected 409, got %d", code)
 		}
@@ -742,11 +742,201 @@ func TestPostJobResultStale(t *testing.T) {
 
 		handler, _ := newHandler(done)
 
-		code := postResult(handler, "job1", `{"node_id":"node1","attempt":2}`)
+		code := postResult(handler, "job1", `{"node_id":"node1","attempt":2,"exit_code":0}`)
 		if code != http.StatusConflict {
 			t.Fatalf("expected 409, got %d", code)
 		}
 	})
+}
+
+// getJSON sends a GET and returns the recorder.
+func getJSON(handler http.Handler, path string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+// Creates a new HTTP handler and in-memory job store that is pre-populated
+// with the given jobs.
+func newJobHandler(t *testing.T, js ...store.Job) (http.Handler, store.JobStore) {
+	t.Helper()
+	jobs := store.NewMemJobs()
+	for _, j := range js {
+		if err := jobs.Create(context.Background(), j); err != nil {
+			t.Fatalf("failed to create job: %v", err)
+		}
+	}
+	return NewHandler(store.NewMem(), store.NewMemPools(), jobs), jobs
+}
+
+// TestNextJobNothingAssigned checks that a node with no work, or an unknown
+// node, gets 204.
+func TestNextJobNothingAssigned(t *testing.T) {
+	handler, _ := newJobHandler(t,
+		store.Job{ID: "q", Status: store.JobQueued},
+		store.Job{ID: "other", Status: store.JobAssigned, NodeID: "node2"},
+		store.Job{ID: "fin", Status: store.JobDone, NodeID: "node1"},
+	)
+	for _, path := range []string{"/nodes/node1/jobs/next", "/nodes/ghost/jobs/next"} {
+		rec := getJSON(handler, path)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("%s: expected 204, got %d", path, rec.Code)
+		}
+	}
+}
+
+// TestNextJobReturnsOldestForNode checks that the oldest job for the node is
+// returned, marked running, and handed back again without touching attempts.
+func TestNextJobReturnsOldestForNode(t *testing.T) {
+	now := time.Now().UTC()
+	handler, jobs := newJobHandler(t,
+		store.Job{ID: "newer", Command: []string{"b"}, Status: store.JobAssigned, NodeID: "node1", Attempts: 1, CreatedAt: now},
+		store.Job{ID: "older", Command: []string{"a"}, Status: store.JobAssigned, NodeID: "node1", Attempts: 2, CreatedAt: now.Add(-time.Minute)},
+		store.Job{ID: "elsewhere", Command: []string{"c"}, Status: store.JobAssigned, NodeID: "node2", Attempts: 1, CreatedAt: now.Add(-time.Hour)},
+	)
+	// Request the next job for node1 twice and ensure the oldest assigned job is returned each time.
+	for i := 0; i < 2; i++ {
+		rec := getJSON(handler, "/nodes/node1/jobs/next")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("call %d: expected 200, got %d", i, rec.Code)
+		}
+		var got store.Job
+		if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+			t.Fatalf("call %d: failed to decode: %v", i, err)
+		}
+		if got.ID != "older" {
+			t.Fatalf("call %d: expected job older, got %q", i, got.ID)
+		}
+		if got.Attempts != 2 {
+			t.Fatalf("call %d: expected attempts 2, got %d", i, got.Attempts)
+		}
+		stored, _ := jobs.Get(context.Background(), "older")
+		if stored.Status != store.JobRunning {
+			t.Fatalf("call %d: expected stored status running, got %q", i, stored.Status)
+		}
+	}
+
+	other, _ := jobs.Get(context.Background(), "elsewhere")
+	if other.Status != store.JobAssigned {
+		t.Fatalf("other node's job changed to %q", other.Status)
+	}
+}
+
+// TestPostJobResultOutcome checks that the exit code decides done or failed.
+func TestPostJobResultOutcome(t *testing.T) {
+	cases := []struct {
+		body string
+		want store.JobStatus
+	}{
+		{`{"node_id":"node1","attempt":1,"exit_code":0,"stdout":"hi\n"}`, store.JobDone},
+		{`{"node_id":"node1","attempt":1,"exit_code":3,"stderr":"boom"}`, store.JobFailed},
+	}
+
+	for _, tc := range cases {
+		handler, jobs := newJobHandler(t, store.Job{ID: "job1", Status: store.JobRunning, NodeID: "node1", Attempts: 1})
+		if code := postResult(handler, "job1", tc.body); code != http.StatusNoContent {
+			t.Fatalf("%s: expected 204, got %d", tc.body, code)
+		}
+		j, _ := jobs.Get(context.Background(), "job1")
+		if j.Status != tc.want {
+			t.Errorf("%s: expected status %q, got %q", tc.body, tc.want, j.Status)
+		}
+	}
+}
+
+// TestPostJobResultRejected checks bad JSON, a missing exit_code, an
+// oversized body and an unknown job.
+func TestPostJobResultRejected(t *testing.T) {
+	handler, jobs := newJobHandler(t, store.Job{ID: "job1", Status: store.JobRunning, NodeID: "node1", Attempts: 1})
+	big := `{"node_id":"node1","attempt":1,"exit_code":0,"stdout":"` + strings.Repeat("a", 16<<20) + `"}`
+	cases := []struct {
+		name string
+		id   string
+		body string
+		want int
+	}{
+		{"bad json", "job1", `{`, http.StatusBadRequest},
+		{"missing exit_code", "job1", `{"node_id":"node1","attempt":1}`, http.StatusBadRequest},
+		{"empty body", "job1", ``, http.StatusBadRequest},
+		{"oversized", "job1", big, http.StatusRequestEntityTooLarge},
+		{"unknown job", "nope", `{"node_id":"node1","attempt":1,"exit_code":0}`, http.StatusNotFound},
+	}
+
+	for _, tc := range cases {
+		if code := postResult(handler, tc.id, tc.body); code != tc.want {
+			t.Errorf("%s: expected %d, got %d", tc.name, tc.want, code)
+		}
+	}
+
+	j, _ := jobs.Get(context.Background(), "job1")
+	if j.Status != store.JobRunning {
+		t.Errorf("rejected results changed job to %q", j.Status)
+	}
+}
+
+// TestJobOutput checks the output endpoint across the job lifecycle.
+func TestJobOutput(t *testing.T) {
+	handler, _ := newJobHandler(t,
+		store.Job{ID: "queued", Status: store.JobQueued},
+		store.Job{ID: "assigned", Status: store.JobAssigned, NodeID: "node1"},
+		store.Job{ID: "running", Status: store.JobRunning, NodeID: "node1"},
+		store.Job{ID: "reported", Status: store.JobRunning, NodeID: "node1", Attempts: 1},
+		store.Job{ID: "gaveup", Status: store.JobFailed, Attempts: 3},
+	)
+
+	for _, id := range []string{"queued", "assigned", "running"} {
+		if rec := getJSON(handler, "/jobs/"+id+"/output"); rec.Code != http.StatusConflict {
+			t.Errorf("%s: expected 409, got %d", id, rec.Code)
+		}
+	}
+
+	if rec := getJSON(handler, "/jobs/nope/output"); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown job: expected 404, got %d", rec.Code)
+	}
+
+	type output struct {
+		Stdout   string `json:"stdout"`
+		Stderr   string `json:"stderr"`
+		ExitCode int    `json:"exit_code"`
+	}
+
+	read := func(id string) output {
+		t.Helper()
+		rec := getJSON(handler, "/jobs/"+id+"/output")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d", id, rec.Code)
+		}
+		var o output
+		if err := json.NewDecoder(rec.Body).Decode(&o); err != nil {
+			t.Fatalf("%s: failed to decode: %v", id, err)
+		}
+		return o
+	}
+
+	body := `{"node_id":"node1","attempt":1,"exit_code":3,"stdout":"hi\n","stderr":"oops\n"}`
+	if code := postResult(handler, "reported", body); code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", code)
+	}
+
+	if got, want := read("reported"), (output{"hi\n", "oops\n", 3}); got != want {
+		t.Errorf("reported: expected %+v, got %+v", want, got)
+	}
+
+	if got, want := read("gaveup"), (output{"", "", -1}); got != want {
+		t.Errorf("gaveup: expected %+v, got %+v", want, got)
+	}
+}
+
+// TestJobResponsesOmitOutput checks that stdout and stderr stay out of the
+// job endpoints the dashboard polls.
+func TestJobResponsesOmitOutput(t *testing.T) {
+	handler, _ := newJobHandler(t, store.Job{ID: "job1", Status: store.JobFailed, ExitCode: 1, Stdout: "SECRETOUT", Stderr: "SECRETERR"})
+	for _, path := range []string{"/jobs", "/jobs/job1"} {
+		body := getJSON(handler, path).Body.String()
+		if strings.Contains(body, "SECRET") {
+			t.Errorf("%s leaked output: %s", path, body)
+		}
+	}
 }
 
 // TestNodeListStatus checks that GET /nodes reports online for a
