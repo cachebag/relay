@@ -211,6 +211,88 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		json.NewEncoder(w).Encode(views)
 	})
 
+	// Removes a node from its pool when the node leaves. Its unfinished jobs
+	// go back to the queue without counting as an attempt.
+	mux.HandleFunc("DELETE /nodes/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+
+		// The join token comes as a bearer token.
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || token == "" {
+			http.Error(w, "invalid pool token", http.StatusForbidden)
+			return
+		}
+
+		p, err := pools.GetByToken(r.Context(), token)
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "invalid pool token", http.StatusForbidden)
+			return
+		}
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		nodes, err := reg.List(r.Context())
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		var node *store.Node
+		for i := range nodes {
+			if nodes[i].ID == id {
+				node = &nodes[i]
+				break
+			}
+		}
+		if node == nil {
+			http.Error(w, "node not found", http.StatusNotFound)
+			return
+		}
+
+		// A token can only remove nodes in its own pool.
+		if node.PoolID != p.ID {
+			http.Error(w, "token does not match this node's pool", http.StatusForbidden)
+			return
+		}
+
+		// Requeue before deleting, so a failure halfway leaves the node in
+		// place instead of orphaning its jobs.
+		all, err := jobs.List(r.Context())
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+		for _, j := range all {
+			if j.NodeID != id || (j.Status != store.JobAssigned && j.Status != store.JobRunning) {
+				continue
+			}
+			j.Status = store.JobQueued
+			j.NodeID = ""
+
+			// The scheduler counts an attempt each time it places a job, so
+			// give this one back. Leaving isn't the job's fault.
+			if j.Attempts > 0 {
+				j.Attempts--
+			}
+			if err := jobs.Update(r.Context(), j); err != nil {
+				http.Error(w, "store error", http.StatusInternalServerError)
+				return
+			}
+			log.Printf("node %s left: job %s back in the queue (attempt %d)", id, j.ID, j.Attempts)
+		}
+
+		// Already gone means another request removed it first, which is fine.
+		if err := reg.Delete(r.Context(), id); err != nil && !errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("node %s left pool %s", id, p.ID)
+
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	// Creates a new job.
 	mux.HandleFunc("POST /jobs", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
