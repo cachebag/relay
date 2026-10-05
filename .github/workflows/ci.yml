@@ -50,3 +50,16 @@ jobs:
       - run: uv run ruff check .
 
       - run: uv run pytest
+      
+      - name: Build wheel
+        run: uv build --wheel
+        
+      - name: Install wheel as a tool and smoke-test it
+        shell: bash
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/uv-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/uv-bin
+        run: |
+          uv tool install dist/*.whl
+          "$UV_TOOL_BIN_DIR/relay" --version
+          "$UV_TOOL_BIN_DIR/relay" --help
