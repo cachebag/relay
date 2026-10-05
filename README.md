@@ -22,25 +22,50 @@ Please read the [setup guide](docs/SETUP.md) to get your development environment
 
 # Contribute a machine
 
-First download the binary for your OS from the latest release, then
+First download the binary for your OS from the latest release.
+
+The scheduler address can be set with the `RELAY_SCHEDULER` environment variable. If it is not set, Relay defaults to `http://localhost:8080`. The `--scheduler` command-line flag can still be used and takes precedence over the environment variable.
 
 ### Linux and macOS
 
-Run
-`./relay-agent --scheduler http://<scheduler>:8080 --pool-token <token>`
+Set the scheduler address:
 
- > macOS will refuse to run an unsigned download until you right-click → Open once.
+```bash
+export RELAY_SCHEDULER="http://<scheduler>:8080"
+```
+
+Then run:
+
+```bash
+./relay-agent --pool-token <token>
+```
+
+> macOS will refuse to run an unsigned download until you right-click → Open once.
 
 ### Windows
 
-Run from PowerShell:
+Set the scheduler address from PowerShell:
 
-`.\relay-agent-windows-amd64.exe --scheduler http://<scheduler>:8080 --pool-token <token>`
+```powershell
+$env:RELAY_SCHEDULER="http://<scheduler>:8080"
+```
+
+Then run:
+
+```powershell
+.\relay-agent-windows-amd64.exe --pool-token <token>
+```
+
+You can also provide the scheduler directly with `--scheduler`:
+
+```bash
+./relay-agent --scheduler http://<scheduler>:8080 --pool-token <token>
+```
 
 
 ## Stack
 
 * Go (scheduler and node agent)
-* Python (CLI) 
+* Python (CLI)
 * Tailscale (networking)
 * SQLite (job and node state)

@@ -4,11 +4,11 @@ To develop `relay`, you only need two tools on your device.
 
 ## 1. Install Go
 
-**Windows** — download the installer from https://go.dev/dl/ and run it. Restart your terminal after the installation finishes.
+**Windows** — download the installer from [https://go.dev/dl/](https://go.dev/dl/) and run it. Restart your terminal after the installation finishes.
 
-**macOS** — `brew install go`, or the installer from https://go.dev/dl/.
+**macOS** — `brew install go`, or the installer from [https://go.dev/dl/](https://go.dev/dl/).
 
-**Linux** — `sudo pacman -S go` / `sudo apt install golang-go`, or the tarball from https://go.dev/dl/.
+**Linux** — `sudo pacman -S go` / `sudo apt install golang-go`, or the tarball from [https://go.dev/dl/](https://go.dev/dl/).
 
 Check:
 
@@ -66,7 +66,43 @@ uv run relay
 
 Should print `hello, relay`.
 
-## 6. Tests
+## 6. Scheduler address
+
+By default, the Relay CLI and agent connect to the scheduler at:
+
+```
+http://localhost:8080
+```
+
+You can change the default scheduler address with the `RELAY_SCHEDULER` environment variable.
+
+**Windows PowerShell:**
+
+```
+$env:RELAY_SCHEDULER="http://localhost:9090"
+```
+
+**macOS / Linux:**
+
+```
+export RELAY_SCHEDULER="http://localhost:9090"
+```
+
+The `--scheduler` command-line flag takes precedence over `RELAY_SCHEDULER`.
+
+For example:
+
+```
+relay --scheduler http://localhost:9999 nodes
+```
+
+The scheduler address is selected in this order:
+
+1. `--scheduler`
+2. `RELAY_SCHEDULER`
+3. `http://localhost:8080`
+
+## 7. Tests
 
 Go:
 
@@ -79,8 +115,6 @@ Python (from `cli/`):
 ```
 uv run pytest
 ```
-
-Both will say "no tests" right now. That's expected.
 
 ## Where code goes
 
