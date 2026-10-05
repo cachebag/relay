@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -49,8 +50,38 @@ func testRoundTrip(t *testing.T, reg Registry) {
 	}
 }
 
+// testDelete checks that Delete removes only the named node and reports
+// ErrNotFound for an ID the registry doesn't have.
+func testDelete(t *testing.T, reg Registry) {
+	t.Helper()
+	ctx := context.Background()
+
+	for _, id := range []string{"node-a", "node-b"} {
+		if err := reg.Upsert(ctx, Node{ID: id, Hostname: id, OS: "linux", Arch: "amd64", CPUs: 1, MemBytes: 1}); err != nil {
+			t.Fatalf("upsert %s: %v", id, err)
+		}
+	}
+
+	if err := reg.Delete(ctx, "node-a"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	got, err := reg.List(ctx)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "node-b" {
+		t.Fatalf("want only node-b left, got %+v", got)
+	}
+
+	if err := reg.Delete(ctx, "node-a"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete again: want ErrNotFound, got %v", err)
+	}
+}
+
 func TestMem(t *testing.T) {
 	testRoundTrip(t, NewMem())
+	testDelete(t, NewMem())
 }
 
 func TestSQLite(t *testing.T) {
@@ -60,4 +91,11 @@ func TestSQLite(t *testing.T) {
 	}
 	defer db.Close() // Windows locks open files, so TempDir cleanup fails without this.
 	testRoundTrip(t, db)
+
+	db2, err := NewSQLite(filepath.Join(t.TempDir(), "delete.db"))
+	if err != nil {
+		t.Fatalf("NewSQLite: %v", err)
+	}
+	defer db2.Close()
+	testDelete(t, db2)
 }
