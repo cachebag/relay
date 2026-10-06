@@ -82,12 +82,25 @@ uv run pytest
 
 Both will say "no tests" right now. That's expected.
 
+## Resetting your local database
+
+`relayd` stores nodes, pools, and jobs in `relay.db` in whatever directory you run it from. To wipe it and start clean, stop `relayd` and run from the repo root:
+
+```
+go run ./tools/resetdb
+```
+
+It asks for confirmation, then deletes `relay.db` and its `-wal`/`-shm` files. Flags: `-db <path>` for a different database, `-y` to skip the prompt, `-port <n>` if `relayd` isn't on 8080, and `-force` to skip the "is relayd still running" check.
+
+This is a dev-only tool. It is not part of any release binary or the `relay` CLI.
+
 ## Where code goes
 
 | Path | What |
 |---|---|
 | `cmd/relayd` | control plane binary |
 | `cmd/relay-agent` | node agent binary |
+| `tools/*` | dev-only helpers, never released |
 | `internal/*` | Go packages, one per concern |
 | `cli/relay/` | Python CLI |
 | `docs/adr/` | design decisions |
