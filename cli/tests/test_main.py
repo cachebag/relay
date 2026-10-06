@@ -97,3 +97,22 @@ def test_connection_error_is_friendly(monkeypatch, capsys):
         == "relay: can't reach scheduler at http://unreachable\n"
     )
     assert "Traceback" not in captured.err
+
+    def test_empty_scheduler_env_uses_default(monkeypatch):
+        monkeypatch.setenv("RELAY_SCHEDULER", "")
+
+        actual = {}
+
+        def command(args):
+            actual["scheduler"] = args.scheduler
+
+        monkeypatch.setattr(
+            relay_main.nodes,
+            "register",
+            lambda subparsers: register_test_command(subparsers, command),
+        )
+        monkeypatch.setattr(sys, "argv", ["relay", "test-command"])
+
+        relay_main.main()
+
+        assert actual["scheduler"] == "http://localhost:8080"

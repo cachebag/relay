@@ -19,7 +19,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--scheduler",
-        default=os.environ.get("RELAY_SCHEDULER", "http://localhost:8080"),
+        default=os.environ.get("RELAY_SCHEDULER") or "http://localhost:8080",
         help="scheduler base URL (env: RELAY_SCHEDULER)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
