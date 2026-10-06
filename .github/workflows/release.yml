@@ -26,7 +26,7 @@ jobs:
           mkdir -p dist
           VERSION="${GITHUB_REF_NAME#v}"
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
-              go build -ldflags "-X main.Version=${VERSION}" -o dist/relay-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/relay-agent
+            go build -ldflags "-X main.Version=${VERSION}" -o dist/relay-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/relay-agent
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
             go build -ldflags "-X main.Version=${VERSION}" -o dist/relayd-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./cmd/relayd
       - uses: softprops/action-gh-release@v2

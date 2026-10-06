@@ -24,6 +24,15 @@ Release assets are named `relayd-<os>-<arch>`, `relay-agent-<os>-<arch>` (`.exe`
 and `relay-<version>-py3-none-any.whl`, where `<os>-<arch>` is one of `linux-amd64`,
 `darwin-arm64`, `darwin-amd64`, `windows-amd64`.
 
+Without the GitHub CLI, you can download any asset from the latest release with `curl`:
+
+```sh
+curl -LO https://github.com/cachebag/relay/releases/latest/download/<asset>
+```
+
+> [!WARNING]
+> The `curl` download won't work until the repo is public. Until then, use `gh release download`.
+
 ## Contribute a machine  
 
 First download the binary for your OS from the latest release: 
@@ -32,7 +41,7 @@ First download the binary for your OS from the latest release:
 gh release download --repo cachebag/relay --pattern 'relay-agent-linux-amd64'
 ```
 
-> Replace `relay-agent-linux-amd64` with the latest, stable release binary for your system. 
+> Replace `relay-agent-linux-amd64` with the asset for your OS and architecture (see the list above).
 
   
 ### Linux and macOS:  
@@ -53,7 +62,7 @@ chmod +x relay-agent-linux-amd64
 
 Then, run from PowerShell:
 
-```sh
+```powershell
 ./relay-agent-windows-amd64.exe --scheduler http://<scheduler address>:8080 --pool-token <pool token>
 ```
 > Replace `<scheduler address>`, and `<pool token>` with the scheduler's ipv4 address, and your pool token.
@@ -83,6 +92,9 @@ relay --scheduler http://<scheduler>:8080 logs <id>
 ```
 
 After install, `relay` works from any directory. Update or remove it with:
+
+> Delete any older `relay-*.whl` in the folder before downloading a new one,
+> otherwise `./relay-*.whl` matches more than one file and the install fails.
 
 ```sh
 uv tool install --force ./relay-*.whl   # upgrade: download the newer wheel, then run this
