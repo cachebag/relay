@@ -100,10 +100,9 @@ func TestSQLiteConcurrentAccess(t *testing.T) {
 	}
 }
 
-// TestSQLitePragmas checks that WAL and the busy timeout are in effect. The
-// busy timeout is per connection, so it is checked on several connections
-// from the pool, not just the first.
-func TestSQLitePragmas(t *testing.T) {
+// TestSQLiteSettings checks WAL, the busy timeout and the single-connection
+// limit, which together keep concurrent calls from failing with SQLITE_BUSY.
+func TestSQLiteSettings(t *testing.T) {
 	ctx := context.Background()
 	reg, err := NewSQLite(filepath.Join(t.TempDir(), "relay.db"))
 	if err != nil {
@@ -111,26 +110,21 @@ func TestSQLitePragmas(t *testing.T) {
 	}
 	defer reg.Close()
 
-	for i := range 3 {
-		conn, err := reg.DB().Conn(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer conn.Close()
-
-		var mode string
-		var timeout int
-		if err := conn.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
-			t.Fatal(err)
-		}
-		if err := conn.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&timeout); err != nil {
-			t.Fatal(err)
-		}
-		if mode != "wal" {
-			t.Errorf("connection %d: journal_mode = %q, want wal", i, mode)
-		}
-		if timeout != 5000 {
-			t.Errorf("connection %d: busy_timeout = %d, want 5000", i, timeout)
-		}
+	var mode string
+	var timeout int
+	if err := reg.DB().QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.DB().QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&timeout); err != nil {
+		t.Fatal(err)
+	}
+	if mode != "wal" {
+		t.Errorf("journal_mode = %q, want wal", mode)
+	}
+	if timeout != 5000 {
+		t.Errorf("busy_timeout = %d, want 5000", timeout)
+	}
+	if got := reg.DB().Stats().MaxOpenConnections; got != 1 {
+		t.Errorf("max open connections = %d, want 1", got)
 	}
 }
