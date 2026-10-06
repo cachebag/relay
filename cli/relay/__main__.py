@@ -1,5 +1,9 @@
 import argparse
+import os
+import sys
 from importlib.metadata import version
+
+import httpx
 
 from relay.commands import dash, jobs, logs, nodes, pool, status, submit
 
@@ -14,7 +18,9 @@ def main() -> None:
         help="show relay version",
     )
     parser.add_argument(
-        "--scheduler", default="http://localhost:8080", help="scheduler base URL"
+        "--scheduler",
+        default=os.environ.get("RELAY_SCHEDULER") or "http://localhost:8080",
+        help="scheduler base URL (env: RELAY_SCHEDULER)",
     )
     sub = parser.add_subparsers(dest="command", required=True)
     nodes.register(sub)
@@ -24,8 +30,17 @@ def main() -> None:
     status.register(sub)
     pool.register(sub)
     dash.register(sub)
+
     args = parser.parse_args()
-    args.func(args)
+
+    try:
+        args.func(args)
+    except httpx.ConnectError:
+        print(
+            f"relay: can't reach scheduler at {args.scheduler}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

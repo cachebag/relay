@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -13,11 +14,34 @@ import (
 	"github.com/cachebag/relay/internal/agent"
 )
 
+// Package level variable that stores relay-agent's version number.
+var Version = "0.0.0"
+
+// Prints relay-agent's version number
+func printVersion(w io.Writer) {
+	logger := log.New(w, "", 0)
+	logger.Println("relay-agent", Version)
+}
+
+// Returns RELAY_SCHEDULER if set, otherwise uses the default scheduler URL.
+func schedulerDefault() string {
+	if scheduler := os.Getenv("RELAY_SCHEDULER"); scheduler != "" {
+		return scheduler
+	}
+	return "http://localhost:8080"
+}
+
 func main() {
+	// Creation of version flag
+	version := flag.Bool(
+		"version",
+		false,
+		"Prints what version of relay-agent is being used")
+
 	// Pointer to command-line 'scheduler' flag
 	scheduler := flag.String(
 		"scheduler",
-		"http://localhost:8080",
+		schedulerDefault(),
 		"scheduler base URL")
 
 	// Pointer to command-line 'pool-token' flag
@@ -27,6 +51,12 @@ func main() {
 
 	// Makes the 'flag' package inspect command-line argument
 	flag.Parse()
+
+	// Prints the version and exits if the --version flag is passed.
+	if *version {
+		printVersion(os.Stdout)
+		return
+	}
 
 	// Throws error and exits if pool token is not provided
 	if *poolToken == "" {
