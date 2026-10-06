@@ -17,6 +17,11 @@ import (
 // and resending it will never succeed.
 var errStale = errors.New("result is stale: job was reassigned")
 
+// errRejected means the scheduler refused the result with some other 4xx
+// (the job no longer exists, the result is too large, ...). Like errStale,
+// resending it will never succeed.
+var errRejected = errors.New("result rejected by scheduler")
+
 // Result is what a finished command produced.
 type Result struct {
 	ExitCode int    `json:"exit_code"`
@@ -109,12 +114,14 @@ func (a *Agent) Report(
 	defer resp.Body.Close()
 
 	// Check the response status code to determine if the report was successful.
-	switch resp.StatusCode {
-	case http.StatusNoContent:
+	switch code := resp.StatusCode; {
+	case code == http.StatusNoContent:
 		return nil
-	case http.StatusConflict:
+	case code == http.StatusConflict:
 		return errStale
+	case code >= 400 && code < 500:
+		return fmt.Errorf("%w: scheduler returned %d", errRejected, code)
 	default:
-		return fmt.Errorf("scheduler returned %d", resp.StatusCode)
+		return fmt.Errorf("scheduler returned %d", code)
 	}
 }
