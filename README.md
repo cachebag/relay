@@ -17,21 +17,12 @@ points someone has, the higher priority their jobs get.
 
 # Quickstart
 
-You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and the
-[GitHub CLI](https://cli.github.com/).
+Release assets are named `relayd-<os>-<arch>` and `relay-agent-<os>-<arch>` (`.exe` on Windows),
+where `<os>-<arch>` is one of `linux-amd64`, `darwin-arm64`, `darwin-amd64`, `windows-amd64`.
+The examples below use `linux-amd64`; swap in yours.
 
-Release assets are named `relayd-<os>-<arch>`, `relay-agent-<os>-<arch>` (`.exe` on Windows)
-and `relay-<version>-py3-none-any.whl`, where `<os>-<arch>` is one of `linux-amd64`,
-`darwin-arm64`, `darwin-amd64`, `windows-amd64`.
-
-Without the GitHub CLI, you can download any asset from the latest release with `curl`:
-
-```sh
-curl -LO https://github.com/cachebag/relay/releases/latest/download/<asset>
-```
-
-> [!WARNING]
-> The `curl` download won't work until the repo is public. Until then, use `gh release download`.
+The `relay` CLI (for admins and submitters) needs [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Contributing a machine needs nothing but the agent binary.
 
 ## Scheduler address
 
@@ -47,73 +38,65 @@ export RELAY_SCHEDULER="http://<scheduler address>:8080"    # Linux and macOS
 $env:RELAY_SCHEDULER="http://<scheduler address>:8080"      # Windows PowerShell
 ```
 
-## Contribute a machine  
+## Contribute a machine
 
-First download the binary for your OS from the latest release: 
+You need the scheduler's address and a pool token from your pool admin.
 
-```sh
-gh release download --repo cachebag/relay --pattern 'relay-agent-linux-amd64'
-```
-
-> Replace `relay-agent-linux-amd64` with the asset for your OS and architecture (see the list above).
-
-  
-### Linux and macOS:  
-
-Then, run:  
+### Linux and macOS
 
 ```sh
+curl -LO https://github.com/cachebag/relay/releases/latest/download/relay-agent-linux-amd64
 chmod +x relay-agent-linux-amd64
 ./relay-agent-linux-amd64 --scheduler http://<scheduler address>:8080 --pool-token <pool token>
 ```
-> Replace `<scheduler address>`, and `<pool token>` with the scheduler's ipv4 address, and your pool token.
 
->[!NOTE]
->macOS will refuse to run an unsigned download until you right-click → Open once.
+> [!NOTE]
+> If you download the binary with a browser instead of `curl`, macOS will refuse to run it
+> until you right-click → Open once.
 
-  
-### Windows:  
+### Windows
 
-Then, run from PowerShell:
+From PowerShell:
 
 ```powershell
-./relay-agent-windows-amd64.exe --scheduler http://<scheduler address>:8080 --pool-token <pool token>
+curl.exe -LO https://github.com/cachebag/relay/releases/latest/download/relay-agent-windows-amd64.exe
+.\relay-agent-windows-amd64.exe --scheduler http://<scheduler address>:8080 --pool-token <pool token>
 ```
-> Replace `<scheduler address>`, and `<pool token>` with the scheduler's ipv4 address, and your pool token.
 
+> Use `curl.exe`, not `curl`: in Windows PowerShell, `curl` is an alias for a different command.
+
+## Install the CLI
+
+```sh
+uv tool install "git+https://github.com/cachebag/relay#subdirectory=cli"
+```
+
+After install, `relay` works from any directory. Update or remove it with:
+
+```sh
+uv tool upgrade relay
+uv tool uninstall relay
+```
 
 ## Admin: Run a scheduler and create a pool
 
 ```sh
-gh release download --repo cachebag/relay --pattern 'relayd-linux-amd64'
+curl -LO https://github.com/cachebag/relay/releases/latest/download/relayd-linux-amd64
 chmod +x relayd-linux-amd64
 ./relayd-linux-amd64                  # listens on :8080; leave it running
 
-# in another terminal
-gh release download --repo cachebag/relay --pattern '*.whl'
-uv tool install ./relay-*.whl
+# in another terminal, with the CLI installed
 relay pool create my-pool             # prints a join token; send it to contributors
 ```
 
 ## Submitter: Run a job
 
+With the CLI installed:
+
 ```sh
-gh release download --repo cachebag/relay --pattern '*.whl'
-uv tool install ./relay-*.whl
 relay --scheduler http://<scheduler>:8080 submit -- echo hi   # prints <id>
 relay --scheduler http://<scheduler>:8080 status <id>
 relay --scheduler http://<scheduler>:8080 logs <id>
-```
-
-After install, `relay` works from any directory. Update or remove it with:
-
-> Delete any older `relay-*.whl` in the folder before downloading a new one,
-> otherwise `./relay-*.whl` matches more than one file and the install fails.
-
-```sh
-uv tool install --force ./relay-*.whl   # upgrade: download the newer wheel, then run this
-uv tool upgrade relay                   # only picks up changes for indexed installs, not local wheels
-uv tool uninstall relay
 ```
 
 # For developers
