@@ -21,6 +21,14 @@ func NewSQLite(path string) (*SQLite, error) {
 		return nil, err
 	}
 
+	// SQLite allows one writer at a time, and busy_timeout is not a fair
+	// queue: under enough concurrent writes one can lose every retry and fail
+	// with SQLITE_BUSY after the full 5 s. A single connection makes
+	// database/sql queue callers instead, so SQLite never sees contention.
+	// Nothing here holds a connection across calls (every query closes its
+	// rows before returning), so this can't deadlock.
+	db.SetMaxOpenConns(1)
+
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS nodes (
 		id        TEXT PRIMARY KEY,
 		hostname  TEXT NOT NULL,
