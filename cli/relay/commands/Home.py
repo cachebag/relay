@@ -151,8 +151,9 @@ def register(sub) -> None:
 
 
 def run(args) -> None:
-    choice = HomeApp(args.scheduler).run()
-    if choice == "dash":
-        from relay.commands.dash import Dashboard
+    from relay.commands.dash import Dashboard
 
-        Dashboard(args.scheduler).run()
+    # Bounce between home and dashboard until one of them quits outright.
+    while HomeApp(args.scheduler).run() == "dash":
+        if Dashboard(args.scheduler).run() != "home":
+            break

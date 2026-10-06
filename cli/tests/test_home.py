@@ -48,3 +48,50 @@ def test_quit_exits_with_none():
 
     asyncio.run(drive())
     assert app.return_value is None
+
+
+def test_dashboard_escape_returns_home(monkeypatch):
+    from relay.commands import dash
+
+    monkeypatch.setattr(dash, "fetch", lambda *_a, **_k: [])
+    app = dash.Dashboard("http://localhost:0")
+
+    async def drive():
+        async with app.run_test() as pilot:
+            await pilot.press("escape")
+
+    asyncio.run(drive())
+    assert app.return_value == "home"
+
+
+def test_run_loops_home_and_dash(monkeypatch):
+    from types import SimpleNamespace
+
+    from relay.commands import dash
+
+    calls = []
+
+    class FakeHome:
+        results = iter(["dash", "dash", None])
+
+        def __init__(self, _s):
+            pass
+
+        def run(self):
+            calls.append("home")
+            return next(self.results)
+
+    class FakeDash:
+        results = iter(["home", None])
+
+        def __init__(self, _s):
+            pass
+
+        def run(self):
+            calls.append("dash")
+            return next(self.results)
+
+    monkeypatch.setattr(home, "HomeApp", FakeHome)
+    monkeypatch.setattr(dash, "Dashboard", FakeDash)
+    home.run(SimpleNamespace(scheduler="x"))
+    assert calls == ["home", "dash", "home", "dash"]

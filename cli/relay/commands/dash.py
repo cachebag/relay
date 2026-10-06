@@ -47,6 +47,7 @@ class Dashboard(App):
     # Keyboard shortcuts available while the dashboard is open.
     BINDINGS: ClassVar[list[BindingType]] = [
         ("r", "refresh", "Refresh"),
+        ("escape", "back", "Home"),
         ("q", "quit", "Quit"),
     ]
 
@@ -250,6 +251,10 @@ class Dashboard(App):
     def action_refresh(self) -> None:
         """Handle the manual refresh keyboard action."""
         self.refresh_data()
+
+    def action_back(self) -> None:
+        """Exit with "home" so a caller that chains screens can return to it."""
+        self.exit("home")
 
 
 def register(sub) -> None:
