@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"log"
 	"net/http"
 	"sync"
@@ -27,27 +26,47 @@ type Agent struct {
 	client       *http.Client
 	run          Runner
 
-	// busy is true from the moment a job is picked up until its result has
-	// been reported (or given up on).
+	// cacheDir is where an unreported result is saved so it survives a
+	// restart. Empty means keep it in memory only. A field so tests can
+	// point it at a temp directory.
+	cacheDir string
+	// pending is a finished result the scheduler hasn't acknowledged yet.
+	// It is only touched by the job goroutine while busy, and by Tick
+	// otherwise.
+	pending *pending
+
+	// busy is true from the moment a job is picked up until it has finished
+	// and its result has been reported once.
 	busy atomic.Bool
 	wg   sync.WaitGroup
 }
 
 // New returns an Agent for node n that talks to the scheduler at schedulerURL
-// and runs commands on the local machine.
+// and runs commands on the local machine. A result left unreported by a
+// previous run is loaded from the user cache directory and sent first.
 func New(schedulerURL, poolToken string, n store.Node) *Agent {
-	return &Agent{
+	return newAgent(schedulerURL, poolToken, n, defaultCacheDir())
+}
+
+// newAgent is New with the cache directory chosen by the caller, so tests
+// can use a temp directory.
+func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Agent {
+	a := &Agent{
 		schedulerURL: schedulerURL,
 		poolToken:    poolToken,
 		node:         n,
 		client:       &http.Client{Timeout: 5 * time.Second},
 		run:          RunCommand,
+		cacheDir:     cacheDir,
 	}
+	a.loadPending()
+	return a
 }
 
 // Tick does one interval of work: send a heartbeat, then, if no job is
-// already running, ask the scheduler for the next one and start it in the
-// background. It returns without waiting for the job to finish, so the caller
+// already running, report any result still waiting to be sent, then ask the
+// scheduler for the next job and start it in the background. While a result
+// can't be reported, no new job is fetched. It returns without waiting for the job to finish, so the caller
 // keeps heartbeating while the job runs. Failures are logged and retried on
 // the next Tick, since the scheduler being unreachable is a normal condition.
 //
@@ -62,6 +81,10 @@ func (a *Agent) Tick(ctx context.Context) {
 	// The scheduler hands a running job back to its node on every poll, so
 	// asking while one is in flight would just run it twice.
 	if a.busy.Load() {
+		return
+	}
+
+	if !a.flushPending(ctx) {
 		return
 	}
 
@@ -84,10 +107,9 @@ func (a *Agent) Tick(ctx context.Context) {
 	}()
 }
 
-// execute runs one job and reports its result. A failed report is only
-// logged: the scheduler still has the job as running and will hand it back on
-// a later poll. A 409 means the job now belongs to another node, so the
-// result is dropped.
+// execute runs one job, saves its result as pending and tries to report it
+// straight away. If that fails, Tick keeps retrying it before fetching more
+// work.
 func (a *Agent) execute(ctx context.Context, job store.Job) {
 	res := a.run(ctx, job.Command)
 
@@ -98,19 +120,8 @@ func (a *Agent) execute(ctx context.Context, job store.Job) {
 		return
 	}
 
-	switch err := a.Report(ctx, job, resultBody{
-		NodeID:  a.node.ID,
-		Attempt: job.Attempts,
-		Result:  res,
-	}); {
-	case errors.Is(err, errStale):
-		log.Printf("result for job %s discarded: reassigned to another node", job.ID)
-		return
-	case err != nil:
-		log.Printf("reporting job %s failed: %v", job.ID, err)
-		return
-	}
-	log.Printf("job %s finished with exit code %d", job.ID, res.ExitCode)
+	a.setPending(pending{JobID: job.ID, Attempt: job.Attempts, Result: res})
+	a.flushPending(ctx)
 }
 
 // Run calls Tick every interval until ctx is cancelled, then waits for any

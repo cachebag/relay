@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,6 +27,10 @@ type PostedResult struct {
 // next and resultStatus to script its replies.
 type FakeScheduler struct {
 	srv *httptest.Server
+	// `cacheDir` stands in for the user cache directory of every agent
+	// built with `newTestAgent`, so agents in one test share it the way a
+	// restarted agent would.
+	cacheDir string
 
 	heartbeats atomic.Int32
 	nextCalls  atomic.Int32
@@ -46,6 +52,7 @@ func newFakeScheduler(t *testing.T) *FakeScheduler {
 	t.Helper()
 	// Initialize the FakeScheduler with default values.
 	f := &FakeScheduler{
+		cacheDir:      t.TempDir(),
 		heartbeatSeen: make(chan struct{}, 1),
 		resultPosted:  make(chan struct{}, 16),
 		next:          func(w http.ResponseWriter) { w.WriteHeader(http.StatusNoContent) },
@@ -121,6 +128,12 @@ func (f *FakeScheduler) waitHeartbeats(n int32) {
 	}
 }
 
+// `hasPendingFile` reports whether an agent has a result saved on disk.
+func (f *FakeScheduler) hasPendingFile() bool {
+	_, err := os.Stat(filepath.Join(f.cacheDir, pendingFile))
+	return err == nil
+}
+
 // `serveJob` replies 200 with the given job.
 func serveJob(job store.Job) func(w http.ResponseWriter) {
 	return func(w http.ResponseWriter) {
@@ -155,7 +168,7 @@ func (r *FakeRunner) count() int {
 // `newTestAgent` creates a new Agent for testing, using
 // the given FakeScheduler, node ID, and Runner.
 func newTestAgent(f *FakeScheduler, id string, run Runner) *Agent {
-	a := New(f.srv.URL, "test-token", store.Node{ID: id, Hostname: "test"})
+	a := newAgent(f.srv.URL, "test-token", store.Node{ID: id, Hostname: "test"}, f.cacheDir)
 	a.client = f.srv.Client()
 	a.run = run
 	return a
@@ -292,33 +305,6 @@ func TestTickServerError(t *testing.T) {
 	}
 }
 
-// `TestTickReportFailureIsNotFatal` verifies that a failed report is logged and dropped,
-// and that the agent can pick up the job again on the next interval.
-// A failed report is logged and dropped. The scheduler hands the job back, and
-// the agent is free to pick it up again on the next interval.
-func TestTickReportFailureIsNotFatal(t *testing.T) {
-	f := newFakeScheduler(t)
-	f.setNext(serveJob(store.Job{ID: "job-1", Command: []string{"true"}}))
-	f.setResultStatus(http.StatusInternalServerError)
-	runner := &FakeRunner{}
-	a := newTestAgent(f, "node-1", runner.run)
-
-	tickAndWait(a)
-	if a.busy.Load() {
-		t.Fatal("agent still busy after a failed report")
-	}
-
-	f.setResultStatus(http.StatusNoContent)
-	tickAndWait(a)
-
-	if runner.count() != 2 {
-		t.Errorf("runner called %d times, want 2", runner.count())
-	}
-	if got := f.posted(); len(got) != 2 {
-		t.Errorf("posted %d results, want 2", len(got))
-	}
-}
-
 // `TestTickStaleResultIsDropped` verifies that when the server responds with a 409,
 // indicating the job was reassigned while this node ran it, the result is
 // dropped, and the agent is free to take new work.
@@ -336,6 +322,9 @@ func TestTickStaleResultIsDropped(t *testing.T) {
 	}
 	if a.busy.Load() {
 		t.Error("agent still busy after a 409")
+	}
+	if f.hasPendingFile() {
+		t.Error("pending file still on disk after a 409")
 	}
 
 	// The scheduler has moved on, so the agent keeps polling as usual.
@@ -449,5 +438,8 @@ func TestInterruptedJobIsNotReported(t *testing.T) {
 	// Verify that no result was posted for the interrupted job.
 	if got := f.posted(); len(got) != 0 {
 		t.Errorf("posted %d results for an interrupted job, want 0", len(got))
+	}
+	if f.hasPendingFile() {
+		t.Error("interrupted job left a pending result on disk")
 	}
 }
