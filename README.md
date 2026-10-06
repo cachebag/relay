@@ -33,6 +33,20 @@ curl -LO https://github.com/cachebag/relay/releases/latest/download/<asset>
 > [!WARNING]
 > The `curl` download won't work until the repo is public. Until then, use `gh release download`.
 
+## Scheduler address
+
+`relay` and `relay-agent` both find the scheduler the same way: the `--scheduler` flag
+if you pass it, otherwise the `RELAY_SCHEDULER` environment variable, otherwise
+`http://localhost:8080`. Setting the variable once saves typing `--scheduler` on every command:
+
+```sh
+export RELAY_SCHEDULER="http://<scheduler address>:8080"    # Linux and macOS
+```
+
+```powershell
+$env:RELAY_SCHEDULER="http://<scheduler address>:8080"      # Windows PowerShell
+```
+
 ## Contribute a machine  
 
 First download the binary for your OS from the latest release: 
@@ -109,6 +123,6 @@ Please read the [setup guide](docs/SETUP.md) to get your development environment
 ## Stack
 
 * Go (scheduler and node agent)
-* Python (CLI) 
+* Python (CLI)
 * Tailscale (networking)
 * SQLite (job and node state)

@@ -23,6 +23,14 @@ func printVersion(w io.Writer) {
 	logger.Println("relay-agent", Version)
 }
 
+// Returns RELAY_SCHEDULER if set, otherwise uses the default scheduler URL.
+func schedulerDefault() string {
+	if scheduler := os.Getenv("RELAY_SCHEDULER"); scheduler != "" {
+		return scheduler
+	}
+	return "http://localhost:8080"
+}
+
 func main() {
 	// Creation of version flag
 	version := flag.Bool(
@@ -33,7 +41,7 @@ func main() {
 	// Pointer to command-line 'scheduler' flag
 	scheduler := flag.String(
 		"scheduler",
-		"http://localhost:8080",
+		schedulerDefault(),
 		"scheduler base URL")
 
 	// Pointer to command-line 'pool-token' flag
