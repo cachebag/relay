@@ -12,15 +12,36 @@ import (
 	"time"
 
 	"github.com/cachebag/relay/internal/agent"
+	"github.com/cachebag/relay/internal/store"
 )
 
 // Package level variable that stores relay-agent's version number.
 var Version = "0.0.0"
 
-// Prints relay-agent's version number
+// Prints relay-agent's version number.
 func printVersion(w io.Writer) {
 	logger := log.New(w, "", 0)
 	logger.Println("relay-agent", Version)
+}
+
+// Prints a summary of the machine and scheduler when relay-agent starts.
+// Memory is converted from bytes to gigabytes to make it easier to read.
+func printStartup(w io.Writer, n store.Node, scheduler string) {
+	logger := log.New(w, "", 0)
+
+	// Converts the node's total memory from bytes to gigabytes.
+	memGB := float64(n.MemBytes) / (1024 * 1024 * 1024)
+
+	logger.Printf(
+		"relay-agent %s: %s (%s/%s, %d CPUs, %.1f GB) joining %s",
+		Version,
+		n.Hostname,
+		n.OS,
+		n.Arch,
+		n.CPUs,
+		memGB,
+		scheduler,
+	)
 }
 
 // Returns RELAY_SCHEDULER if set, otherwise uses the default scheduler URL.
@@ -32,24 +53,28 @@ func schedulerDefault() string {
 }
 
 func main() {
-	// Creation of version flag
+	// Creation of version flag.
 	version := flag.Bool(
 		"version",
 		false,
-		"Prints what version of relay-agent is being used")
+		"Prints what version of relay-agent is being used",
+	)
 
-	// Pointer to command-line 'scheduler' flag
+	// Pointer to command-line 'scheduler' flag.
 	scheduler := flag.String(
 		"scheduler",
 		schedulerDefault(),
-		"scheduler base URL")
+		"scheduler base URL",
+	)
 
-	// Pointer to command-line 'pool-token' flag
+	// Pointer to command-line 'pool-token' flag.
 	poolToken := flag.String(
 		"pool-token",
-		"", "join token for the pool (required)")
+		"",
+		"join token for the pool (required)",
+	)
 
-	// Makes the 'flag' package inspect command-line argument
+	// Makes the 'flag' package inspect command-line arguments.
 	flag.Parse()
 
 	// Prints the version and exits if the --version flag is passed.
@@ -58,20 +83,28 @@ func main() {
 		return
 	}
 
-	// Throws error and exits if pool token is not provided
+	// Throws error and exits if pool token is not provided.
 	if *poolToken == "" {
 		fmt.Fprintln(os.Stderr, "relay-agent: --pool-token is required")
 		os.Exit(2)
 	}
 
+	// Collects information about the machine running relay-agent.
 	node, err := agent.Collect()
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	// Displays useful machine and scheduler information when the agent starts.
+	printStartup(os.Stdout, node, *scheduler)
+
 	// Cancels the context on Ctrl-C or SIGTERM, which kills a running job
 	// and lets Run wait for it before the agent exits.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
 	defer stop()
 
 	// Every 10 seconds, sends a heartbeat to the scheduler, then fetches,

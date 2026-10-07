@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/cachebag/relay/internal/store"
 )
 
 // Tests if program prints the version. Any version number will pass.
@@ -13,7 +16,50 @@ func TestPrintVersion(t *testing.T) {
 	printVersion(&testOutput)
 
 	if actual := testOutput.String(); !strings.HasPrefix(actual, "relay-agent ") {
-		t.Errorf("expected output to start with %q, actual: %q", "relay-agent ", actual)
+		t.Errorf(
+			"expected output to start with %q, actual: %q",
+			"relay-agent ",
+			actual,
+		)
+	}
+}
+
+// Tests that the startup message contains the relay-agent version,
+// machine information, and scheduler URL.
+func TestPrintStartup(t *testing.T) {
+	var testOutput bytes.Buffer
+
+	// Creates predictable node information so the exact startup
+	// message can be verified.
+	node := store.Node{
+		Hostname: "test-machine",
+		OS:       "windows",
+		Arch:     "amd64",
+		CPUs:     8,
+
+		// 16 GiB expressed in bytes.
+		MemBytes: 16 * 1024 * 1024 * 1024,
+	}
+
+	scheduler := "http://localhost:8080"
+
+	// Prints the startup message into the test buffer instead
+	// of printing it to the terminal.
+	printStartup(&testOutput, node, scheduler)
+
+	expected := fmt.Sprintf(
+		"relay-agent %s: test-machine (windows/amd64, 8 CPUs, 16.0 GB) joining http://localhost:8080\n",
+		Version,
+	)
+
+	actual := testOutput.String()
+
+	if actual != expected {
+		t.Errorf(
+			"expected: %q, actual: %q",
+			expected,
+			actual,
+		)
 	}
 }
 
