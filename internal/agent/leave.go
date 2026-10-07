@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 )
 
 // ErrNotInPool means the scheduler refused to remove the node because the
@@ -46,4 +49,42 @@ func Leave(
 	default:
 		return fmt.Errorf("scheduler returned %d", resp.StatusCode)
 	}
+}
+
+// ClearLocalData deletes what the agent keeps in its cache directory once
+// the machine has left its pool, and returns the paths it removed.
+func ClearLocalData() ([]string, error) {
+	return clearLocalData(defaultCacheDir())
+}
+
+// clearLocalData is ClearLocalData with the directory chosen by the caller,
+// so tests can use a temp directory. The directory itself is only removed
+// if it is empty afterwards, so nothing the agent didn't create is touched.
+func clearLocalData(dir string) ([]string, error) {
+	if dir == "" {
+		return nil, nil
+	}
+
+	var removed []string
+	path := filepath.Join(dir, pendingFile)
+	if err := os.Remove(path); err == nil {
+		removed = append(removed, path)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return removed, err
+	}
+
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return removed, nil
+	}
+	if err != nil {
+		return removed, err
+	}
+	if len(entries) == 0 {
+		if err := os.Remove(dir); err != nil {
+			return removed, err
+		}
+		removed = append(removed, dir)
+	}
+	return removed, nil
 }

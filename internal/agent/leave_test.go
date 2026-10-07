@@ -5,6 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -77,4 +80,60 @@ func TestLeaveUnreachable(t *testing.T) {
 	if errors.Is(err, ErrNotInPool) {
 		t.Errorf("unreachable scheduler reported as ErrNotInPool: %v", err)
 	}
+}
+
+// TestClearLocalData checks that the pending result file is deleted, that the
+// cache directory goes with it only when nothing else is in it, and that a
+// missing directory is not an error.
+func TestClearLocalData(t *testing.T) {
+	t.Run("removes pending file and empty dir", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "relay")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		pending := filepath.Join(dir, pendingFile)
+		if err := os.WriteFile(pending, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		removed, err := clearLocalData(dir)
+		if err != nil {
+			t.Fatalf("clearLocalData: %v", err)
+		}
+		if !slices.Equal(removed, []string{pending, dir}) {
+			t.Errorf("removed = %v, want [%s %s]", removed, pending, dir)
+		}
+		if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("expected %s to be gone, stat err = %v", dir, err)
+		}
+	})
+
+	t.Run("keeps dir with other files", func(t *testing.T) {
+		dir := t.TempDir()
+		pending := filepath.Join(dir, pendingFile)
+		other := filepath.Join(dir, "other")
+		for _, p := range []string{pending, other} {
+			if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		removed, err := clearLocalData(dir)
+		if err != nil {
+			t.Fatalf("clearLocalData: %v", err)
+		}
+		if !slices.Equal(removed, []string{pending}) {
+			t.Errorf("removed = %v, want [%s]", removed, pending)
+		}
+		if _, err := os.Stat(other); err != nil {
+			t.Errorf("expected %s to stay: %v", other, err)
+		}
+	})
+
+	t.Run("missing dir", func(t *testing.T) {
+		removed, err := clearLocalData(filepath.Join(t.TempDir(), "nope"))
+		if err != nil || len(removed) != 0 {
+			t.Errorf("got removed=%v err=%v, want nothing", removed, err)
+		}
+	})
 }
