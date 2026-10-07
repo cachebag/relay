@@ -133,6 +133,9 @@ func (a *Agent) Tick(ctx context.Context) {
 			log.Printf("heartbeat failed: %v", err)
 		}
 
+		// Do not make additional scheduler requests during this Tick.
+		// The agent will try again on the next heartbeat interval.
+		return
 	}
 
 	// Only print the connected message on the first successful heartbeat

@@ -86,3 +86,27 @@ func TestSchedulerDefaultFallback(t *testing.T) {
 		t.Errorf("expected: %q, actual: %q", expected, actual)
 	}
 }
+
+// Tests that RELAY_POOL_TOKEN is used as the pool token default.
+func TestPoolTokenDefaultFromEnv(t *testing.T) {
+	t.Setenv("RELAY_POOL_TOKEN", "test-token")
+
+	actual := poolTokenDefault()
+	expected := "test-token"
+
+	if actual != expected {
+		t.Errorf("expected: %q, actual: %q", expected, actual)
+	}
+}
+
+// Tests that an empty string is returned when RELAY_POOL_TOKEN is not set.
+func TestPoolTokenDefaultFallback(t *testing.T) {
+	t.Setenv("RELAY_POOL_TOKEN", "")
+
+	actual := poolTokenDefault()
+	expected := ""
+
+	if actual != expected {
+		t.Errorf("expected: %q, actual: %q", expected, actual)
+	}
+}

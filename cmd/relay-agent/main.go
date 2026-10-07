@@ -52,6 +52,11 @@ func schedulerDefault() string {
 	return "http://localhost:8080"
 }
 
+// Returns RELAY_POOL_TOKEN if set, otherwise returns an empty string.
+func poolTokenDefault() string {
+	return os.Getenv("RELAY_POOL_TOKEN")
+}
+
 func main() {
 	// Creation of version flag.
 	version := flag.Bool(
@@ -70,8 +75,8 @@ func main() {
 	// Pointer to command-line 'pool-token' flag.
 	poolToken := flag.String(
 		"pool-token",
-		"",
-		"join token for the pool (required)",
+		poolTokenDefault(),
+		"join token for the pool (or set RELAY_POOL_TOKEN)",
 	)
 
 	// Makes the 'flag' package inspect command-line arguments.
@@ -85,7 +90,10 @@ func main() {
 
 	// Throws error and exits if pool token is not provided.
 	if *poolToken == "" {
-		fmt.Fprintln(os.Stderr, "relay-agent: --pool-token is required")
+		fmt.Fprintln(
+			os.Stderr,
+			"relay-agent: pool token is required; use --pool-token or set RELAY_POOL_TOKEN",
+		)
 		os.Exit(2)
 	}
 
