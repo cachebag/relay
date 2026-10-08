@@ -35,12 +35,16 @@ export RELAY_SCHEDULER="http://<scheduler address>:8080"    # Linux and macOS
 ```
 
 ```powershell
-$env:RELAY_SCHEDULER="http://<scheduler address>:8080"      # Windows PowerShell
+$env:RELAY_SCHEDULER="http://<scheduler address>:8080"     # Windows PowerShell
 ```
 
 ## Contribute a machine
 
 You need the scheduler's address and a pool token from your pool admin.
+
+The pool token can be provided with the `--pool-token` flag or through the
+`RELAY_POOL_TOKEN` environment variable. If both are provided, `--pool-token`
+takes precedence.
 
 ### Linux and macOS
 
@@ -48,6 +52,13 @@ You need the scheduler's address and a pool token from your pool admin.
 curl -LO https://github.com/cachebag/relay/releases/latest/download/relay-agent-linux-amd64
 chmod +x relay-agent-linux-amd64
 ./relay-agent-linux-amd64 --scheduler http://<scheduler address>:8080 --pool-token <pool token>
+```
+
+Alternatively, set the pool token as an environment variable:
+
+```sh
+export RELAY_POOL_TOKEN="<pool token>"
+./relay-agent-linux-amd64 --scheduler http://<scheduler address>:8080
 ```
 
 > [!NOTE]
@@ -61,6 +72,13 @@ From PowerShell:
 ```powershell
 curl.exe -LO https://github.com/cachebag/relay/releases/latest/download/relay-agent-windows-amd64.exe
 .\relay-agent-windows-amd64.exe --scheduler http://<scheduler address>:8080 --pool-token <pool token>
+```
+
+Alternatively, set the pool token as an environment variable:
+
+```powershell
+$env:RELAY_POOL_TOKEN="<pool token>"
+.\relay-agent-windows-amd64.exe --scheduler http://<scheduler address>:8080
 ```
 
 > Use `curl.exe`, not `curl`: in Windows PowerShell, `curl` is an alias for a different command.
