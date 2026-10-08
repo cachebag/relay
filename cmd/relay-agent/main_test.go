@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"strings"
 	"testing"
@@ -108,5 +109,57 @@ func TestPoolTokenDefaultFallback(t *testing.T) {
 
 	if actual != expected {
 		t.Errorf("expected: %q, actual: %q", expected, actual)
+	}
+}
+
+// Tests that the help output includes an example showing
+// how to join a Relay pool.
+func TestPrintUsage(t *testing.T) {
+	var testOutput bytes.Buffer
+
+	// Creates a separate FlagSet so the test does not modify
+	// the command-line flags used by relay-agent.
+	testFlags := flag.NewFlagSet("relay-agent", flag.ContinueOnError)
+
+	testFlags.String(
+		"scheduler",
+		"http://localhost:8080",
+		"scheduler base URL",
+	)
+
+	testFlags.String(
+		"pool-token",
+		"",
+		"join token for the pool (or set RELAY_POOL_TOKEN)",
+	)
+
+	testFlags.Bool(
+		"version",
+		false,
+		"Prints what version of relay-agent is being used",
+	)
+
+	printUsage(&testOutput, testFlags)
+
+	output := testOutput.String()
+
+	// Help should explain the basic command format.
+	if !strings.Contains(output, "Usage: relay-agent [options]") {
+		t.Errorf(
+			"expected usage header in output, actual:\n%s",
+			output,
+		)
+	}
+
+	// Help should contain an example showing how to join a pool.
+	expectedExample :=
+		"relay-agent --scheduler http://localhost:8080 --pool-token <token>"
+
+	if !strings.Contains(output, expectedExample) {
+		t.Errorf(
+			"expected example %q in output, actual:\n%s",
+			expectedExample,
+			output,
+		)
 	}
 }

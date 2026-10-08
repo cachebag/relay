@@ -57,6 +57,26 @@ func poolTokenDefault() string {
 	return os.Getenv("RELAY_POOL_TOKEN")
 }
 
+// Prints command-line usage information and an example showing how to join a Relay pool.
+func printUsage(w io.Writer, fs *flag.FlagSet) {
+	fmt.Fprintln(w, "Usage: relay-agent [options]")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Example:")
+	fmt.Fprintln(
+		w,
+		"  relay-agent --scheduler http://localhost:8080 --pool-token <token>",
+	)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Options:")
+
+	// PrintDefaults writes to the FlagSet's configured output, so temporarily direct it to the provided writer.
+	originalOutput := fs.Output()
+	fs.SetOutput(w)
+	defer fs.SetOutput(originalOutput)
+
+	fs.PrintDefaults()
+}
+
 func main() {
 	// Creation of version flag.
 	version := flag.Bool(
@@ -78,6 +98,10 @@ func main() {
 		poolTokenDefault(),
 		"join token for the pool (or set RELAY_POOL_TOKEN)",
 	)
+	// Replaces the default help output with Relay-specific usage information and an example showing how to join a pool.
+	flag.Usage = func() {
+		printUsage(flag.CommandLine.Output(), flag.CommandLine)
+	}
 
 	// Makes the 'flag' package inspect command-line arguments.
 	flag.Parse()
