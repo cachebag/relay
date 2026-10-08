@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cachebag/relay/internal/store"
@@ -75,6 +76,37 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(ps)
+	})
+
+	// Returns the pool that owns the bearer token, so the CLI can check a
+	// token without registering a node. The token is never echoed back.
+	mux.HandleFunc("GET /pools/self", func(w http.ResponseWriter, r *http.Request) {
+
+		// Extract the bearer token from the Authorization header.
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || token == "" {
+			http.Error(w, "invalid pool token", http.StatusForbidden)
+			return
+		}
+
+		// Look up the pool associated with this token.
+		p, err := pools.GetByToken(r.Context(), token)
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "invalid pool token", http.StatusForbidden)
+			return
+		}
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		// Return the pool information without the token.
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			ID        string    `json:"id"`
+			Name      string    `json:"name"`
+			CreatedAt time.Time `json:"created_at"`
+		}{p.ID, p.Name, p.CreatedAt})
 	})
 
 	// Heartbeat endpoint for nodes to report their status.
