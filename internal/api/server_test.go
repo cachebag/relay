@@ -313,6 +313,53 @@ func TestPoolCreateAndList(t *testing.T) {
 	}
 }
 
+// TestPoolSelf checks that GET /pools/self returns the pool owning the bearer
+// token without exposing the token, and rejects bad or missing credentials.
+func TestPoolSelf(t *testing.T) {
+	pools := store.NewMemPools()
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs())
+
+	p := store.Pool{ID: "pool-1", Name: "lab", Token: "secret-token", CreatedAt: time.Now().UTC()}
+	if err := pools.Create(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+
+	get := func(auth string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/pools/self", nil)
+		if auth != "" {
+			req.Header.Set("Authorization", auth)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := get("Bearer secret-token")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["id"] != "pool-1" || got["name"] != "lab" {
+		t.Errorf("unexpected body: %v", got)
+	}
+	if _, ok := got["token"]; ok {
+		t.Error("token must not be returned")
+	}
+	if strings.Contains(rec.Body.String(), "secret-token") {
+		t.Error("response leaks the token")
+	}
+
+	if rec := get("Bearer wrong"); rec.Code != http.StatusForbidden {
+		t.Errorf("wrong token: expected 403, got %d", rec.Code)
+	}
+	if rec := get(""); rec.Code != http.StatusForbidden {
+		t.Errorf("no header: expected 403, got %d", rec.Code)
+	}
+}
+
 // TestNodeHeartbeatInvalidPoolToken checks that a heartbeat
 // with an invalid pool token is rejected with 403 Forbidden.
 func TestNodeHeartbeatInvalidPoolToken(t *testing.T) {
