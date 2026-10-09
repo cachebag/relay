@@ -1,13 +1,13 @@
-import json
-import httpx
 import argparse
+import json
+
+import httpx
 import pytest
 
 from relay.commands import pool
 from relay.commands.pool import create
 
 _RealClient = httpx.Client
-
 def mock_client(handler):
     return _RealClient(transport=httpx.MockTransport(handler))
 
