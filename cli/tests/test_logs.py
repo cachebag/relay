@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+
 from relay.commands import logs
 
 
