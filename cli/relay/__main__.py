@@ -5,7 +5,24 @@ from importlib.metadata import version
 
 import httpx
 
-from relay.commands import dash, jobs, logs, nodes, pool, status, submit
+from relay import profile
+
+from relay.commands import auth, dash, jobs, logs, nodes, pool, status, submit
+
+DEFAULT_SCHEDULER = "http://localhost:8080"
+
+# Commands whose --pool falls back to the logged-in pool.
+POOL_COMMANDS = {"nodes", "jobs", "dash"}
+
+
+def resolve(args: argparse.Namespace, env: dict, prof: dict) -> None:
+    """Fill in the scheduler (flag, env, profile, default) and pool (flag, profile)."""
+    
+    explicit = args.scheduler or env.get("RELAY_SCHEDULER")
+    args.scheduler_given = bool(explicit)
+    args.scheduler = explicit or prof.get("scheduler") or DEFAULT_SCHEDULER
+    if args.command in POOL_COMMANDS:
+        args.pool = args.pool or prof.get("pool_id")
 
 
 def main() -> None:
@@ -19,9 +36,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--scheduler",
-        default=os.environ.get("RELAY_SCHEDULER") or "http://localhost:8080",
-        help="scheduler base URL (env: RELAY_SCHEDULER)",
+        default=None,
+        help=("scheduler base URL (default: flag, $RELAY_SCHEDULER,"
+            f"saved login, then {DEFAULT_SCHEDULER})"),
     )
+
     sub = parser.add_subparsers(dest="command", required=True)
     nodes.register(sub)
     jobs.register(sub)
@@ -30,10 +49,12 @@ def main() -> None:
     status.register(sub)
     pool.register(sub)
     dash.register(sub)
+    auth.register(sub)
 
     args = parser.parse_args()
 
     try:
+        resolve(args, os.environ, profile.load())
         args.func(args)
     except httpx.ConnectError:
         print(
