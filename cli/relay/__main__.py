@@ -6,7 +6,6 @@ from importlib.metadata import version
 import httpx
 
 from relay import profile
-
 from relay.commands import auth, dash, jobs, logs, nodes, pool, status, submit
 
 DEFAULT_SCHEDULER = "http://localhost:8080"
