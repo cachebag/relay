@@ -78,6 +78,12 @@ func printUsage(w io.Writer, fs *flag.FlagSet) {
 }
 
 func main() {
+	// `relay-agent leave` takes this machine out of its pool. Anything else
+	// runs the agent as before.
+	if len(os.Args) > 1 && os.Args[1] == "leave" {
+		os.Exit(runLeave(os.Args[2:], os.Stdout, os.Stderr))
+	}
+
 	// Creation of version flag.
 	version := flag.Bool(
 		"version",

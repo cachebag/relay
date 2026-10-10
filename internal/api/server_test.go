@@ -1029,3 +1029,135 @@ func TestNodeListStatus(t *testing.T) {
 		t.Errorf("expected old node offline, got %q", status["old"])
 	}
 }
+
+// newLeaveHandler sets up two pools with one node each and the given jobs.
+// Pool p1's token is "tok1" and its node is n1; pool p2's are "tok2" and n2.
+func newLeaveHandler(t *testing.T, js ...store.Job) (http.Handler, store.Registry, store.JobStore) {
+	t.Helper()
+	ctx := context.Background()
+
+	pools := store.NewMemPools()
+	for _, p := range []store.Pool{{ID: "p1", Name: "one", Token: "tok1"}, {ID: "p2", Name: "two", Token: "tok2"}} {
+		if err := pools.Create(ctx, p); err != nil {
+			t.Fatalf("failed to create pool: %v", err)
+		}
+	}
+
+	reg := store.NewMem()
+	for _, n := range []store.Node{{ID: "n1", Hostname: "n1", PoolID: "p1"}, {ID: "n2", Hostname: "n2", PoolID: "p2"}} {
+		n.LastSeen = time.Now().UTC()
+		if err := reg.Upsert(ctx, n); err != nil {
+			t.Fatalf("failed to upsert node: %v", err)
+		}
+	}
+
+	jobs := store.NewMemJobs()
+	for _, j := range js {
+		if err := jobs.Create(ctx, j); err != nil {
+			t.Fatalf("failed to create job: %v", err)
+		}
+	}
+
+	return NewHandler(reg, pools, jobs), reg, jobs
+}
+
+// deleteNode sends DELETE /nodes/{id} with the given bearer token ("" for
+// none) and returns the status code.
+func deleteNode(handler http.Handler, id, token string) int {
+	req := httptest.NewRequest(http.MethodDelete, "/nodes/"+id, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec.Code
+}
+
+func nodeIDs(t *testing.T, reg store.Registry) map[string]bool {
+	t.Helper()
+	nodes, err := reg.List(context.Background())
+	if err != nil {
+		t.Fatalf("failed to list nodes: %v", err)
+	}
+	ids := map[string]bool{}
+	for _, n := range nodes {
+		ids[n.ID] = true
+	}
+	return ids
+}
+
+// TestLeaveRequeuesJobsAndRemovesNode checks that leaving deletes the node,
+// puts its unfinished jobs back in the queue with the attempt given back, and
+// leaves every other job alone.
+func TestLeaveRequeuesJobsAndRemovesNode(t *testing.T) {
+	handler, reg, jobs := newLeaveHandler(t,
+		store.Job{ID: "running", Command: []string{"a"}, Status: store.JobRunning, NodeID: "n1", Attempts: 1},
+		store.Job{ID: "assigned", Command: []string{"b"}, Status: store.JobAssigned, NodeID: "n1", Attempts: 2},
+		store.Job{ID: "done", Command: []string{"c"}, Status: store.JobDone, NodeID: "n1", Attempts: 1},
+		store.Job{ID: "other", Command: []string{"d"}, Status: store.JobRunning, NodeID: "n2", Attempts: 1},
+	)
+
+	if code := deleteNode(handler, "n1", "tok1"); code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", code)
+	}
+
+	if ids := nodeIDs(t, reg); ids["n1"] || !ids["n2"] {
+		t.Fatalf("expected only n2 left, got %v", ids)
+	}
+
+	want := map[string]struct {
+		status   store.JobStatus
+		node     string
+		attempts int
+	}{
+		"running":  {store.JobQueued, "", 0},
+		"assigned": {store.JobQueued, "", 1},
+		"done":     {store.JobDone, "n1", 1},
+		"other":    {store.JobRunning, "n2", 1},
+	}
+	for id, w := range want {
+		j, err := jobs.Get(context.Background(), id)
+		if err != nil {
+			t.Fatalf("failed to get job %s: %v", id, err)
+		}
+		if j.Status != w.status || j.NodeID != w.node || j.Attempts != w.attempts {
+			t.Errorf("job %s: got status=%s node=%q attempts=%d, want status=%s node=%q attempts=%d",
+				id, j.Status, j.NodeID, j.Attempts, w.status, w.node, w.attempts)
+		}
+	}
+}
+
+// TestLeaveRejected checks that a missing or wrong token, or a token for
+// another pool, gets 403 and changes nothing, and that an unknown node gets 404.
+func TestLeaveRejected(t *testing.T) {
+	running := store.Job{ID: "running", Command: []string{"a"}, Status: store.JobRunning, NodeID: "n1", Attempts: 1}
+
+	cases := []struct {
+		name  string
+		node  string
+		token string
+		want  int
+	}{
+		{"no token", "n1", "", http.StatusForbidden},
+		{"unknown token", "n1", "nope", http.StatusForbidden},
+		{"other pool's token", "n1", "tok2", http.StatusForbidden},
+		{"unknown node", "ghost", "tok1", http.StatusNotFound},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			handler, reg, jobs := newLeaveHandler(t, running)
+
+			if code := deleteNode(handler, c.node, c.token); code != c.want {
+				t.Fatalf("expected %d, got %d", c.want, code)
+			}
+
+			if ids := nodeIDs(t, reg); !ids["n1"] || !ids["n2"] {
+				t.Errorf("expected both nodes to stay, got %v", ids)
+			}
+			j, _ := jobs.Get(context.Background(), "running")
+			if j.Status != store.JobRunning || j.NodeID != "n1" || j.Attempts != 1 {
+				t.Errorf("expected job unchanged, got %+v", j)
+			}
+		})
+	}
+}

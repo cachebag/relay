@@ -45,3 +45,14 @@ func (m *Mem) List(_ context.Context) ([]Node, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].Hostname < out[j].Hostname })
 	return out, nil
 }
+
+// Delete removes the node with the given ID, or returns ErrNotFound.
+func (m *Mem) Delete(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.nodes[id]; !ok {
+		return ErrNotFound
+	}
+	delete(m.nodes, id)
+	return nil
+}

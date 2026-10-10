@@ -83,6 +83,16 @@ $env:RELAY_POOL_TOKEN="<pool token>"
 
 > Use `curl.exe`, not `curl`: in Windows PowerShell, `curl` is an alias for a different command.
 
+### Leave a pool
+
+Stop the agent first (Ctrl-C), then run `leave` with the same scheduler and token:
+
+```sh
+./relay-agent-linux-amd64 leave --scheduler http://<scheduler address>:8080 --pool-token <pool token>
+```
+
+The machine disappears from `relay nodes` right away, any job it was running goes to another machine, and the agent deletes the files it kept on this machine. If the agent is still running, its next heartbeat joins the pool again.
+
 ## Install the CLI
 
 ```sh

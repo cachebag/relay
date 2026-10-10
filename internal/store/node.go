@@ -41,13 +41,15 @@ func Online(n Node, now time.Time) bool {
 // next. Keeping it this narrow means callers never depend on which one
 // they got, and the shared test in registry_test.go can exercise any of them.
 //
-// Implementations must satisfy two guarantees the callers rely on:
+// Implementations must satisfy the guarantees the callers rely on:
 //   - Upsert keys on Node.ID, so re-registering an existing node overwrites its
 //     record rather than adding a duplicate.
 //   - List returns a stable ordering, so repeated calls don't shuffle output.
+//   - Delete returns ErrNotFound if no node has that ID.
 //
 // ctx is part of the signature for backends that do real I/O; Mem ignores it.
 type Registry interface {
 	Upsert(ctx context.Context, n Node) error
 	List(ctx context.Context) ([]Node, error)
+	Delete(ctx context.Context, id string) error
 }

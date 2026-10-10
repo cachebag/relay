@@ -87,6 +87,23 @@ func (s *SQLite) List(_ context.Context) ([]Node, error) {
 	return out, rows.Err()
 }
 
+// Delete removes the node with the given ID, or returns ErrNotFound.
+func (s *SQLite) Delete(ctx context.Context, id string) error {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM nodes WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *SQLite) DB() *sql.DB {
 	return s.db
 }

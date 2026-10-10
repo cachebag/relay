@@ -11,6 +11,7 @@ The API currently supports:
 - Node heartbeats
 - Node listing
 - Filtering nodes by pool
+- Removing a node that leaves its pool
 - Job creation
 - Job lookup by ID
 - Job listing
@@ -428,6 +429,58 @@ GET /nodes
 ```
 
 all registered nodes are returned.
+
+
+## Leave a Pool
+
+### DELETE /nodes/{id}
+
+Removes a node from its pool. `relay-agent leave` calls this when a contributor takes their machine out of a pool.
+
+Any job that is `assigned` or `running` on the node goes back to `queued` with its `node_id` cleared, so the scheduler can place it on another node. The scheduler counts an attempt each time it places a job, so leaving gives that attempt back: a job that was on its first attempt goes back to `attempts: 0`. Leaving never uses up one of a job's 3 attempts.
+
+The node record is then deleted, so the node disappears from `GET /nodes` right away instead of showing as offline. If the agent is still running, its next heartbeat registers the node again, so the agent should be stopped first.
+
+#### Request
+
+The pool's join token is sent as a bearer token.
+
+```http
+DELETE /nodes/node-1
+Authorization: Bearer generated-pool-token
+```
+
+No request body is required.
+
+#### Success Response
+
+Status:
+
+```text
+204 No Content
+```
+
+#### Error Responses
+
+If the `Authorization` header is missing, the token doesn't match any pool, or the token belongs to a different pool than the node:
+
+```text
+403 Forbidden
+```
+
+If no node has that ID:
+
+```text
+404 Not Found
+```
+
+`relay-agent leave` treats a 404 as success, since it means the node is already gone.
+
+If the node or its jobs cannot be read or updated:
+
+```text
+500 Internal Server Error
+```
 
 
 ## Create a Job
