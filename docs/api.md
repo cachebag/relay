@@ -7,6 +7,7 @@ The API currently supports:
 - Health checks
 - Pool creation
 - Pool listing
+- Pool lookup by token
 - Node heartbeats
 - Node listing
 - Filtering nodes by pool
@@ -165,6 +166,51 @@ If the pools cannot be retrieved:
 500 Internal Server Error
 ```
 
+
+## Get Own Pool  
+
+### GET /pools/self  
+
+Returns the pool that owns the join token in the `Authorization` header. The CLI uses this to check a token without registering a node.  
+
+#### Request  
+  
+```http
+GET /pools/self
+Authorization: Bearer <pool token>
+```
+  
+No request body is required.  
+  
+#### Success Response  
+  
+Status:  
+
+```text
+200 OK
+```  
+
+Example response:  
+  
+```json
+{
+  "id": "pool-id",
+  "name": "test-pool",
+  "created_at": "2026-09-19T12:00:00Z"
+}
+```  
+
+The token is never included in the response.  
+  
+#### Error Response  
+  
+If the header is missing, is not a `Bearer` token, or the token does not belong to any pool:  
+  
+```text
+403 Forbidden
+```  
+  
+  
 
 ## Node Heartbeat
 
