@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -26,10 +28,20 @@ type Agent struct {
 	client       *http.Client
 	run          Runner
 
+	// connected tracks whether the most recent heartbeat successfully reached
+	// the scheduler. This prevents the agent from printing the connected
+	// message after every successful heartbeat.
+	connected bool
+
+	// retryInterval stores how long the agent waits between heartbeat attempts.
+	// It is used when displaying a connection failure to the user.
+	retryInterval time.Duration
+
 	// cacheDir is where an unreported result is saved so it survives a
 	// restart. Empty means keep it in memory only. A field so tests can
 	// point it at a temp directory.
 	cacheDir string
+
 	// pending is a finished result the scheduler hasn't acknowledged yet.
 	// It is only touched by the job goroutine while busy, and by Tick
 	// otherwise.
@@ -57,25 +69,80 @@ func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Ag
 		node:         n,
 		client:       &http.Client{Timeout: 5 * time.Second},
 		run:          RunCommand,
-		cacheDir:     cacheDir,
+
+		// The relay agent normally heartbeats every 10 seconds.
+		// Run replaces this value with the interval it receives, which
+		// allows tests to use shorter intervals.
+		retryInterval: 10 * time.Second,
+
+		cacheDir: cacheDir,
 	}
 	a.loadPending()
 	return a
 }
 
+// isConnectionError reports whether err represents a networking failure.
+// HTTP response errors such as a rejected pool token are handled separately.
+func isConnectionError(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
 // Tick does one interval of work: send a heartbeat, then, if no job is
 // already running, report any result still waiting to be sent, then ask the
 // scheduler for the next job and start it in the background. While a result
-// can't be reported, no new job is fetched. It returns without waiting for the job to finish, so the caller
-// keeps heartbeating while the job runs. Failures are logged and retried on
-// the next Tick, since the scheduler being unreachable is a normal condition.
+// can't be reported, no new job is fetched. It returns without waiting for
+// the job to finish, so the caller keeps heartbeating while the job runs.
+// Failures are logged and retried on the next Tick, since the scheduler being
+// unreachable is a normal condition.
 //
 // Kept separate from Run so tests can call it directly.
 func (a *Agent) Tick(ctx context.Context) {
-	if err := Send(ctx, a.client, a.schedulerURL, a.node, a.poolToken); err != nil {
-		log.Printf("heartbeat failed: %v", err)
-	} else {
-		log.Printf("heartbeat sent to %s", a.schedulerURL)
+	// Send the node heartbeat to the scheduler.
+	err := Send(ctx, a.client, a.schedulerURL, a.node, a.poolToken)
+	if err != nil {
+		// Any failed heartbeat means the agent is no longer considered
+		// connected. The next successful heartbeat will print the
+		// connected message again.
+		a.connected = false
+
+		// If the context was cancelled because the agent is shutting down,
+		// return without printing a misleading connection failure.
+		if ctx.Err() != nil {
+			return
+		}
+
+		// Give the user a more helpful message depending on why the
+		// heartbeat failed.
+		switch {
+		case errors.Is(err, ErrBadToken):
+			log.Printf(
+				"pool token rejected; check it with your pool admin",
+			)
+
+		case isConnectionError(err):
+			log.Printf(
+				"can't reach scheduler at %s; retrying in %s",
+				a.schedulerURL,
+				a.retryInterval,
+			)
+
+		default:
+			// Keep a general fallback for scheduler errors that are
+			// neither a bad token nor a networking failure.
+			log.Printf("heartbeat failed: %v", err)
+		}
+
+		// Do not make additional scheduler requests during this Tick.
+		// The agent will try again on the next heartbeat interval.
+		return
+	}
+
+	// Only print the connected message on the first successful heartbeat
+	// or after recovering from a previous heartbeat failure.
+	if !a.connected {
+		log.Printf("connected; this machine is online in the pool")
+		a.connected = true
 	}
 
 	// The scheduler hands a running job back to its node on every poll, so
@@ -120,19 +187,28 @@ func (a *Agent) execute(ctx context.Context, job store.Job) {
 		return
 	}
 
-	a.setPending(pending{JobID: job.ID, Attempt: job.Attempts, Result: res})
+	a.setPending(pending{
+		JobID:   job.ID,
+		Attempt: job.Attempts,
+		Result:  res,
+	})
 	a.flushPending(ctx)
 }
 
 // Run calls Tick every interval until ctx is cancelled, then waits for any
 // running job to wind down and returns ctx.Err().
 func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
+	// Save the interval so connection failure messages can tell the user
+	// when the next retry will occur.
+	a.retryInterval = interval
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	defer a.wg.Wait()
 
 	for {
 		a.Tick(ctx)
+
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
