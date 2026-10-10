@@ -22,6 +22,20 @@ func NewSQLitePools(db *sql.DB) (*SQLitePools, error) {
 		return nil, err
 	}
 
+	// Adds the admin_token_hash column to relay.db files created before admin tokens.
+	// Older pools get an empty hash, so they can't be administered.
+	var hasHash int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('pools') WHERE name = 'admin_token_hash'`,
+	).Scan(&hasHash); err != nil {
+		return nil, err
+	}
+	if hasHash == 0 {
+		if _, err := db.Exec(`ALTER TABLE pools ADD COLUMN admin_token_hash TEXT NOT NULL DEFAULT ''`); err != nil {
+			return nil, err
+		}
+	}
+
 	return &SQLitePools{db: db}, nil
 }
 
@@ -146,4 +160,43 @@ func (s *SQLitePools) List(ctx context.Context) ([]Pool, error) {
 	}
 
 	return pools, nil
+}
+
+func (s *SQLitePools) SetToken(ctx context.Context, id, token string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE pools SET token = ? WHERE id = ?`, token, id)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *SQLitePools) SetAdminTokenHash(ctx context.Context, id, hash string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE pools SET admin_token_hash = ? WHERE id = ?`, hash, id)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *SQLitePools) AdminTokenHash(ctx context.Context, id string) (string, error) {
+	var hash string
+	err := s.db.QueryRowContext(ctx, `SELECT admin_token_hash FROM pools WHERE id = ?`, id).Scan(&hash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return hash, err
 }

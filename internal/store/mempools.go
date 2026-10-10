@@ -53,3 +53,37 @@ func (m *MemPools) List(_ context.Context) ([]Pool, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
 	return out, nil
 }
+
+func (m *MemPools) SetToken(_ context.Context, id, token string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.pools[id]
+	if !ok {
+		return ErrNotFound
+	}
+	p.Token = token
+	m.pools[id] = p
+	return nil
+}
+
+func (m *MemPools) SetAdminTokenHash(_ context.Context, id, hash string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.pools[id]
+	if !ok {
+		return ErrNotFound
+	}
+	p.AdminTokenHash = hash
+	m.pools[id] = p
+	return nil
+}
+
+func (m *MemPools) AdminTokenHash(_ context.Context, id string) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	p, ok := m.pools[id]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return p.AdminTokenHash, nil
+}

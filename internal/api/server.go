@@ -1,10 +1,12 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cachebag/relay/internal/store"
@@ -53,11 +55,21 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			return
 		}
 
+		// Generate the admin token and store only its hash.
+		adminToken := store.NewToken()
+		if err := pools.SetAdminTokenHash(r.Context(), p.ID, store.HashToken(adminToken)); err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
 		// Return the created pool.
-		// This is the only endpoint that returns the pool token.
+		// This is the only endpoint that returns the pool token or the admin token.
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(p)
+		json.NewEncoder(w).Encode(struct {
+			store.Pool
+			AdminToken string `json:"admin_token"`
+		}{Pool: p, AdminToken: adminToken})
 	})
 
 	// Lists all pools.
@@ -387,5 +399,54 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		})
 	})
 
+	// Rotates a pool's join token. Requires the pool's admin token. The old
+	// join token stops matching as soon as SetToken returns.
+	mux.HandleFunc("POST /pools/{id}/token", func(w http.ResponseWriter, r *http.Request) {
+		p, err := pools.Get(r.Context(), r.PathValue("id"))
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "pool not found", http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		hash, err := pools.AdminTokenHash(r.Context(), p.ID)
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+		if !checkAdmin(r, hash) {
+			http.Error(w, "invalid admin token", http.StatusUnauthorized)
+			return
+		}
+
+		newToken := store.NewToken()
+		if err := pools.SetToken(r.Context(), p.ID, newToken); err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Token string `json:"token"`
+		}{Token: newToken})
+	})
+
 	return mux
+}
+
+// checkAdmin reports whether the Bearer token matches the stored admin token hash.
+// An empty hash (pool created before admin tokens) never matches.
+func checkAdmin(r *http.Request, hash string) bool {
+	if hash == "" {
+		return false
+	}
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || token == "" {
+		return false
+	}
+	got := store.HashToken(token)
+	return subtle.ConstantTimeCompare([]byte(got), []byte(hash)) == 1
 }
