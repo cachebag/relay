@@ -47,6 +47,8 @@ func TestSQLitePersistence(t *testing.T) {
 		ID:        NewID(),
 		Command:   []string{"echo", "persistent"},
 		Status:    JobQueued,
+		PoolID:    pool.ID,
+		Submitter: "alice",
 		CreatedAt: time.Now().UTC().Truncate(time.Second),
 	}
 
@@ -99,6 +101,9 @@ func TestSQLitePersistence(t *testing.T) {
 		t.Fatalf("want job id %q, got %q", job.ID, gotJob.ID)
 	}
 
+	if gotJob.PoolID != job.PoolID || gotJob.Submitter != job.Submitter {
+		t.Fatalf("job ownership after restart: got pool=%q submitter=%q", gotJob.PoolID, gotJob.Submitter)
+	}
 	if gotJob.Status != job.Status {
 		t.Fatalf("want job status %q, got %q", job.Status, gotJob.Status)
 	}
