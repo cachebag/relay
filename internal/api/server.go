@@ -293,13 +293,33 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// Creates a new job.
+	// Creates a new job in the pool identified by the bearer token.
 	mux.HandleFunc("POST /jobs", func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Command []string `json:"command"`
+
+		// Extract the pool join token from the Authorization header.
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || token == "" {
+			http.Error(w, "invalid pool token", http.StatusForbidden)
+			return
 		}
 
-		// Read the command from the request.
+		// Find the pool associated with the token.
+		p, err := pools.GetByToken(r.Context(), token)
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "invalid pool token", http.StatusForbidden)
+			return
+		}
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		// Read the command and submitter from the request.
+		var req struct {
+			Command   []string `json:"command"`
+			Submitter string   `json:"submitter"`
+		}
+
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
@@ -310,11 +330,21 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 			return
 		}
 
+		// A job must record who submitted it.
+		req.Submitter = strings.TrimSpace(req.Submitter)
+		if req.Submitter == "" {
+			http.Error(w, "submitter is required", http.StatusBadRequest)
+			return
+		}
+
 		// Create the job with a server-generated ID and queued status.
+		// The authenticated token determines the pool, not the request body.
 		j := store.Job{
 			ID:        store.NewID(),
 			Command:   req.Command,
 			Status:    store.JobQueued,
+			PoolID:    p.ID,
+			Submitter: req.Submitter,
 			CreatedAt: time.Now().UTC(),
 		}
 
@@ -355,12 +385,28 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		json.NewEncoder(w).Encode(j)
 	})
 
-	// Lists all jobs.
+	// Lists all jobs, optionally filtered by pool ID.
 	mux.HandleFunc("GET /jobs", func(w http.ResponseWriter, r *http.Request) {
 		jobsList, err := jobs.List(r.Context())
 		if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
+		}
+
+		// Check whether a specific pool was requested.
+		poolID := r.URL.Query().Get("pool")
+
+		if poolID != "" {
+			filtered := make([]store.Job, 0)
+
+			// Only keep jobs belonging to the requested pool.
+			for _, j := range jobsList {
+				if j.PoolID == poolID {
+					filtered = append(filtered, j)
+				}
+			}
+
+			jobsList = filtered
 		}
 
 		w.Header().Set("Content-Type", "application/json")
