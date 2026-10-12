@@ -46,6 +46,10 @@ The pool token can be provided with the `--pool-token` flag or through the
 `RELAY_POOL_TOKEN` environment variable. If both are provided, `--pool-token`
 takes precedence.
 
+Your machine earns 1 credit for every minute it's online. The credits go to
+the name given with `--owner` or `RELAY_OWNER`, or your username if neither is
+set. Run `relay credits` to see the balances in your pool.
+
 ### Linux and macOS
 
 ```sh
