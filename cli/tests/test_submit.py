@@ -63,7 +63,7 @@ def test_submit_rejects_invalid_token():
 
 def test_run_submit_not_logged_in(monkeypatch, capsys):
     """Submitting without a saved profile exits with status 1."""
-    monkeypatch.setattr(profile, "load", lambda: {})
+    monkeypatch.setattr(profile, "load", dict)
 
     args = argparse.Namespace(
         scheduler="http://scheduler",
