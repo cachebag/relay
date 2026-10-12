@@ -100,7 +100,7 @@ func main() {
 
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program.
-	if err := http.Serve(ln, api.NewHandler(reg, pools, jobs)); err != nil {
+	if err := http.Serve(ln, api.NewHandler(reg, pools, jobs, credits)); err != nil {
 		log.Fatal(err)
 	}
 }
