@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cachebag/relay/internal/api"
+	"github.com/cachebag/relay/internal/credit"
 	"github.com/cachebag/relay/internal/scheduler"
 	"github.com/cachebag/relay/internal/store"
 )
@@ -81,6 +82,12 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Creates a SQLite-backed credit ledger using the shared database.
+	credits, err := store.NewSQLiteCredits(reg.DB())
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Starts listening on the specified port.
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
@@ -89,7 +96,7 @@ func main() {
 	log.Printf("relayd listening on :%d", ln.Addr().(*net.TCPAddr).Port)
 
 	// Starts the scheduler in the background.
-	go scheduler.New(reg, jobs).Run(context.Background(), 2*time.Second)
+	go scheduler.New(reg, jobs, credit.NewEarner(credits)).Run(context.Background(), 2*time.Second)
 
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program.
