@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"os/user"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,7 +35,7 @@ func printStartup(w io.Writer, n store.Node, scheduler string) {
 	memGB := float64(n.MemBytes) / (1024 * 1024 * 1024)
 
 	logger.Printf(
-		"relay-agent %s: %s (%s/%s, %d CPUs, %.1f GB) joining %s",
+		"relay-agent %s: %s (%s/%s, %d CPUs, %.1f GB) joining %s as %s",
 		Version,
 		n.Hostname,
 		n.OS,
@@ -41,6 +43,7 @@ func printStartup(w io.Writer, n store.Node, scheduler string) {
 		n.CPUs,
 		memGB,
 		scheduler,
+		n.Owner,
 	)
 }
 
@@ -55,6 +58,37 @@ func schedulerDefault() string {
 // Returns RELAY_POOL_TOKEN if set, otherwise returns an empty string.
 func poolTokenDefault() string {
 	return os.Getenv("RELAY_POOL_TOKEN")
+}
+
+// Returns RELAY_OWNER if set, otherwise the name of the user running the
+// agent, or an empty string if that can't be found.
+func ownerDefault() string {
+	if owner := os.Getenv("RELAY_OWNER"); owner != "" {
+		return owner
+	}
+	u, err := user.Current()
+	if err != nil {
+		return ""
+	}
+	return stripDomain(u.Username)
+}
+
+// Windows usernames come back as DOMAIN\name, so keep only the name.
+func stripDomain(username string) string {
+	if i := strings.LastIndex(username, `\`); i >= 0 {
+		return username[i+1:]
+	}
+	return username
+}
+
+// Adds the --owner flag to fs. The flag wins over RELAY_OWNER, which wins
+// over the OS username.
+func ownerFlag(fs *flag.FlagSet) *string {
+	return fs.String(
+		"owner",
+		ownerDefault(),
+		"who earns credits for this machine (or set RELAY_OWNER; defaults to your username)",
+	)
 }
 
 // Prints command-line usage information and an example showing how to join a Relay pool.
@@ -104,6 +138,9 @@ func main() {
 		poolTokenDefault(),
 		"join token for the pool (or set RELAY_POOL_TOKEN)",
 	)
+	// Pointer to command-line 'owner' flag.
+	owner := ownerFlag(flag.CommandLine)
+
 	// Replaces the default help output with Relay-specific usage information and an example showing how to join a pool.
 	flag.Usage = func() {
 		printUsage(flag.CommandLine.Output(), flag.CommandLine)
@@ -127,11 +164,21 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Throws error and exits if no owner could be found.
+	if *owner == "" {
+		fmt.Fprintln(
+			os.Stderr,
+			"relay-agent: owner is required; use --owner or set RELAY_OWNER",
+		)
+		os.Exit(2)
+	}
+
 	// Collects information about the machine running relay-agent.
 	node, err := agent.Collect()
 	if err != nil {
 		log.Fatal(err)
 	}
+	node.Owner = *owner
 
 	// Displays useful machine and scheduler information when the agent starts.
 	printStartup(os.Stdout, node, *scheduler)

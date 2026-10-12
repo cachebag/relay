@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -88,5 +89,36 @@ func TestSendConnectionFailureIsNotBadToken(t *testing.T) {
 			"expected connection error, got ErrBadToken: %v",
 			err,
 		)
+	}
+}
+
+// TestSendIncludesOwner verifies that the node's owner is sent in the
+// heartbeat so the scheduler knows who to pay.
+func TestSendIncludesOwner(t *testing.T) {
+	var got struct {
+		Owner string `json:"owner"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Errorf("decode heartbeat: %v", err)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		},
+	))
+	defer server.Close()
+
+	err := Send(
+		context.Background(),
+		server.Client(),
+		server.URL,
+		store.Node{ID: "node-a", Owner: "akrm"},
+		"token",
+	)
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if got.Owner != "akrm" {
+		t.Errorf("expected owner %q, got %q", "akrm", got.Owner)
 	}
 }

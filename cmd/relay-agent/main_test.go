@@ -37,6 +37,7 @@ func TestPrintStartup(t *testing.T) {
 		OS:       "windows",
 		Arch:     "amd64",
 		CPUs:     8,
+		Owner:    "akrm",
 
 		// 16 GiB expressed in bytes.
 		MemBytes: 16 * 1024 * 1024 * 1024,
@@ -49,7 +50,7 @@ func TestPrintStartup(t *testing.T) {
 	printStartup(&testOutput, node, scheduler)
 
 	expected := fmt.Sprintf(
-		"relay-agent %s: test-machine (windows/amd64, 8 CPUs, 16.0 GB) joining http://localhost:8080\n",
+		"relay-agent %s: test-machine (windows/amd64, 8 CPUs, 16.0 GB) joining http://localhost:8080 as akrm\n",
 		Version,
 	)
 
@@ -161,5 +162,48 @@ func TestPrintUsage(t *testing.T) {
 			expectedExample,
 			output,
 		)
+	}
+}
+
+// Tests that --owner wins over RELAY_OWNER, and RELAY_OWNER is used
+// when the flag isn't given.
+func TestOwnerFlag(t *testing.T) {
+	t.Setenv("RELAY_OWNER", "from-env")
+
+	parse := func(args ...string) string {
+		fs := flag.NewFlagSet("relay-agent", flag.ContinueOnError)
+		owner := ownerFlag(fs)
+		if err := fs.Parse(args); err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		return *owner
+	}
+
+	if actual := parse(); actual != "from-env" {
+		t.Errorf("expected: %q, actual: %q", "from-env", actual)
+	}
+	if actual := parse("--owner", "from-flag"); actual != "from-flag" {
+		t.Errorf("expected: %q, actual: %q", "from-flag", actual)
+	}
+}
+
+// Tests that the OS username is used when RELAY_OWNER is not set.
+func TestOwnerDefaultFallback(t *testing.T) {
+	t.Setenv("RELAY_OWNER", "")
+
+	if actual := ownerDefault(); actual == "" {
+		t.Error("expected the OS username, got an empty string")
+	}
+}
+
+// Tests that the DOMAIN\ part of a Windows username is dropped.
+func TestStripDomain(t *testing.T) {
+	for in, expected := range map[string]string{
+		`CORP\akrm`: "akrm",
+		"akrm":      "akrm",
+	} {
+		if actual := stripDomain(in); actual != expected {
+			t.Errorf("stripDomain(%q): expected %q, actual %q", in, expected, actual)
+		}
 	}
 }
