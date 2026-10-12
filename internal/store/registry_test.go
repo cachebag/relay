@@ -18,7 +18,7 @@ func testRoundTrip(t *testing.T, reg Registry) {
 
 	// Truncated to the second because backends that round-trip timestamps through
 	// storage may not preserve sub-second precision.
-	n := Node{ID: "node-a", PoolID: "pool-a", Hostname: "node-a", OS: "linux", Arch: "amd64", CPUs: 4, MemBytes: 8_000_000_000, LastSeen: time.Now().UTC().Truncate(time.Second)}
+	n := Node{ID: "node-a", PoolID: "pool-a", Owner: "akrm", Hostname: "node-a", OS: "linux", Arch: "amd64", CPUs: 4, MemBytes: 8_000_000_000, LastSeen: time.Now().UTC().Truncate(time.Second)}
 	if err := reg.Upsert(ctx, n); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
@@ -30,7 +30,7 @@ func testRoundTrip(t *testing.T, reg Registry) {
 	if len(got) != 1 {
 		t.Fatalf("want 1 node, got %d", len(got))
 	}
-	if got[0].Hostname != "node-a" || got[0].CPUs != 4 || got[0].PoolID != "pool-a" {
+	if got[0].Hostname != "node-a" || got[0].CPUs != 4 || got[0].PoolID != "pool-a" || got[0].Owner != "akrm" {
 		t.Fatalf("unexpected node: %+v", got[0])
 	}
 
