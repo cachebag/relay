@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/cachebag/relay/internal/credit"
 	"github.com/cachebag/relay/internal/store"
 )
 
@@ -13,12 +14,15 @@ import (
 const maxAttempts = 3
 
 type Scheduler struct {
-	nodes store.Registry
-	jobs  store.JobStore
+	nodes   store.Registry
+	jobs    store.JobStore
+	credits *credit.Earner
 }
 
-func New(nodes store.Registry, jobs store.JobStore) *Scheduler {
-	return &Scheduler{nodes: nodes, jobs: jobs}
+// New returns a Scheduler. credits pays owners for their machines' online
+// time each tick; nil turns that off.
+func New(nodes store.Registry, jobs store.JobStore, credits *credit.Earner) *Scheduler {
+	return &Scheduler{nodes: nodes, jobs: jobs, credits: credits}
 }
 
 // Tick performs one round of scheduling.
@@ -40,7 +44,9 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 
 	// Group online nodes by their pool.
 	// Nodes without a pool cannot receive jobs.
+	// online keeps the same nodes as a flat list for the credit ledger.
 	onlineByPool := make(map[string][]store.Node)
+	online := make([]store.Node, 0, len(nodes))
 
 	for _, n := range nodes {
 		if !store.Online(n, now) || n.PoolID == "" {
@@ -51,6 +57,15 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 			onlineByPool[n.PoolID],
 			n,
 		)
+		online = append(online, n)
+	}
+
+	// Pays owners before the early return below, so a pool whose last node
+	// just went offline still gets its remaining minutes.
+	if s.credits != nil {
+		if err := s.credits.Tick(ctx, now, online); err != nil {
+			return err
+		}
 	}
 
 	// No eligible nodes are online.

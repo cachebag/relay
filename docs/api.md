@@ -10,6 +10,7 @@ The API currently supports:
 - Pool listing
 - Pool lookup by token
 - Pool join-token rotation
+- Pool credit balances
 - Node heartbeats
 - Node listing
 - Filtering nodes by pool
@@ -275,6 +276,65 @@ If the pool cannot be retrieved or updated:
 500 Internal Server Error
 ```
 
+## Get Pool Credit Balances
+
+### GET /pools/{id}/credits
+
+Returns every account's credit balance in the pool, highest balance first. Accounts with the same balance are sorted by name.
+
+Owners earn 1 credit for every minute their machine is online. Credits are written to the ledger in blocks of 10 minutes, plus whatever whole minutes are left when the machine goes offline, so a balance can lag behind by up to 10 minutes.
+
+#### Request
+
+The pool's join token is sent as a bearer token.
+
+```http
+GET /pools/pool-id/credits
+Authorization: Bearer generated-pool-token
+```
+
+No request body is required.
+
+#### Success Response
+
+Status:
+
+```text
+200 OK
+```
+
+Example response:
+
+```json
+[
+  {
+    "account": "akrm",
+    "balance": 42
+  },
+  {
+    "account": "omar",
+    "balance": 10
+  }
+]
+```
+
+A pool with no credits yet returns an empty array.
+
+#### Error Responses
+
+If the `Authorization` header is missing, the token doesn't match any pool, or the token belongs to a different pool than `{id}`:
+
+```text
+403 Forbidden
+```
+
+If the balances cannot be read:
+
+```text
+500 Internal Server Error
+```
+
+
 ## Node Heartbeat
 
 ### POST /nodes/heartbeat
@@ -302,6 +362,7 @@ Example body:
   "arch": "amd64",
   "cpus": 4,
   "mem_bytes": 8000000000,
+  "owner": "akrm",
   "pool_token": "generated-pool-token"
 }
 ```
@@ -316,6 +377,7 @@ Example body:
 | `arch` | CPU architecture |
 | `cpus` | Number of CPUs available |
 | `mem_bytes` | Amount of memory available in bytes |
+| `owner` | Name of the person who earns credits for this node's online time |
 | `pool_token` | Secret join token belonging to the node's pool |
 
 The `id` field is required.
@@ -325,6 +387,8 @@ The `pool_token` must match an existing pool.
 When a valid token is provided, the server looks up the pool and assigns its ID to the node.
 
 The server also sets the node's `last_seen` time when the heartbeat is received.
+
+While a node is online, its `owner` earns 1 credit per minute in the node's pool. A node with no `owner` earns nothing.
 
 #### Success Response
 
@@ -388,6 +452,7 @@ Example response:
     "cpus": 4,
     "mem_bytes": 8000000000,
     "pool_id": "pool-id",
+    "owner": "akrm",
     "last_seen": "2026-09-19T12:00:00Z",
     "status": "online"
   },
@@ -399,6 +464,7 @@ Example response:
     "cpus": 8,
     "mem_bytes": 16000000000,
     "pool_id": "pool-id",
+    "owner": "akrm",
     "last_seen": "2026-09-19T11:00:00Z",
     "status": "offline"
   }
@@ -464,6 +530,7 @@ Example:
     "cpus": 4,
     "mem_bytes": 8000000000,
     "pool_id": "pool-id",
+    "owner": "akrm",
     "last_seen": "2026-09-19T12:00:00Z",
     "status": "online"
   }

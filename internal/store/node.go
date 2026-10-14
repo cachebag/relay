@@ -19,6 +19,7 @@ var (
 type Node struct {
 	ID       string    `json:"id"`
 	PoolID   string    `json:"pool_id"`
+	Owner    string    `json:"owner"`
 	Hostname string    `json:"hostname"`
 	OS       string    `json:"os"`
 	Arch     string    `json:"arch"`

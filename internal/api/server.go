@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ type nodeView struct {
 }
 
 // NewHandler creates and returns the HTTP handler for the relay API.
-func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) http.Handler {
+func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, credits store.CreditStore) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -591,6 +592,58 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore) 
 		json.NewEncoder(w).Encode(struct {
 			Token string `json:"token"`
 		}{Token: newToken})
+	})
+
+	// Returns every account's credit balance in the pool, highest first.
+	// Anyone holding the pool's join token can see them.
+	mux.HandleFunc("GET /pools/{id}/credits", func(w http.ResponseWriter, r *http.Request) {
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || token == "" {
+			http.Error(w, "invalid pool token", http.StatusForbidden)
+			return
+		}
+
+		p, err := pools.GetByToken(r.Context(), token)
+		if errors.Is(err, store.ErrNotFound) {
+			http.Error(w, "invalid pool token", http.StatusForbidden)
+			return
+		}
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		// A token can only read its own pool's balances.
+		if p.ID != r.PathValue("id") {
+			http.Error(w, "token does not match this pool", http.StatusForbidden)
+			return
+		}
+
+		balances, err := credits.Balances(r.Context(), p.ID)
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		type balance struct {
+			Account string `json:"account"`
+			Balance int    `json:"balance"`
+		}
+		out := make([]balance, 0, len(balances))
+		for account, b := range balances {
+			out = append(out, balance{account, b})
+		}
+
+		// Highest balance first, then by name so ties don't shuffle.
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Balance != out[j].Balance {
+				return out[i].Balance > out[j].Balance
+			}
+			return out[i].Account < out[j].Account
+		})
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(out)
 	})
 
 	return mux

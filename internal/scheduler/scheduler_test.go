@@ -35,7 +35,7 @@ func tickAndGet(
 		}
 	}
 
-	if err := New(reg, js).Tick(ctx, now); err != nil {
+	if err := New(reg, js, nil).Tick(ctx, now); err != nil {
 		t.Fatalf("Tick() error: %v", err)
 	}
 
@@ -147,7 +147,7 @@ func TestJobDistribution(t *testing.T) {
 		}
 	}
 
-	if err := New(nodes, jobs).Tick(ctx, now); err != nil {
+	if err := New(nodes, jobs, nil).Tick(ctx, now); err != nil {
 		t.Fatalf("Tick() error: %v", err)
 	}
 
@@ -437,7 +437,7 @@ func TestJobsStayInTheirPool(t *testing.T) {
 		}
 	}
 
-	if err := New(nodes, jobs).Tick(ctx, now); err != nil {
+	if err := New(nodes, jobs, nil).Tick(ctx, now); err != nil {
 		t.Fatalf("Tick() error: %v", err)
 	}
 
@@ -536,7 +536,7 @@ func TestRoundRobinPerPool(t *testing.T) {
 		}
 	}
 
-	if err := New(nodes, jobs).Tick(ctx, now); err != nil {
+	if err := New(nodes, jobs, nil).Tick(ctx, now); err != nil {
 		t.Fatalf("Tick() error: %v", err)
 	}
 
