@@ -602,3 +602,25 @@ func TestLegacyJobWithoutPoolStaysQueued(t *testing.T) {
 		t.Errorf("expected 0 attempts, got %d", got.Attempts)
 	}
 }
+
+// Requeuing a lost job clears started_at so the next node starts the clock
+// fresh, and giving up on it stamps finished_at.
+func TestRequeueLostResetsClock(t *testing.T) {
+	now := time.Now()
+	started := now.Add(-5 * time.Minute)
+	offline := store.Node{ID: "node-1", PoolID: "pool-a", LastSeen: now.Add(-60 * time.Second)}
+
+	requeued := tickAndGet(t, now, []store.Node{offline}, []store.Job{{
+		ID: "job-1", PoolID: "pool-a", Status: store.JobRunning, NodeID: "node-1", Attempts: 1, StartedAt: &started,
+	}}, "job-1")
+	if requeued.Status != store.JobQueued || requeued.StartedAt != nil || requeued.FinishedAt != nil {
+		t.Errorf("requeued job: status=%s started=%v finished=%v, want queued/nil/nil", requeued.Status, requeued.StartedAt, requeued.FinishedAt)
+	}
+
+	failed := tickAndGet(t, now, []store.Node{offline}, []store.Job{{
+		ID: "job-2", PoolID: "pool-a", Status: store.JobRunning, NodeID: "node-1", Attempts: maxAttempts, StartedAt: &started,
+	}}, "job-2")
+	if failed.Status != store.JobFailed || failed.FinishedAt == nil || failed.StartedAt != nil {
+		t.Errorf("failed job: status=%s started=%v finished=%v, want failed/nil/set", failed.Status, failed.StartedAt, failed.FinishedAt)
+	}
+}

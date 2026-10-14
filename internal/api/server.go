@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cachebag/relay/internal/credit"
 	"github.com/cachebag/relay/internal/store"
 )
 
@@ -433,6 +434,10 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			}
 			if j.Status == store.JobAssigned {
 				j.Status = store.JobRunning
+
+				// The clock for this attempt starts now.
+				now := time.Now().UTC()
+				j.StartedAt = &now
 				if err := jobs.Update(r.Context(), j); err != nil {
 					http.Error(w, "store error", http.StatusInternalServerError)
 					return
@@ -510,7 +515,16 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		} else {
 			j.Status = store.JobFailed
 		}
+		now := time.Now().UTC()
+		j.FinishedAt = &now
 		if err := jobs.Update(r.Context(), j); err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
+		// Bill the submitter for the run. The 409 above means a job can
+		// only get here once, so it can't be charged twice.
+		if err := credit.Charge(r.Context(), credits, j); err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
 		}

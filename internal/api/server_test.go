@@ -1167,3 +1167,65 @@ func TestLeaveRejected(t *testing.T) {
 		})
 	}
 }
+
+// chargeFixture is a running job in pool p1 by "akrm" that started
+// `ago` before now, with the ledger it will be charged to.
+func chargeFixture(t *testing.T, ago time.Duration) (http.Handler, store.JobStore, store.CreditStore) {
+	t.Helper()
+	started := time.Now().UTC().Add(-ago)
+	j := store.Job{ID: "job1", Command: []string{"sleep"}, Status: store.JobRunning, NodeID: "n1",
+		PoolID: "p1", Submitter: "akrm", Attempts: 1, StartedAt: &started}
+	jobs := store.NewMemJobs()
+	if err := jobs.Create(context.Background(), j); err != nil {
+		t.Fatal(err)
+	}
+	credits := store.NewMemCredits()
+	return NewHandler(store.NewMem(), store.NewMemPools(), jobs, credits), jobs, credits
+}
+
+// TestResultChargesSubmitter checks that an accepted result stamps
+// finished_at and bills the submitter 1 credit per started minute, tagged
+// with the job ID, and that a second report is 409 and charges nothing more.
+func TestResultChargesSubmitter(t *testing.T) {
+	handler, jobs, credits := chargeFixture(t, 90*time.Second)
+
+	if code := postResult(handler, "job1", `{"node_id":"n1","attempt":1,"exit_code":0}`); code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", code)
+	}
+	j, _ := jobs.Get(context.Background(), "job1")
+	if j.FinishedAt == nil || j.StartedAt == nil {
+		t.Fatalf("expected both timestamps set, got started=%v finished=%v", j.StartedAt, j.FinishedAt)
+	}
+	balances, _ := credits.Balances(context.Background(), "p1")
+	if balances["akrm"] != -2 {
+		t.Errorf("expected akrm charged 2, got balance %d", balances["akrm"])
+	}
+
+	if code := postResult(handler, "job1", `{"node_id":"n1","attempt":1,"exit_code":0}`); code != http.StatusConflict {
+		t.Fatalf("second result: expected 409, got %d", code)
+	}
+	balances, _ = credits.Balances(context.Background(), "p1")
+	if balances["akrm"] != -2 {
+		t.Errorf("second result changed the balance to %d", balances["akrm"])
+	}
+}
+
+// TestNextJobSetsStartedAt checks that picking up an assigned job starts
+// its clock, and that a second pickup of the running job doesn't restart it.
+func TestNextJobSetsStartedAt(t *testing.T) {
+	handler, jobs := newJobHandler(t, store.Job{ID: "job1", Command: []string{"x"}, Status: store.JobAssigned, NodeID: "n1", Attempts: 1})
+
+	if rec := getJSON(handler, "/nodes/n1/jobs/next"); rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	first, _ := jobs.Get(context.Background(), "job1")
+	if first.StartedAt == nil {
+		t.Fatal("expected started_at to be set after pickup")
+	}
+
+	getJSON(handler, "/nodes/n1/jobs/next")
+	second, _ := jobs.Get(context.Background(), "job1")
+	if !second.StartedAt.Equal(*first.StartedAt) {
+		t.Errorf("started_at moved on second pickup: %v -> %v", first.StartedAt, second.StartedAt)
+	}
+}
