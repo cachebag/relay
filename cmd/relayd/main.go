@@ -48,6 +48,14 @@ func main() {
 		"Port for relayd to listen on",
 	)
 
+	// Replaces the server admin token and exits. This is how a lost token
+	// is recovered. It needs relay.db, so only whoever runs relayd can do it.
+	newAdminToken := flag.Bool(
+		"new-admin-token",
+		false,
+		"Replace the server admin token, print the new one, and exit",
+	)
+
 	// Makes the 'flag' package inspect cli arguments.
 	flag.Parse()
 
@@ -88,6 +96,19 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// The server admin token lives in the same database. On first start
+	// one is made and printed; later starts stay quiet.
+	server, err := store.NewSQLiteServer(reg.DB())
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, err := ensureAdminToken(context.Background(), server, os.Stdout, *newAdminToken); err != nil {
+		log.Fatal(err)
+	}
+	if *newAdminToken {
+		return
+	}
+
 	// Starts listening on the specified port.
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
@@ -100,7 +121,7 @@ func main() {
 
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program.
-	if err := http.Serve(ln, api.NewHandler(reg, pools, jobs, credits)); err != nil {
+	if err := http.Serve(ln, api.NewHandler(reg, pools, jobs, credits, server)); err != nil {
 		log.Fatal(err)
 	}
 }
