@@ -393,293 +393,299 @@ func TestNodeHeartbeatInvalidPoolToken(t *testing.T) {
 	}
 }
 
-// TestJobCreate checks that a job can be submitted
-// and is stored with a generated ID and queued status.
+// createTestPool creates a pool with a known join token for API tests.
+func createTestPool(t *testing.T, pools store.PoolStore) store.Pool {
+	t.Helper()
+	p := store.Pool{
+		ID: "test-pool", Name: "Test Pool", Token: "test-token", CreatedAt: time.Now().UTC(),
+	}
+	if err := pools.Create(context.Background(), p); err != nil {
+		t.Fatalf("failed to create test pool: %v", err)
+	}
+	return p
+}
+
+// submitTestJob sends an authenticated job submission request.
+func submitTestJob(handler http.Handler, command []string, submitter string) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(struct {
+		Command   []string `json:"command"`
+		Submitter string   `json:"submitter"`
+	}{Command: command, Submitter: submitter})
+	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestJobCreate verifies that a new job gets the authenticated pool's ID and the submitter.
 func TestJobCreate(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
 	jobs := store.NewMemJobs()
+	pool := createTestPool(t, pools)
 	handler := NewHandler(reg, pools, jobs)
 
-	// Submit a new job.
-	body := `{
-		"command":["echo","hi"]
-	}`
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/jobs",
-		strings.NewReader(body),
-	)
-	req.Header.Set("Content-Type", "application/json")
-
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
-	// Creating a job should return 201 Created.
+	rec := submitTestJob(handler, []string{"echo", "hi"}, "alice")
 	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected status 201, got %d", rec.Code)
+		t.Fatalf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
 	}
-
-	// Decode the response returned by POST /jobs.
 	var response struct {
 		ID     string          `json:"id"`
 		Status store.JobStatus `json:"status"`
 	}
-
 	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("failed to decode job response: %v", err)
+		t.Fatalf("failed to decode response: %v", err)
 	}
-
-	// Make sure the server generated a 12-character job ID.
 	if len(response.ID) != 12 {
 		t.Errorf("expected job ID length 12, got %d", len(response.ID))
 	}
-
-	// New jobs should always start in the queued state.
 	if response.Status != store.JobQueued {
-		t.Errorf("expected status %q, got %q", store.JobQueued, response.Status)
+		t.Errorf("expected queued status, got %q", response.Status)
 	}
-
-	// Make sure the job was actually saved in the job store.
-	created, err := jobs.Get(req.Context(), response.ID)
+	created, err := jobs.Get(context.Background(), response.ID)
 	if err != nil {
-		t.Fatalf("failed to get created job from store: %v", err)
+		t.Fatalf("failed to retrieve created job: %v", err)
 	}
-
-	// Make sure the submitted command was stored correctly.
-	if len(created.Command) != 2 ||
-		created.Command[0] != "echo" ||
-		created.Command[1] != "hi" {
-		t.Errorf("expected command [echo hi], got %v", created.Command)
+	if len(created.Command) != 2 || created.Command[0] != "echo" || created.Command[1] != "hi" {
+		t.Errorf("unexpected command: %v", created.Command)
 	}
-
-	// The server should assign the queued status.
 	if created.Status != store.JobQueued {
-		t.Errorf("expected stored status %q, got %q", store.JobQueued, created.Status)
+		t.Errorf("expected stored status queued, got %q", created.Status)
 	}
-
-	// The server should assign a creation time.
+	if created.PoolID != pool.ID {
+		t.Errorf("expected pool ID %q, got %q", pool.ID, created.PoolID)
+	}
+	if created.Submitter != "alice" {
+		t.Errorf("expected submitter alice, got %q", created.Submitter)
+	}
 	if created.CreatedAt.IsZero() {
-		t.Error("expected CreatedAt to be set")
+		t.Error("expected creation time to be set")
 	}
 }
 
-// TestJobCreateEmptyCommand checks that a job without a command
-// is rejected with HTTP 400 Bad Request.
+// TestJobCreateEmptyCommand checks that an empty command is rejected.
 func TestJobCreateEmptyCommand(t *testing.T) {
-	reg := store.NewMem()
 	pools := store.NewMemPools()
-	jobs := store.NewMemJobs()
-	handler := NewHandler(reg, pools, jobs)
-
-	body := `{
-		"command":[]
-	}`
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/jobs",
-		strings.NewReader(body),
-	)
-	req.Header.Set("Content-Type", "application/json")
-
-	rec := httptest.NewRecorder()
-
-	handler.ServeHTTP(rec, req)
-
+	createTestPool(t, pools)
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs())
+	rec := submitTestJob(handler, []string{}, "alice")
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rec.Code)
 	}
 }
 
-// TestJobGet checks that a submitted job can be retrieved by its ID.
-func TestJobGet(t *testing.T) {
-	reg := store.NewMem()
+func TestJobCreateInvalidPoolToken(t *testing.T) {
 	pools := store.NewMemPools()
 	jobs := store.NewMemJobs()
-	handler := NewHandler(reg, pools, jobs)
+	createTestPool(t, pools)
+	handler := NewHandler(store.NewMem(), pools, jobs)
 
-	// Create a job first.
-	body := `{
-		"command":["echo","hi"]
-	}`
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/jobs",
-		strings.NewReader(body),
-	)
-
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected status 201, got %d", rec.Code)
+	tests := []struct{ name, header string }{
+		{"missing token", ""},
+		{"invalid token", "Bearer wrong-token"},
+		{"missing Bearer prefix", "test-token"},
 	}
-
-	// Decode the ID returned when the job was created.
-	var created struct {
-		ID string `json:"id"`
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(`{"command":["echo","hello"],"submitter":"alice"}`))
+			if tt.header != "" {
+				req.Header.Set("Authorization", tt.header)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("expected status 403, got %d", rec.Code)
+			}
+		})
 	}
-
-	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
-		t.Fatalf("failed to decode job response: %v", err)
+	listed, err := jobs.List(context.Background())
+	if err != nil {
+		t.Fatalf("failed to list jobs: %v", err)
 	}
-
-	// Retrieve the job using its ID.
-	req = httptest.NewRequest(
-		http.MethodGet,
-		"/jobs/"+created.ID,
-		nil,
-	)
-
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rec.Code)
-	}
-
-	var job store.Job
-
-	if err := json.Unmarshal(rec.Body.Bytes(), &job); err != nil {
-		t.Fatalf("failed to decode job: %v", err)
-	}
-
-	if job.ID != created.ID {
-		t.Errorf("expected job ID %q, got %q", created.ID, job.ID)
-	}
-
-	if len(job.Command) != 2 ||
-		job.Command[0] != "echo" ||
-		job.Command[1] != "hi" {
-		t.Errorf("expected command [echo hi], got %v", job.Command)
-	}
-
-	if job.Status != store.JobQueued {
-		t.Errorf("expected status %q, got %q", store.JobQueued, job.Status)
+	if len(listed) != 0 {
+		t.Errorf("expected no jobs, got %d", len(listed))
 	}
 }
 
-// TestJobGetNotFound checks that requesting an unknown job
-// returns HTTP 404 Not Found.
-func TestJobGetNotFound(t *testing.T) {
-	reg := store.NewMem()
+func TestJobCreateEmptySubmitter(t *testing.T) {
+	pools := store.NewMemPools()
+	createTestPool(t, pools)
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs())
+	for _, submitter := range []string{"", "   "} {
+		rec := submitTestJob(handler, []string{"echo", "hello"}, submitter)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("submitter %q: expected 400, got %d", submitter, rec.Code)
+		}
+	}
+}
+
+// TestJobCreateUsesAuthenticatedPool confirms a client-supplied pool_id is ignored.
+func TestJobCreateUsesAuthenticatedPool(t *testing.T) {
 	pools := store.NewMemPools()
 	jobs := store.NewMemJobs()
-	handler := NewHandler(reg, pools, jobs)
-
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/jobs/doesnotexist",
-		nil,
-	)
-
+	pool := createTestPool(t, pools)
+	handler := NewHandler(store.NewMem(), pools, jobs)
+	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(`{"command":["echo","hello"],"submitter":"alice","pool_id":"another-pool"}`))
+	req.Header.Set("Authorization", "Bearer test-token")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	job, err := jobs.Get(context.Background(), response.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.PoolID != pool.ID {
+		t.Errorf("expected pool %q, got %q", pool.ID, job.PoolID)
+	}
+	if job.Submitter != "alice" {
+		t.Errorf("expected alice, got %q", job.Submitter)
+	}
+}
 
+// TestJobGet checks that a submitted job can be retrieved by its ID.
+func TestJobGet(t *testing.T) {
+	pools := store.NewMemPools()
+	createTestPool(t, pools)
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs())
+	rec := submitTestJob(handler, []string{"echo", "hi"}, "alice")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/jobs/"+created.ID, nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	var job store.Job
+	if err := json.Unmarshal(rec.Body.Bytes(), &job); err != nil {
+		t.Fatal(err)
+	}
+	if job.ID != created.ID {
+		t.Errorf("expected job ID %q, got %q", created.ID, job.ID)
+	}
+	if len(job.Command) != 2 || job.Command[0] != "echo" || job.Command[1] != "hi" {
+		t.Errorf("unexpected command: %v", job.Command)
+	}
+	if job.Status != store.JobQueued {
+		t.Errorf("expected queued, got %q", job.Status)
+	}
+	if job.PoolID != "test-pool" || job.Submitter != "alice" {
+		t.Errorf("unexpected job ownership: %+v", job)
+	}
+}
+
+// TestJobGetNotFound checks that requesting an unknown job returns 404.
+func TestJobGetNotFound(t *testing.T) {
+	handler := NewHandler(store.NewMem(), store.NewMemPools(), store.NewMemJobs())
+	req := httptest.NewRequest(http.MethodGet, "/jobs/doesnotexist", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", rec.Code)
 	}
 }
 
-// TestJobList checks that submitted jobs can be retrieved
-// from the job list endpoint.
+// TestJobList checks that submitted jobs appear in the list endpoint.
 func TestJobList(t *testing.T) {
-	reg := store.NewMem()
 	pools := store.NewMemPools()
-	jobs := store.NewMemJobs()
-	handler := NewHandler(reg, pools, jobs)
-
-	// Create the first job.
-	body := `{
-		"command":["echo","first"]
-	}`
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/jobs",
-		strings.NewReader(body),
-	)
-
+	createTestPool(t, pools)
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs())
+	for _, tc := range []struct{ command, submitter string }{{"first", "alice"}, {"second", "bob"}} {
+		rec := submitTestJob(handler, []string{"echo", tc.command}, tc.submitter)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d", rec.Code)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/jobs", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected status 201, got %d", rec.Code)
-	}
-
-	// Create the second job.
-	body = `{
-		"command":["echo","second"]
-	}`
-
-	req = httptest.NewRequest(
-		http.MethodPost,
-		"/jobs",
-		strings.NewReader(body),
-	)
-
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected status 201, got %d", rec.Code)
-	}
-
-	// Request the list of jobs.
-	req = httptest.NewRequest(
-		http.MethodGet,
-		"/jobs",
-		nil,
-	)
-
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
-
-	// Decode the returned jobs.
 	var listed []store.Job
-
 	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
-		t.Fatalf("failed to decode job list: %v", err)
+		t.Fatal(err)
 	}
-
-	// We created two jobs.
 	if len(listed) != 2 {
 		t.Fatalf("expected 2 jobs, got %d", len(listed))
 	}
-
-	// Make sure the first command was stored correctly.
-	// Make sure both submitted commands appear in the list.
-	foundFirst := false
-	foundSecond := false
-
+	found := map[string]string{}
 	for _, job := range listed {
-		if len(job.Command) == 2 &&
-			job.Command[0] == "echo" &&
-			job.Command[1] == "first" {
-			foundFirst = true
+		if len(job.Command) != 2 {
+			t.Errorf("unexpected command: %v", job.Command)
+			continue
 		}
+		if job.PoolID != "test-pool" {
+			t.Errorf("unexpected pool %q", job.PoolID)
+		}
+		found[job.Command[1]] = job.Submitter
+	}
+	if found["first"] != "alice" || found["second"] != "bob" {
+		t.Errorf("unexpected submitted jobs: %v", found)
+	}
+}
 
-		if len(job.Command) == 2 &&
-			job.Command[0] == "echo" &&
-			job.Command[1] == "second" {
-			foundSecond = true
+// TestJobListFilterByPool checks that filtering includes only jobs in the requested pool.
+func TestJobListFilterByPool(t *testing.T) {
+	jobs := store.NewMemJobs()
+	handler := NewHandler(store.NewMem(), store.NewMemPools(), jobs)
+	for _, job := range []store.Job{
+		{ID: "job-a1", PoolID: "pool-a", Submitter: "alice", Status: store.JobQueued},
+		{ID: "job-a2", PoolID: "pool-a", Submitter: "bob", Status: store.JobQueued},
+		{ID: "job-b1", PoolID: "pool-b", Submitter: "charlie", Status: store.JobQueued},
+	} {
+		if err := jobs.Create(context.Background(), job); err != nil {
+			t.Fatal(err)
 		}
 	}
-
-	if !foundFirst {
-		t.Error("expected to find command [echo first]")
-	}
-
-	if !foundSecond {
-		t.Error("expected to find command [echo second]")
+	for _, tc := range []struct {
+		name, path, pool string
+		expected         int
+	}{
+		{"all jobs", "/jobs", "", 3},
+		{"pool A", "/jobs?pool=pool-a", "pool-a", 2},
+		{"pool B", "/jobs?pool=pool-b", "pool-b", 1},
+		{"unknown pool", "/jobs?pool=unknown", "unknown", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", rec.Code)
+			}
+			var listed []store.Job
+			if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+				t.Fatal(err)
+			}
+			if len(listed) != tc.expected {
+				t.Fatalf("expected %d jobs, got %d", tc.expected, len(listed))
+			}
+			if tc.pool != "" {
+				for _, job := range listed {
+					if job.PoolID != tc.pool {
+						t.Errorf("job %s is in pool %q, expected %q", job.ID, job.PoolID, tc.pool)
+					}
+				}
+			}
+		})
 	}
 }
 

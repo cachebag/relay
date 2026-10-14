@@ -17,6 +17,8 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 		ID:        NewID(),
 		Command:   []string{"echo", "hello"},
 		Status:    JobQueued,
+		PoolID:    "pool-a",
+		Submitter: "alice",
 		CreatedAt: time.Now().UTC().Truncate(time.Second),
 	}
 	if err := js.Create(ctx, j); err != nil {
@@ -36,6 +38,9 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	if got.Status != JobQueued {
 		t.Fatalf("want status %q, got %q", JobQueued, got.Status)
 	}
+	if got.PoolID != j.PoolID || got.Submitter != j.Submitter {
+		t.Fatalf("ownership after create: got pool=%q submitter=%q, want pool=%q submitter=%q", got.PoolID, got.Submitter, j.PoolID, j.Submitter)
+	}
 	if !got.CreatedAt.Equal(j.CreatedAt) {
 		t.Fatalf("want created_at %v, got %v", j.CreatedAt, got.CreatedAt)
 	}
@@ -45,6 +50,8 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	}
 
 	j.Status = JobAssigned
+	j.PoolID = "pool-b"
+	j.Submitter = "bob"
 	j.NodeID = "node-a"
 	j.ExitCode = 3
 	j.Stdout = "hi\n"
@@ -59,6 +66,9 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	}
 	if got.Status != JobAssigned {
 		t.Fatalf("want status %q, got %q", JobAssigned, got.Status)
+	}
+	if got.PoolID != j.PoolID || got.Submitter != j.Submitter {
+		t.Fatalf("ownership after update: got pool=%q submitter=%q, want pool=%q submitter=%q", got.PoolID, got.Submitter, j.PoolID, j.Submitter)
 	}
 	if got.NodeID != "node-a" {
 		t.Fatalf("want node_id %q, got %q", "node-a", got.NodeID)
@@ -79,6 +89,9 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	}
 	if len(list) != 1 {
 		t.Fatalf("want 1 job, got %d", len(list))
+	}
+	if list[0].PoolID != j.PoolID || list[0].Submitter != j.Submitter {
+		t.Fatalf("ownership in list: got pool=%q submitter=%q", list[0].PoolID, list[0].Submitter)
 	}
 	if list[0].ID != j.ID {
 		t.Fatalf("want id %q, got %q", j.ID, list[0].ID)

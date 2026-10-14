@@ -8,335 +8,18 @@ import (
 	"github.com/cachebag/relay/internal/store"
 )
 
-// Test:
-// One online node, one queued job.
-// The job should have its Status updated to JobAssigned and its NodeID
-// set to the online node's ID.
-func TestJobAssigned(t *testing.T) {
-	ctx := context.Background()
-
-	nodes := store.NewMem()
-	jobs := store.NewMemJobs()
-
-	// Creation of an online node.
-	node := store.Node{
-		ID:       "node-1",
-		LastSeen: time.Now(),
-	}
-
-	// Creation of queued job.
-	job := store.Job{
-		ID:     "job-1",
-		Status: store.JobQueued,
-	}
-
-	// Adds the node to the node store.
-	if err := nodes.Upsert(ctx, node); err != nil {
-		t.Fatalf("adding node: %v", err)
-	}
-
-	// Adds the job to the job store.
-	if err := jobs.Create(ctx, job); err != nil {
-		t.Fatalf("adding job: %v", err)
-	}
-
-	// Creates a new scheduler with the previously created node
-	// and job stores.
-	s := New(nodes, jobs)
-
-	// Calls Tick() to attempt job assignment.
-	if err := s.Tick(ctx, time.Now()); err != nil {
-		t.Fatalf("Tick() error: %v", err)
-	}
-
-	// Retrieves the list of jobs from the job store to verify assignment.
-	got, err := jobs.List(ctx)
-	if err != nil {
-		t.Fatalf("listing jobs: %v", err)
-	}
-
-	// Testing whether exactly one job was retrieved.
-	if len(got) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(got))
-	}
-
-	// Testing that the job was assigned to the correct node.
-	if got[0].Status != store.JobAssigned {
-		t.Errorf(
-			"expected status %q, got %q",
-			store.JobAssigned,
-			got[0].Status,
-		)
-	}
-
-	// Testing that the job was assigned to the correct node.
-	if got[0].NodeID != node.ID {
-		t.Errorf(
-			"expected NodeID %q, got %q",
-			node.ID,
-			got[0].NodeID,
-		)
-	}
-
-	// Testing that the placement was counted.
-	if got[0].Attempts != 1 {
-		t.Errorf("expected Attempts 1, got %d", got[0].Attempts)
-	}
-}
-
-// Test:
-// One node whose LastSeen was 60 seconds ago.
-// Since store.NodeTimeout is 30 seconds, the node is offline.
-// The queued job should remain queued and its NodeID should remain empty.
-func TestNodeOffline(t *testing.T) {
-	ctx := context.Background()
-
-	nodes := store.NewMem()
-	jobs := store.NewMemJobs()
-
-	// Creation of an offline node.
-	node := store.Node{
-		ID:       "node-1",
-		LastSeen: time.Now().Add(-60 * time.Second),
-	}
-
-	// Creation of a queued job.
-	job := store.Job{
-		ID:     "job-1",
-		Status: store.JobQueued,
-	}
-
-	// Adds the offline node to the node store.
-	if err := nodes.Upsert(ctx, node); err != nil {
-		t.Fatalf("adding node: %v", err)
-	}
-
-	// Adds the queued job to the job store.
-	if err := jobs.Create(ctx, job); err != nil {
-		t.Fatalf("adding job: %v", err)
-	}
-
-	// Creates a new scheduler with the previously created node
-	// and job stores.
-	s := New(nodes, jobs)
-
-	// Calls Tick() to attempt job assignment.
-	if err := s.Tick(ctx, time.Now()); err != nil {
-		t.Fatalf("Tick() error: %v", err)
-	}
-
-	// Retrieves the list of jobs from the job store to verify that
-	// the offline node did not get assigned any jobs.
-	got, err := jobs.List(ctx)
-	if err != nil {
-		t.Fatalf("listing jobs: %v", err)
-	}
-
-	// Testing whether exactly one job was retrieved.
-	if len(got) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(got))
-	}
-
-	// Testing that the job remains queued since the node is offline.
-	if got[0].Status != store.JobQueued {
-		t.Errorf(
-			"expected job to remain %q, got %q",
-			store.JobQueued,
-			got[0].Status,
-		)
-	}
-
-	// Testing that the NodeID remains empty since the node is offline.
-	if got[0].NodeID != "" {
-		t.Errorf(
-			"expected NodeID to remain empty, got %q",
-			got[0].NodeID,
-		)
-	}
-}
-
-// Test:
-// Two online nodes and three queued jobs.
-// One node gets two jobs and the other gets one.
-func TestJobDistribution(t *testing.T) {
-	ctx := context.Background()
-
-	nodes := store.NewMem()
-	jobs := store.NewMemJobs()
-
-	// Creation of two online nodes.
-	node1 := store.Node{
-		ID:       "node-1",
-		LastSeen: time.Now(),
-	}
-	node2 := store.Node{
-		ID:       "node-2",
-		LastSeen: time.Now(),
-	}
-
-	// Adds the first online node to the node store.
-	if err := nodes.Upsert(ctx, node1); err != nil {
-		t.Fatalf("adding node 1: %v", err)
-	}
-
-	// Adds the second online node to the node store.
-	if err := nodes.Upsert(ctx, node2); err != nil {
-		t.Fatalf("adding node 2: %v", err)
-	}
-
-	// Creation of three queued jobs.
-	job1 := store.Job{
-		ID:     "job-1",
-		Status: store.JobQueued,
-	}
-	job2 := store.Job{
-		ID:     "job-2",
-		Status: store.JobQueued,
-	}
-	job3 := store.Job{
-		ID:     "job-3",
-		Status: store.JobQueued,
-	}
-
-	// Adds the queued jobs to the job store.
-	for _, job := range []store.Job{job1, job2, job3} {
-		if err := jobs.Create(ctx, job); err != nil {
-			t.Fatalf("adding job %s: %v", job.ID, err)
-		}
-	}
-
-	// Creates a new scheduler with the previously created node
-	// and job stores.
-	s := New(nodes, jobs)
-
-	// Calls Tick() to attempt job assignment.
-	if err := s.Tick(ctx, time.Now()); err != nil {
-		t.Fatalf("Tick() error: %v", err)
-	}
-
-	// Retrieves the list of jobs from the job store to verify
-	// job distribution.
-	got, err := jobs.List(ctx)
-	if err != nil {
-		t.Fatalf("listing jobs: %v", err)
-	}
-
-	// Testing whether exactly three jobs were retrieved.
-	if len(got) != 3 {
-		t.Fatalf("expected 3 jobs, got %d", len(got))
-	}
-
-	// Stores the number of jobs assigned to each node.
-	nodeJobCount := make(map[string]int)
-
-	// Iterates over the retrieved jobs to count the number
-	// of jobs assigned to each node.
-	for _, job := range got {
-		if job.Status != store.JobAssigned {
-			t.Errorf(
-				"job %s: expected status %q, got %q",
-				job.ID,
-				store.JobAssigned,
-				job.Status,
-			)
-		}
-
-		nodeJobCount[job.NodeID]++
-	}
-
-	// Verifies that the job distribution between the two nodes is as expected.
-	node1Count := nodeJobCount[node1.ID]
-	node2Count := nodeJobCount[node2.ID]
-	if !((node1Count == 2 && node2Count == 1) ||
-		(node1Count == 1 && node2Count == 2)) {
-
-		t.Errorf(
-			"expected jobs split 2/1 between nodes; node-1=%d node-2=%d",
-			node1Count,
-			node2Count,
-		)
-	}
-}
-
-// Test:
-// There are online nodes, but there are no queued jobs.
-// The job's status and NodeID should remain unchanged.
-func TestNoJobsQueued(t *testing.T) {
-	ctx := context.Background()
-
-	nodes := store.NewMem()
-	jobs := store.NewMemJobs()
-
-	// Creation of an online node.
-	node := store.Node{
-		ID:       "node-1",
-		LastSeen: time.Now(),
-	}
-
-	// Creation of a job that is already assigned to the node.
-	job := store.Job{
-		ID:     "job-1",
-		Status: store.JobAssigned,
-		NodeID: "node-1",
-	}
-
-	// Adds the node to the node store.
-	if err := nodes.Upsert(ctx, node); err != nil {
-		t.Fatalf("adding node: %v", err)
-	}
-
-	// Adds the job to the job store.
-	if err := jobs.Create(ctx, job); err != nil {
-		t.Fatalf("adding job: %v", err)
-	}
-
-	// Creates a new scheduler with the previously created node
-	// and job stores.
-	s := New(nodes, jobs)
-
-	// Calls Tick() to attempt job assignment.
-	if err := s.Tick(ctx, time.Now()); err != nil {
-		t.Fatalf("expected Tick() to return nil, got %v", err)
-	}
-
-	// Retrieves the list of jobs from the job store to verify
-	// that no changes have been made.
-	got, err := jobs.List(ctx)
-	if err != nil {
-		t.Fatalf("listing jobs: %v", err)
-	}
-
-	// Testing whether exactly one job is present in the job store.
-	if len(got) != 1 {
-		t.Fatalf("expected 1 job, got %d", len(got))
-	}
-
-	// Testing whether the job's status remains assigned and
-	// the NodeID remains unchanged.
-	if got[0].Status != store.JobAssigned {
-		t.Errorf(
-			"expected status to remain %q, got %q",
-			store.JobAssigned,
-			got[0].Status,
-		)
-	}
-
-	// Testing whether the job's NodeID remains unchanged.
-	if got[0].NodeID != "node-1" {
-		t.Errorf(
-			"expected NodeID to remain %q, got %q",
-			"node-1",
-			got[0].NodeID,
-		)
-	}
-}
-
-// Builds a scheduler over the given nodes and jobs, runs one Tick at now,
-// and returns the job with the given ID afterwards.
-func tickAndGet(t *testing.T, now time.Time, nodes []store.Node, jobs []store.Job, id string) store.Job {
+// tickAndGet creates temporary stores, runs one scheduling
+// tick, and retrieves the requested job.
+func tickAndGet(
+	t *testing.T,
+	now time.Time,
+	nodes []store.Node,
+	jobs []store.Job,
+	id string,
+) store.Job {
 	t.Helper()
-	ctx := context.Background()
 
+	ctx := context.Background()
 	reg := store.NewMem()
 	js := store.NewMemJobs()
 
@@ -345,6 +28,7 @@ func tickAndGet(t *testing.T, now time.Time, nodes []store.Node, jobs []store.Jo
 			t.Fatalf("adding node %s: %v", n.ID, err)
 		}
 	}
+
 	for _, j := range jobs {
 		if err := js.Create(ctx, j); err != nil {
 			t.Fatalf("adding job %s: %v", j.ID, err)
@@ -359,126 +43,562 @@ func tickAndGet(t *testing.T, now time.Time, nodes []store.Node, jobs []store.Jo
 	if err != nil {
 		t.Fatalf("getting job %s: %v", id, err)
 	}
+
 	return got
 }
 
-// Test:
-// A job assigned to a node that stopped heartbeating 60 seconds ago, and no
-// other node to take it. After Tick the job is back in the queue with no
-// NodeID, and Attempts is unchanged because nothing placed it again.
+// One online node and one queued job.
+// The job should be assigned to its pool's node.
+func TestJobAssigned(t *testing.T) {
+	now := time.Now()
+
+	node := store.Node{
+		ID:       "node-1",
+		PoolID:   "pool-a",
+		LastSeen: now,
+	}
+
+	job := store.Job{
+		ID:     "job-1",
+		PoolID: "pool-a",
+		Status: store.JobQueued,
+	}
+
+	got := tickAndGet(
+		t, now,
+		[]store.Node{node},
+		[]store.Job{job},
+		job.ID,
+	)
+
+	if got.Status != store.JobAssigned {
+		t.Errorf("expected assigned, got %q", got.Status)
+	}
+	if got.NodeID != node.ID {
+		t.Errorf("expected node %q, got %q", node.ID, got.NodeID)
+	}
+	if got.Attempts != 1 {
+		t.Errorf("expected 1 attempt, got %d", got.Attempts)
+	}
+}
+
+// An offline node cannot receive a queued job.
+func TestNodeOffline(t *testing.T) {
+	now := time.Now()
+
+	node := store.Node{
+		ID:       "node-1",
+		PoolID:   "pool-a",
+		LastSeen: now.Add(-60 * time.Second),
+	}
+
+	job := store.Job{
+		ID:     "job-1",
+		PoolID: "pool-a",
+		Status: store.JobQueued,
+	}
+
+	got := tickAndGet(
+		t, now,
+		[]store.Node{node},
+		[]store.Job{job},
+		job.ID,
+	)
+
+	if got.Status != store.JobQueued {
+		t.Errorf("expected queued, got %q", got.Status)
+	}
+	if got.NodeID != "" {
+		t.Errorf("expected no assigned node, got %q", got.NodeID)
+	}
+	if got.Attempts != 0 {
+		t.Errorf("expected 0 attempts, got %d", got.Attempts)
+	}
+}
+
+// Three queued jobs should be split 2/1 between two
+// online nodes belonging to the same pool.
+func TestJobDistribution(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	nodes := store.NewMem()
+	jobs := store.NewMemJobs()
+
+	testNodes := []store.Node{
+		{ID: "node-1", Hostname: "node-1", PoolID: "pool-a", LastSeen: now},
+		{ID: "node-2", Hostname: "node-2", PoolID: "pool-a", LastSeen: now},
+	}
+
+	for _, n := range testNodes {
+		if err := nodes.Upsert(ctx, n); err != nil {
+			t.Fatalf("adding node: %v", err)
+		}
+	}
+
+	for _, id := range []string{"job-1", "job-2", "job-3"} {
+		j := store.Job{
+			ID:     id,
+			PoolID: "pool-a",
+			Status: store.JobQueued,
+		}
+		if err := jobs.Create(ctx, j); err != nil {
+			t.Fatalf("adding job: %v", err)
+		}
+	}
+
+	if err := New(nodes, jobs).Tick(ctx, now); err != nil {
+		t.Fatalf("Tick() error: %v", err)
+	}
+
+	all, err := jobs.List(ctx)
+	if err != nil {
+		t.Fatalf("listing jobs: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("expected 3 jobs, got %d", len(all))
+	}
+
+	counts := make(map[string]int)
+
+	for _, j := range all {
+		if j.Status != store.JobAssigned {
+			t.Errorf("job %s was not assigned", j.ID)
+		}
+		if j.PoolID != "pool-a" {
+			t.Errorf("job %s has incorrect pool", j.ID)
+		}
+		if j.Attempts != 1 {
+			t.Errorf("job %s: expected 1 attempt", j.ID)
+		}
+		counts[j.NodeID]++
+	}
+
+	if counts["node-1"] != 2 || counts["node-2"] != 1 {
+		t.Errorf("expected 2/1 distribution, got %v", counts)
+	}
+}
+
+// Jobs already assigned to an online node must not
+// be scheduled again.
+func TestNoJobsQueued(t *testing.T) {
+	now := time.Now()
+
+	node := store.Node{
+		ID:       "node-1",
+		PoolID:   "pool-a",
+		LastSeen: now,
+	}
+
+	job := store.Job{
+		ID:       "job-1",
+		PoolID:   "pool-a",
+		Status:   store.JobAssigned,
+		NodeID:   "node-1",
+		Attempts: 1,
+	}
+
+	got := tickAndGet(
+		t, now,
+		[]store.Node{node},
+		[]store.Job{job},
+		job.ID,
+	)
+
+	if got.Status != store.JobAssigned {
+		t.Errorf("expected assigned, got %q", got.Status)
+	}
+	if got.NodeID != node.ID {
+		t.Errorf("expected node %q, got %q", node.ID, got.NodeID)
+	}
+	if got.Attempts != 1 {
+		t.Errorf("expected 1 attempt, got %d", got.Attempts)
+	}
+}
+
+// A job assigned to an offline node returns to the queue.
 func TestRequeueLost(t *testing.T) {
 	now := time.Now()
 
-	offline := store.Node{ID: "node-1", LastSeen: now.Add(-60 * time.Second)}
-	job := store.Job{ID: "job-1", Status: store.JobAssigned, NodeID: "node-1", Attempts: 1}
+	offline := store.Node{
+		ID:       "node-1",
+		PoolID:   "pool-a",
+		LastSeen: now.Add(-60 * time.Second),
+	}
 
-	got := tickAndGet(t, now, []store.Node{offline}, []store.Job{job}, "job-1")
+	job := store.Job{
+		ID:       "job-1",
+		PoolID:   "pool-a",
+		Status:   store.JobAssigned,
+		NodeID:   "node-1",
+		Attempts: 1,
+	}
+
+	got := tickAndGet(
+		t, now,
+		[]store.Node{offline},
+		[]store.Job{job},
+		job.ID,
+	)
 
 	if got.Status != store.JobQueued {
-		t.Errorf("expected status %q, got %q", store.JobQueued, got.Status)
+		t.Errorf("expected queued, got %q", got.Status)
 	}
 	if got.NodeID != "" {
-		t.Errorf("expected NodeID to be cleared, got %q", got.NodeID)
+		t.Errorf("expected cleared NodeID, got %q", got.NodeID)
 	}
 	if got.Attempts != 1 {
-		t.Errorf("expected Attempts 1, got %d", got.Attempts)
+		t.Errorf("expected 1 attempt, got %d", got.Attempts)
 	}
 }
 
-// Test:
-// Same as above, but a second node is online. One Tick both requeues the job
-// and places it on the online node, so Attempts goes to 2.
+// A lost job may be reassigned to another online node
+// in the same pool during the same tick.
 func TestRequeueLostReassigned(t *testing.T) {
 	now := time.Now()
 
-	offline := store.Node{ID: "node-1", LastSeen: now.Add(-60 * time.Second)}
-	online := store.Node{ID: "node-2", LastSeen: now}
-	job := store.Job{ID: "job-1", Status: store.JobRunning, NodeID: "node-1", Attempts: 1}
+	offline := store.Node{
+		ID:       "node-1",
+		PoolID:   "pool-a",
+		LastSeen: now.Add(-60 * time.Second),
+	}
 
-	got := tickAndGet(t, now, []store.Node{offline, online}, []store.Job{job}, "job-1")
+	online := store.Node{
+		ID:       "node-2",
+		PoolID:   "pool-a",
+		LastSeen: now,
+	}
+
+	job := store.Job{
+		ID:       "job-1",
+		PoolID:   "pool-a",
+		Status:   store.JobRunning,
+		NodeID:   "node-1",
+		Attempts: 1,
+	}
+
+	got := tickAndGet(
+		t, now,
+		[]store.Node{offline, online},
+		[]store.Job{job},
+		job.ID,
+	)
 
 	if got.Status != store.JobAssigned {
-		t.Errorf("expected status %q, got %q", store.JobAssigned, got.Status)
+		t.Errorf("expected assigned, got %q", got.Status)
 	}
 	if got.NodeID != online.ID {
-		t.Errorf("expected NodeID %q, got %q", online.ID, got.NodeID)
+		t.Errorf("expected node %q, got %q", online.ID, got.NodeID)
 	}
 	if got.Attempts != 2 {
-		t.Errorf("expected Attempts 2, got %d", got.Attempts)
+		t.Errorf("expected 2 attempts, got %d", got.Attempts)
 	}
 }
 
-// Test:
-// A job that has already been placed maxAttempts times loses its node again.
-// Rather than requeue it a fourth time, the scheduler marks it failed, and an
-// online node standing by does not pick it up.
+// Jobs that have reached maxAttempts fail instead
+// of being requeued again.
 func TestRequeueLostFailsAfterMaxAttempts(t *testing.T) {
 	now := time.Now()
 
-	offline := store.Node{ID: "node-1", LastSeen: now.Add(-60 * time.Second)}
-	online := store.Node{ID: "node-2", LastSeen: now}
-	job := store.Job{ID: "job-1", Status: store.JobAssigned, NodeID: "node-1", Attempts: maxAttempts}
+	offline := store.Node{
+		ID:       "node-1",
+		PoolID:   "pool-a",
+		LastSeen: now.Add(-60 * time.Second),
+	}
 
-	got := tickAndGet(t, now, []store.Node{offline, online}, []store.Job{job}, "job-1")
+	online := store.Node{
+		ID:       "node-2",
+		PoolID:   "pool-a",
+		LastSeen: now,
+	}
+
+	job := store.Job{
+		ID:       "job-1",
+		PoolID:   "pool-a",
+		Status:   store.JobAssigned,
+		NodeID:   "node-1",
+		Attempts: maxAttempts,
+	}
+
+	got := tickAndGet(
+		t, now,
+		[]store.Node{offline, online},
+		[]store.Job{job},
+		job.ID,
+	)
 
 	if got.Status != store.JobFailed {
-		t.Errorf("expected status %q, got %q", store.JobFailed, got.Status)
+		t.Errorf("expected failed, got %q", got.Status)
 	}
 	if got.NodeID != "" {
-		t.Errorf("expected NodeID to be cleared, got %q", got.NodeID)
+		t.Errorf("expected cleared NodeID, got %q", got.NodeID)
 	}
 	if got.Attempts != maxAttempts {
-		t.Errorf("expected Attempts %d, got %d", maxAttempts, got.Attempts)
+		t.Errorf("expected %d attempts, got %d", maxAttempts, got.Attempts)
 	}
 }
 
-// Test:
-// A job whose NodeID was never registered has nowhere to run, so it is
-// treated the same as a job on an offline node and requeued.
+// A job assigned to an unknown node is treated
+// as lost and returned to the queue.
 func TestRequeueLostUnknownNode(t *testing.T) {
 	now := time.Now()
 
-	job := store.Job{ID: "job-1", Status: store.JobAssigned, NodeID: "ghost", Attempts: 1}
+	job := store.Job{
+		ID:       "job-1",
+		PoolID:   "pool-a",
+		Status:   store.JobAssigned,
+		NodeID:   "ghost",
+		Attempts: 1,
+	}
 
-	got := tickAndGet(t, now, nil, []store.Job{job}, "job-1")
+	got := tickAndGet(t, now, nil, []store.Job{job}, job.ID)
 
 	if got.Status != store.JobQueued {
-		t.Errorf("expected status %q, got %q", store.JobQueued, got.Status)
+		t.Errorf("expected queued, got %q", got.Status)
 	}
 	if got.NodeID != "" {
-		t.Errorf("expected NodeID to be cleared, got %q", got.NodeID)
+		t.Errorf("expected cleared NodeID, got %q", got.NodeID)
 	}
 }
 
-// Test:
-// Jobs that are not lost are left alone: a running job on an online node,
-// and finished jobs on an offline node, whose outcome is already recorded.
+// Active jobs on online nodes and finished jobs
+// should remain unchanged during recovery.
 func TestRequeueLostUntouched(t *testing.T) {
 	now := time.Now()
 
-	online := store.Node{ID: "node-1", LastSeen: now}
-	offline := store.Node{ID: "node-2", LastSeen: now.Add(-60 * time.Second)}
+	online := store.Node{
+		ID:       "node-1",
+		PoolID:   "pool-a",
+		LastSeen: now,
+	}
+	offline := store.Node{
+		ID:       "node-2",
+		PoolID:   "pool-a",
+		LastSeen: now.Add(-60 * time.Second),
+	}
 
 	cases := []store.Job{
-		{ID: "running-online", Status: store.JobRunning, NodeID: "node-1", Attempts: 1},
-		{ID: "assigned-online", Status: store.JobAssigned, NodeID: "node-1", Attempts: 1},
-		{ID: "done-offline", Status: store.JobDone, NodeID: "node-2", Attempts: 1},
-		{ID: "failed-offline", Status: store.JobFailed, NodeID: "node-2", Attempts: 3},
+		{ID: "running-online", PoolID: "pool-a", Status: store.JobRunning, NodeID: "node-1", Attempts: 1},
+		{ID: "assigned-online", PoolID: "pool-a", Status: store.JobAssigned, NodeID: "node-1", Attempts: 1},
+		{ID: "done-offline", PoolID: "pool-a", Status: store.JobDone, NodeID: "node-2", Attempts: 1},
+		{ID: "failed-offline", PoolID: "pool-a", Status: store.JobFailed, NodeID: "node-2", Attempts: 3},
 	}
 
 	for _, want := range cases {
 		t.Run(want.ID, func(t *testing.T) {
-			got := tickAndGet(t, now, []store.Node{online, offline}, []store.Job{want}, want.ID)
+			got := tickAndGet(
+				t, now,
+				[]store.Node{online, offline},
+				[]store.Job{want},
+				want.ID,
+			)
 
 			if got.Status != want.Status {
 				t.Errorf("expected status %q, got %q", want.Status, got.Status)
 			}
 			if got.NodeID != want.NodeID {
-				t.Errorf("expected NodeID %q, got %q", want.NodeID, got.NodeID)
+				t.Errorf("expected node %q, got %q", want.NodeID, got.NodeID)
 			}
 			if got.Attempts != want.Attempts {
-				t.Errorf("expected Attempts %d, got %d", want.Attempts, got.Attempts)
+				t.Errorf("expected %d attempts, got %d", want.Attempts, got.Attempts)
 			}
 		})
+	}
+}
+
+// A job belonging to Pool A must only be assigned
+// to a Pool A node, and likewise for Pool B.
+func TestJobsStayInTheirPool(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	nodes := store.NewMem()
+	jobs := store.NewMemJobs()
+
+	testNodes := []store.Node{
+		{ID: "node-a", Hostname: "node-a", PoolID: "pool-a", LastSeen: now},
+		{ID: "node-b", Hostname: "node-b", PoolID: "pool-b", LastSeen: now},
+	}
+
+	testJobs := []store.Job{
+		{ID: "job-a", PoolID: "pool-a", Status: store.JobQueued},
+		{ID: "job-b", PoolID: "pool-b", Status: store.JobQueued},
+	}
+
+	for _, n := range testNodes {
+		if err := nodes.Upsert(ctx, n); err != nil {
+			t.Fatalf("adding node: %v", err)
+		}
+	}
+
+	for _, j := range testJobs {
+		if err := jobs.Create(ctx, j); err != nil {
+			t.Fatalf("adding job: %v", err)
+		}
+	}
+
+	if err := New(nodes, jobs).Tick(ctx, now); err != nil {
+		t.Fatalf("Tick() error: %v", err)
+	}
+
+	expected := map[string]string{
+		"job-a": "node-a",
+		"job-b": "node-b",
+	}
+
+	for jobID, nodeID := range expected {
+		got, err := jobs.Get(ctx, jobID)
+		if err != nil {
+			t.Fatalf("getting job %s: %v", jobID, err)
+		}
+
+		if got.Status != store.JobAssigned {
+			t.Errorf("job %s not assigned", jobID)
+		}
+		if got.NodeID != nodeID {
+			t.Errorf("job %s: expected %q, got %q",
+				jobID, nodeID, got.NodeID)
+		}
+		if got.Attempts != 1 {
+			t.Errorf("job %s: expected 1 attempt", jobID)
+		}
+	}
+}
+
+// A job stays queued when its pool has no online node,
+// even if another pool has an available node.
+func TestJobWaitsForOwnPool(t *testing.T) {
+	now := time.Now()
+
+	node := store.Node{
+		ID:       "node-b",
+		PoolID:   "pool-b",
+		LastSeen: now,
+	}
+
+	job := store.Job{
+		ID:     "job-a",
+		PoolID: "pool-a",
+		Status: store.JobQueued,
+	}
+
+	got := tickAndGet(
+		t, now,
+		[]store.Node{node},
+		[]store.Job{job},
+		job.ID,
+	)
+
+	if got.Status != store.JobQueued {
+		t.Errorf("expected queued, got %q", got.Status)
+	}
+	if got.NodeID != "" {
+		t.Errorf("expected no assignment, got %q", got.NodeID)
+	}
+	if got.Attempts != 0 {
+		t.Errorf("expected 0 attempts, got %d", got.Attempts)
+	}
+}
+
+// Round-robin scheduling must operate independently
+// within each pool.
+func TestRoundRobinPerPool(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	nodes := store.NewMem()
+	jobs := store.NewMemJobs()
+
+	testNodes := []store.Node{
+		{ID: "a1", Hostname: "a1", PoolID: "pool-a", LastSeen: now},
+		{ID: "a2", Hostname: "a2", PoolID: "pool-a", LastSeen: now},
+		{ID: "b1", Hostname: "b1", PoolID: "pool-b", LastSeen: now},
+		{ID: "b2", Hostname: "b2", PoolID: "pool-b", LastSeen: now},
+	}
+
+	for _, n := range testNodes {
+		if err := nodes.Upsert(ctx, n); err != nil {
+			t.Fatalf("adding node: %v", err)
+		}
+	}
+
+	testJobs := []store.Job{
+		{ID: "a-job-1", PoolID: "pool-a", Status: store.JobQueued},
+		{ID: "a-job-2", PoolID: "pool-a", Status: store.JobQueued},
+		{ID: "a-job-3", PoolID: "pool-a", Status: store.JobQueued},
+		{ID: "b-job-1", PoolID: "pool-b", Status: store.JobQueued},
+		{ID: "b-job-2", PoolID: "pool-b", Status: store.JobQueued},
+	}
+
+	for _, j := range testJobs {
+		if err := jobs.Create(ctx, j); err != nil {
+			t.Fatalf("adding job: %v", err)
+		}
+	}
+
+	if err := New(nodes, jobs).Tick(ctx, now); err != nil {
+		t.Fatalf("Tick() error: %v", err)
+	}
+
+	expected := map[string]string{
+		"a-job-1": "a1",
+		"a-job-2": "a2",
+		"a-job-3": "a1",
+		"b-job-1": "b1",
+		"b-job-2": "b2",
+	}
+
+	for jobID, expectedNode := range expected {
+		got, err := jobs.Get(ctx, jobID)
+		if err != nil {
+			t.Fatalf("getting %s: %v", jobID, err)
+		}
+
+		if got.Status != store.JobAssigned {
+			t.Errorf("%s: expected assigned, got %q",
+				jobID, got.Status)
+		}
+		if got.NodeID != expectedNode {
+			t.Errorf("%s: expected node %q, got %q",
+				jobID, expectedNode, got.NodeID)
+		}
+		if got.Attempts != 1 {
+			t.Errorf("%s: expected 1 attempt, got %d",
+				jobID, got.Attempts)
+		}
+	}
+}
+
+// Jobs created before pool ownership existed
+// must not be scheduled onto modern pool nodes.
+func TestLegacyJobWithoutPoolStaysQueued(t *testing.T) {
+	now := time.Now()
+
+	node := store.Node{
+		ID:       "node-a",
+		PoolID:   "pool-a",
+		LastSeen: now,
+	}
+
+	job := store.Job{
+		ID:     "legacy-job",
+		Status: store.JobQueued,
+	}
+
+	got := tickAndGet(
+		t, now,
+		[]store.Node{node},
+		[]store.Job{job},
+		job.ID,
+	)
+
+	if got.Status != store.JobQueued {
+		t.Errorf("expected queued, got %q", got.Status)
+	}
+	if got.NodeID != "" {
+		t.Errorf("expected no node, got %q", got.NodeID)
+	}
+	if got.Attempts != 0 {
+		t.Errorf("expected 0 attempts, got %d", got.Attempts)
 	}
 }

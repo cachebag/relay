@@ -21,6 +21,8 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 		command    TEXT NOT NULL,
 		status     TEXT NOT NULL,
 		node_id    TEXT NOT NULL,
+		pool_id    TEXT NOT NULL DEFAULT '',
+		submitter  TEXT NOT NULL DEFAULT '',
 		attempts   INTEGER NOT NULL,
 		created_at INTEGER NOT NULL,
 		exit_code  INTEGER NOT NULL DEFAULT 0,
@@ -36,6 +38,20 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 	_, _ = db.Exec(`ALTER TABLE jobs ADD COLUMN exit_code INTEGER NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE jobs ADD COLUMN stdout TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.Exec(`ALTER TABLE jobs ADD COLUMN stderr TEXT NOT NULL DEFAULT ''`)
+
+	// Add job ownership columns to databases created before I79 was made. Check for
+	// missing columns explicitly so unexpected migration failures surface.
+	for _, column := range []string{"pool_id", "submitter"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = ?`, column).Scan(&count); err != nil {
+			return nil, err
+		}
+		if count == 0 {
+			if _, err := db.Exec(`ALTER TABLE jobs ADD COLUMN ` + column + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	return &SQLiteJobs{db: db}, nil
 }
@@ -60,17 +76,21 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 			command,
 			status,
 			node_id,
+			pool_id,
+			submitter,
 			attempts,
 			created_at,
 			exit_code,
 			stdout,
 			stderr
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		j.ID,
 		string(command),
 		j.Status,
 		j.NodeID,
+		j.PoolID,
+		j.Submitter,
 		j.Attempts,
 		j.CreatedAt.Unix(),
 		j.ExitCode,
@@ -105,7 +125,7 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, command, status, node_id, attempts, created_at, exit_code, stdout, stderr
+		`SELECT id, command, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr
 		 FROM jobs
 		 WHERE id = ?`,
 		id,
@@ -114,6 +134,8 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 		&command,
 		&j.Status,
 		&j.NodeID,
+		&j.PoolID,
+		&j.Submitter,
 		&j.Attempts,
 		&createdAt,
 		&j.ExitCode,
@@ -146,7 +168,7 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, command, status, node_id, attempts, created_at, exit_code, stdout, stderr
+		`SELECT id, command, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr
 		 FROM jobs
 		 ORDER BY created_at ASC, id ASC`,
 	)
@@ -167,6 +189,8 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 			&command,
 			&j.Status,
 			&j.NodeID,
+			&j.PoolID,
+			&j.Submitter,
 			&j.Attempts,
 			&createdAt,
 			&j.ExitCode,
@@ -210,6 +234,8 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		 SET command = ?,
 		     status = ?,
 		     node_id = ?,
+		     pool_id = ?,
+		     submitter = ?,
 		     attempts = ?,
 		     created_at = ?,
 		     exit_code = ?,
@@ -219,6 +245,8 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		string(command),
 		j.Status,
 		j.NodeID,
+		j.PoolID,
+		j.Submitter,
 		j.Attempts,
 		j.CreatedAt.Unix(),
 		j.ExitCode,
