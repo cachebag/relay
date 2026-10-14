@@ -27,7 +27,9 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 		created_at INTEGER NOT NULL,
 		exit_code  INTEGER NOT NULL DEFAULT 0,
 		stdout     TEXT NOT NULL DEFAULT '',
-		stderr     TEXT NOT NULL DEFAULT ''
+		stderr     TEXT NOT NULL DEFAULT '',
+		started_at  INTEGER NOT NULL DEFAULT 0,
+		finished_at INTEGER NOT NULL DEFAULT 0
 	)`)
 	if err != nil {
 		return nil, err
@@ -53,7 +55,38 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 		}
 	}
 
+	// Timestamps for the current attempt and the finish, added with credits
+	// charging. 0 means unset.
+	for _, column := range []string{"started_at", "finished_at"} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = ?`, column).Scan(&count); err != nil {
+			return nil, err
+		}
+		if count == 0 {
+			if _, err := db.Exec(`ALTER TABLE jobs ADD COLUMN ` + column + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &SQLiteJobs{db: db}, nil
+}
+
+// unixOrZero stores an unset timestamp as 0.
+func unixOrZero(t *time.Time) int64 {
+	if t == nil {
+		return 0
+	}
+	return t.Unix()
+}
+
+// timeOrNil reads a 0 back as unset.
+func timeOrNil(sec int64) *time.Time {
+	if sec == 0 {
+		return nil
+	}
+	t := time.Unix(sec, 0).UTC()
+	return &t
 }
 
 // Create inserts a new job into SQLite.
@@ -82,9 +115,11 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 			created_at,
 			exit_code,
 			stdout,
-			stderr
+			stderr,
+			started_at,
+			finished_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		j.ID,
 		string(command),
 		j.Status,
@@ -96,6 +131,8 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 		j.ExitCode,
 		j.Stdout,
 		j.Stderr,
+		unixOrZero(j.StartedAt),
+		unixOrZero(j.FinishedAt),
 	)
 	if err != nil {
 		return err
@@ -121,11 +158,11 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 	var j Job
 	var command string
-	var createdAt int64
+	var createdAt, startedAt, finishedAt int64
 
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, command, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr
+		`SELECT id, command, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
 		 FROM jobs
 		 WHERE id = ?`,
 		id,
@@ -141,6 +178,8 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 		&j.ExitCode,
 		&j.Stdout,
 		&j.Stderr,
+		&startedAt,
+		&finishedAt,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -157,6 +196,8 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 
 	// Timestamps are stored as Unix seconds in SQLite.
 	j.CreatedAt = time.Unix(createdAt, 0).UTC()
+	j.StartedAt = timeOrNil(startedAt)
+	j.FinishedAt = timeOrNil(finishedAt)
 
 	return j, nil
 }
@@ -168,7 +209,7 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, command, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr
+		`SELECT id, command, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
 		 FROM jobs
 		 ORDER BY created_at ASC, id ASC`,
 	)
@@ -182,7 +223,7 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 	for rows.Next() {
 		var j Job
 		var command string
-		var createdAt int64
+		var createdAt, startedAt, finishedAt int64
 
 		if err := rows.Scan(
 			&j.ID,
@@ -196,6 +237,8 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 			&j.ExitCode,
 			&j.Stdout,
 			&j.Stderr,
+			&startedAt,
+			&finishedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -206,6 +249,8 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 		}
 
 		j.CreatedAt = time.Unix(createdAt, 0).UTC()
+		j.StartedAt = timeOrNil(startedAt)
+		j.FinishedAt = timeOrNil(finishedAt)
 
 		jobs = append(jobs, j)
 	}
@@ -240,7 +285,9 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		     created_at = ?,
 		     exit_code = ?,
 		     stdout = ?,
-		     stderr = ?
+		     stderr = ?,
+		     started_at = ?,
+		     finished_at = ?
 		 WHERE id = ?`,
 		string(command),
 		j.Status,
@@ -252,6 +299,8 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		j.ExitCode,
 		j.Stdout,
 		j.Stderr,
+		unixOrZero(j.StartedAt),
+		unixOrZero(j.FinishedAt),
 		j.ID,
 	)
 	if err != nil {
