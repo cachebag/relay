@@ -1,7 +1,8 @@
-
 from datetime import UTC, datetime
 
 import httpx
+
+from relay.commands.status import runtime
 
 
 def register(sub) -> None:
@@ -54,7 +55,7 @@ def run(args) -> None:
 
     print(
         f"{'ID':<16} {'STATUS':<10} {'NODE':<16} "
-        f"{'ATTEMPTS':>8} {'AGE':>6} "
+        f"{'ATTEMPTS':>8} {'AGE':>6} {'TIME':>7} "
         f"{'SUBMITTER':<16}  {'COMMAND'}"
     )
 
@@ -70,6 +71,7 @@ def run(args) -> None:
             f"{job.get('node_id') or '-':<16} "
             f"{job.get('attempts', 0):>8} "
             f"{age(job['created_at']):>6} "
+            f"{runtime(job) or '-':>7} "
             f"{submitter:<16}  "
             f"{shorten(command)}"
         )
