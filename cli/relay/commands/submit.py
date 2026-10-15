@@ -18,6 +18,14 @@ def register(sub) -> None:
         help="wait for the job to finish and print its output",
     )
 
+    # Sets a time limit for waiting without cancelling the job.
+    p.add_argument(
+        "--timeout",
+        type=float,
+        metavar="SECONDS",
+        help="stop waiting after this many seconds (requires --wait)",
+    )
+
     p.add_argument("command", nargs="+", help="command to run, after --")
     p.set_defaults(func=run)
 
@@ -67,38 +75,89 @@ def _format_state(job: dict) -> str:
     return line
 
 
+def _print_wait_hint(job_id: str) -> None:
+    """Explain how to check a job after waiting stops."""
+    print(
+        f"still running, check later with relay status {job_id}",
+        file=sys.stderr,
+    )
+
+
 def wait_for_job(
     scheduler: str,
     job_id: str,
     client: httpx.Client | None = None,
     poll_interval: float = 1.0,
     initial_job: dict | None = None,
+    timeout: float | None = None,
 ) -> int:
-    """Poll until completion, print new states, then display the job output."""
+    """Wait for completion without cancelling a job on timeout or Ctrl+C."""
 
     # Remember the previous state to avoid printing duplicate updates.
     last_state = _job_state(initial_job) if initial_job is not None else None
 
+    # Use a monotonic clock so system clock changes cannot affect the timeout.
+    deadline = time.monotonic() + timeout if timeout is not None else None
+
     while True:
-        # Request the latest job information from the scheduler.
-        job = status.fetch(scheduler, job_id, client=client)
-        current_state = _job_state(job)
+        try:
+            # Stop polling once the timeout expires, leaving the job running.
+            if deadline is not None and time.monotonic() >= deadline:
+                _print_wait_hint(job_id)
+                return 124
 
-        # Only print an update when the job's state has changed.
-        if current_state != last_state:
-            print(_format_state(job), flush=True)
-            last_state = current_state
+            # Request the latest job information from the scheduler.
+            job = status.fetch(scheduler, job_id, client=client)
+            current_state = _job_state(job)
 
-        # Once finished, print the output and return the job's exit code.
-        if job["status"] in ("done", "failed"):
-            return logs.print_job_output(scheduler, job_id, client=client)
+            # Only print an update when the job's state has changed.
+            if current_state != last_state:
+                print(_format_state(job), flush=True)
+                last_state = current_state
 
-        # Wait one second before checking the job again.
-        time.sleep(poll_interval)
+            # Stop waiting once the job finishes.
+            if job["status"] in ("done", "failed"):
+                break
+
+            # Sleep no longer than the remaining timeout before polling again.
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+
+                if remaining <= 0:
+                    _print_wait_hint(job_id)
+                    return 124
+
+                time.sleep(min(poll_interval, remaining))
+            else:
+                time.sleep(poll_interval)
+
+        # Ctrl+C stops local polling without cancelling the remote job.
+        except KeyboardInterrupt:
+            _print_wait_hint(job_id)
+            return 130
+
+    # Print the output and return the job's exit code, just like relay logs.
+    return logs.print_job_output(scheduler, job_id, client=client)
 
 
 def run(args) -> None:
     """Submit a job using the saved login profile."""
+
+    # Validate the timeout before submitting the job.
+    timeout = getattr(args, "timeout", None)
+
+    if timeout is not None:
+        if not getattr(args, "wait", False):
+            print("relay: --timeout requires --wait", file=sys.stderr)
+            sys.exit(2)
+
+        if not 0 < timeout < float("inf"):
+            print(
+                "relay: --timeout must be a positive number of seconds",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
     prof = profile.load()
 
     token = prof.get("pool_token")
@@ -133,7 +192,14 @@ def run(args) -> None:
 
     print(f"{job['id']}  {job['status']}", flush=True)
 
-    # If --wait is enabled, monitor the job and exit with its result.
+    # Wait for completion if requested, passing along the timeout value.
     # Otherwise, return immediately after submitting the job.
     if getattr(args, "wait", False):
-        sys.exit(wait_for_job(args.scheduler, job["id"], initial_job=job))
+        sys.exit(
+            wait_for_job(
+                args.scheduler,
+                job["id"],
+                initial_job=job,
+                timeout=timeout,
+            )
+        )
