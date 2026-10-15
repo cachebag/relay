@@ -30,6 +30,12 @@ type Job struct {
 	// node goes offline, and the scheduler gives up once it reaches its cap.
 	Attempts  int       `json:"attempts"`
 	CreatedAt time.Time `json:"created_at"`
+	// StartedAt is set when a node picks the job up and cleared if the job is
+	// requeued, so it always covers the current attempt. FinishedAt is set
+	// when a result is accepted or the scheduler gives up. Both stay out of
+	// the JSON until set.
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	// ExitCode, Stdout and Stderr hold the result a node reported. A reported
 	// failure always has a non-zero ExitCode, so a failed job with ExitCode 0
 	// never reported (the scheduler gave up on it). Stdout and Stderr stay out

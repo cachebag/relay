@@ -734,6 +734,8 @@ Example response:
 
 `attempts` counts how many times the scheduler has placed the job on a node.
 
+`started_at` appears once a node has picked the job up and `finished_at` once a result was accepted or the scheduler gave up. If the job is put back in the queue, `started_at` is cleared so it always covers the current attempt. When a result is accepted, the submitter is charged 1 credit for every minute between the two, rounded up (minimum 1). A job the scheduler failed after 3 lost nodes never reported, so it gets `finished_at` but no charge.
+
 If a node stops heartbeating for 30 seconds while holding an `assigned` or `running` job, the scheduler clears `node_id` and puts the job back into the queue.
 
 The next scheduling attempt can only place the job onto another node belonging to the same pool.
@@ -999,11 +1001,12 @@ Example response:
   "pool_id": "pool-a",
   "submitter": "alice",
   "attempts": 1,
-  "created_at": "2026-09-23T15:01:03.320292Z"
+  "created_at": "2026-09-23T15:01:03.320292Z",
+  "started_at": "2026-09-23T15:01:05Z"
 }
 ```
 
-If the job was `assigned`, it is set to `running` before the response is sent.
+If the job was `assigned`, it is set to `running` and `started_at` is set to now before the response is sent. A job that is already `running` keeps its `started_at`.
 
 The `attempts` value is not changed.
 

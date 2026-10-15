@@ -89,8 +89,8 @@ def test_whoami_prints_profile(cfg, capsys):
     assert "tok" not in out.replace("http://", "")
 
 
-def ns(scheduler=None, command="nodes", pool=None):
-    return argparse.Namespace(scheduler=scheduler, command=command, pool=pool)
+def ns(scheduler=None, subcommand="nodes", pool=None):
+    return argparse.Namespace(scheduler=scheduler, subcommand=subcommand, pool=pool)
 
 
 PROF = {"scheduler": "http://profile", "pool_id": "p1"}
@@ -118,7 +118,7 @@ def test_scheduler_precedence():
 
 def test_pool_defaults_to_profile_for_listing_commands():
     for cmd in ("nodes", "jobs", "dash"):
-        a = ns(command=cmd)
+        a = ns(subcommand=cmd)
         resolve(a, {}, PROF)
         assert a.pool == "p1"
 
@@ -126,6 +126,6 @@ def test_pool_defaults_to_profile_for_listing_commands():
     resolve(a, {}, PROF)
     assert a.pool == "other"
 
-    a = ns(command="status")
+    a = ns(subcommand="status")
     resolve(a, {}, PROF)
     assert not hasattr(a, "pool") or a.pool is None
