@@ -1,3 +1,4 @@
+
 import sys
 
 import httpx
@@ -9,21 +10,24 @@ def register(sub) -> None:
     p.set_defaults(func=run)
 
 
-def run(args, client: httpx.Client | None = None) -> None:
+def print_job_output(
+    scheduler: str,
+    job_id: str,
+    client: httpx.Client | None = None,
+) -> int:
+    """Fetch and print a finished job's output; return its exit code."""
     client = client or httpx.Client(timeout=5)
-
-    r = client.get(f"{args.scheduler}/jobs/{args.id}/output")
+    r = client.get(f"{scheduler.rstrip('/')}/jobs/{job_id}/output")
 
     if r.status_code == 404:
         print("no such job", file=sys.stderr)
         sys.exit(1)
 
     if r.status_code == 409:
-        print(f"job {args.id} has not finished", file=sys.stderr)
+        print(f"job {job_id} has not finished", file=sys.stderr)
         sys.exit(1)
 
     r.raise_for_status()
-
     result = r.json()
 
     stdout = result.get("stdout", "")
@@ -36,4 +40,9 @@ def run(args, client: httpx.Client | None = None) -> None:
     if stderr:
         print(stderr, end="", file=sys.stderr)
 
-    sys.exit(exit_code)
+    return exit_code
+
+
+def run(args, client: httpx.Client | None = None) -> None:
+    """Show a job's output and exit with the remote job's exit code."""
+    sys.exit(print_job_output(args.scheduler, args.id, client=client))
