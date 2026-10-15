@@ -16,9 +16,11 @@ const ReasonJob = "job"
 // Charge bills the submitter of j for the time it ran, 1 credit per minute
 // rounded up and never less than 1. It needs both timestamps and a
 // submitter, so a job the scheduler gave up on (never reported, no finish
-// from a node) or one from before submitters existed is not charged.
+// from a node) or one from before submitters existed is not charged. A job
+// whose command couldn't be started (exit code -1) used nothing, so it
+// isn't charged either.
 func Charge(ctx context.Context, credits store.CreditStore, j store.Job) error {
-	if j.Submitter == "" || j.StartedAt == nil || j.FinishedAt == nil {
+	if j.Submitter == "" || j.StartedAt == nil || j.FinishedAt == nil || j.ExitCode == -1 {
 		return nil
 	}
 

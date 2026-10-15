@@ -39,15 +39,18 @@ func TestChargeRoundsUp(t *testing.T) {
 }
 
 // TestChargeSkipsUnfinishedOrAnonymous checks that a job with no start, no
-// finish, or no submitter adds nothing to the ledger.
+// finish, no submitter, or a command that couldn't start adds nothing to the
+// ledger.
 func TestChargeSkipsUnfinishedOrAnonymous(t *testing.T) {
 	full := chargedJob(0, time.Minute)
-	noStart, noFinish, noName := full, full, full
+	noStart, noFinish, noName, noLaunch := full, full, full, full
 	noStart.StartedAt = nil
 	noFinish.FinishedAt = nil
 	noName.Submitter = ""
+	noLaunch.Status = store.JobFailed
+	noLaunch.ExitCode = -1
 
-	for name, j := range map[string]store.Job{"no start": noStart, "no finish": noFinish, "no submitter": noName} {
+	for name, j := range map[string]store.Job{"no start": noStart, "no finish": noFinish, "no submitter": noName, "couldn't start": noLaunch} {
 		credits := store.NewMemCredits()
 		if err := Charge(context.Background(), credits, j); err != nil {
 			t.Fatalf("%s: Charge: %v", name, err)
