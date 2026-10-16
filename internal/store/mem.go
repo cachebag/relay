@@ -27,6 +27,9 @@ func NewMem() *Mem {
 func (m *Mem) Upsert(_ context.Context, n Node) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if current, ok := m.nodes[n.ID]; ok && current.PoolID != n.PoolID {
+		return ErrPoolConflict
+	}
 	m.nodes[n.ID] = n
 	return nil
 }
@@ -42,7 +45,12 @@ func (m *Mem) List(_ context.Context) ([]Node, error) {
 	}
 	// Go randomizes map iteration order, so sort before returning to satisfy the
 	// Registry contract's stable-ordering guarantee.
-	sort.Slice(out, func(i, j int) bool { return out[i].Hostname < out[j].Hostname })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Hostname == out[j].Hostname {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Hostname < out[j].Hostname
+	})
 	return out, nil
 }
 

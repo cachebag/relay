@@ -9,8 +9,9 @@ import (
 // Sentinel errors every backend returns, so callers can use errors.Is instead
 // of matching on driver-specific error text.
 var (
-	ErrNotFound = errors.New("not found")
-	ErrExists   = errors.New("already exists")
+	ErrNotFound     = errors.New("not found")
+	ErrExists       = errors.New("already exists")
+	ErrPoolConflict = errors.New("node ID belongs to a different pool")
 )
 
 // Node is a single machine known to the control plane. The JSON tags are part
@@ -43,8 +44,9 @@ func Online(n Node, now time.Time) bool {
 // they got, and the shared test in registry_test.go can exercise any of them.
 //
 // Implementations must satisfy the guarantees the callers rely on:
-//   - Upsert keys on Node.ID, so re-registering an existing node overwrites its
-//     record rather than adding a duplicate.
+//   - Upsert keys on Node.ID, so re-registering an existing node in the same
+//     pool overwrites its record rather than adding a duplicate.
+//   - Upsert refuses to change a node's pool.
 //   - List returns a stable ordering, so repeated calls don't shuffle output.
 //   - Delete returns ErrNotFound if no node has that ID.
 //

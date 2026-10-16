@@ -52,7 +52,7 @@ func NewSQLite(path string) (*SQLite, error) {
 }
 
 func (s *SQLite) Upsert(_ context.Context, n Node) error {
-	_, err := s.db.Exec(
+	result, err := s.db.Exec(
 		`INSERT INTO nodes (id, hostname, os, arch, cpus, mem_bytes, last_seen, pool_id, owner)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
@@ -63,14 +63,25 @@ func (s *SQLite) Upsert(_ context.Context, n Node) error {
 		   mem_bytes=excluded.mem_bytes,
 		   last_seen=excluded.last_seen,
 		   pool_id=excluded.pool_id,
-		   owner=excluded.owner`,
+		   owner=excluded.owner
+		 WHERE nodes.pool_id=excluded.pool_id`,
 		n.ID, n.Hostname, n.OS, n.Arch, n.CPUs, n.MemBytes, n.LastSeen.Unix(), n.PoolID, n.Owner,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return ErrPoolConflict
+	}
+	return nil
 }
 
 func (s *SQLite) List(_ context.Context) ([]Node, error) {
-	rows, err := s.db.Query(`SELECT id, hostname, os, arch, cpus, mem_bytes, last_seen, pool_id, owner FROM nodes ORDER BY hostname`)
+	rows, err := s.db.Query(`SELECT id, hostname, os, arch, cpus, mem_bytes, last_seen, pool_id, owner FROM nodes ORDER BY hostname, id`)
 	if err != nil {
 		return nil, err
 	}

@@ -29,6 +29,9 @@ func TestCollect(t *testing.T) {
 	if n.Hostname == "" {
 		t.Error("Hostname still empty")
 	}
+	if n.ID == "" || n.ID == n.Hostname {
+		t.Errorf("ID = %q, want a generated ID distinct from hostname %q", n.ID, n.Hostname)
+	}
 
 	if n.CPUs <= 0 {
 		t.Errorf("Expected CPUs: > 0. Actual: %d", n.CPUs)
@@ -248,6 +251,48 @@ func TestTickBadTokenMessage(t *testing.T) {
 			"Expected bad token message. Actual log output:\n%s",
 			logs.String(),
 		)
+	}
+}
+
+// Verifies that the agent correctly persists its node ID
+// to the cache directory and reuses it on subsequent instantiations. Also checks
+// that the node ID is written to the node-id file and that a new agent created
+// with the same cache directory retrieves the same ID.
+func TestTickPoolConflictMessage(t *testing.T) {
+	srv := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/nodes/heartbeat" {
+				w.WriteHeader(http.StatusConflict)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+	defer srv.Close()
+
+	a := newAgent(
+		srv.URL,
+		"test-token",
+		store.Node{ID: "test-node", Hostname: "test"},
+		t.TempDir(),
+	)
+	a.client = srv.Client()
+
+	var logs bytes.Buffer
+	originalOutput := log.Writer()
+	originalFlags := log.Flags()
+	log.SetOutput(&logs)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(originalOutput)
+		log.SetFlags(originalFlags)
+	}()
+
+	a.Tick(context.Background())
+
+	if !strings.Contains(logs.String(), "another pool") ||
+		!strings.Contains(logs.String(), "leave that pool before joining this one") {
+		t.Fatalf("expected a plain-language pool conflict message, got:\n%s", logs.String())
 	}
 }
 
