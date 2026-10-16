@@ -30,13 +30,12 @@ def status(iso: str) -> str:
 def run(args) -> None:
     rows = fetch(args.scheduler, args.pool)
     print(
-        f"{'HOST':<16} {'ID':<12} {'STATUS':<8} {'OS/ARCH':<14} {'CPU':>4} {'MEM':>8}  {'SEEN':>9}  {'POOL':<16}"
+        f"{'HOST':<16} {'STATUS':<8} {'OS/ARCH':<14} {'CPU':>4} {'MEM':>8}  {'SEEN':>9}  {'POOL':<16}"
     )
     for n in rows:
         gb = n["mem_bytes"] / 1e9
         print(
             f"{n['hostname']:<16} "
-            f"{n['id']:<12} "
             f"{n.get('status') or status(n['last_seen']):<8} "
             f"{n['os'] + '/' + n['arch']:<14} "
             f"{n['cpus']:>4} "

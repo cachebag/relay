@@ -22,7 +22,7 @@ func Collect() (store.Node, error) {
 		return store.Node{}, err
 	}
 	return store.Node{
-		ID:       store.NewID(),
+		ID:       host,
 		Hostname: host,
 		OS:       runtime.GOOS,
 		Arch:     runtime.GOARCH,

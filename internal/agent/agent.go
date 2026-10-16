@@ -51,7 +51,6 @@ func New(schedulerURL, poolToken string, n store.Node) *Agent {
 // newAgent is New with the cache directory chosen by the caller, so tests
 // can use a temp directory.
 func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Agent {
-	n.ID = loadOrCreateNodeID(cacheDir, n.ID)
 	a := &Agent{
 		schedulerURL: schedulerURL,
 		poolToken:    poolToken,
