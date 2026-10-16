@@ -115,6 +115,9 @@ func (a *Agent) flushPending(ctx context.Context) bool {
 		log.Printf("result for job %s discarded: reassigned to another node", p.JobID)
 	case errors.Is(err, errRejected):
 		log.Printf("result for job %s discarded: %v", p.JobID, err)
+	case errors.Is(err, ErrBadToken):
+		log.Printf("pool token rejected; check it with your pool admin")
+		return false
 	default:
 		log.Printf("reporting job %s failed, will retry: %v", p.JobID, err)
 		return false

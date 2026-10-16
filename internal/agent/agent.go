@@ -164,6 +164,10 @@ func (a *Agent) Tick(ctx context.Context) {
 	}
 
 	job, err := a.Next(ctx)
+	if errors.Is(err, ErrBadToken) {
+		log.Printf("pool token rejected; check it with your pool admin")
+		return
+	}
 	if err != nil {
 		log.Printf("fetching next job failed: %v", err)
 		return
