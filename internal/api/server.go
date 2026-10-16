@@ -24,15 +24,20 @@ type nodeView struct {
 }
 
 // NewHandler creates and returns the HTTP handler for the relay API.
-func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, credits store.CreditStore) http.Handler {
+func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, credits store.CreditStore, server store.ServerStore) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
 
-	// Creates a new pool.
+	// Creates a new pool. Only the server admin can, so strangers can't make
+	// pools on someone else's relayd once it is on the internet.
 	mux.HandleFunc("POST /pools", func(w http.ResponseWriter, r *http.Request) {
+		if !checkServerAdmin(w, r, server) {
+			return
+		}
+
 		var req struct {
 			Name string `json:"name"`
 		}
@@ -74,8 +79,12 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		}{Pool: p, AdminToken: adminToken})
 	})
 
-	// Lists all pools.
+	// Lists all pools. Server admin only, like creating one.
 	mux.HandleFunc("GET /pools", func(w http.ResponseWriter, r *http.Request) {
+		if !checkServerAdmin(w, r, server) {
+			return
+		}
+
 		ps, err := pools.List(r.Context())
 		if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
@@ -177,28 +186,25 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	// List all nodes endpoint for clients to retrieve registered nodes.
+	// Lists the nodes in the bearer token's pool. The token decides the
+	// pool, so a member can't list another pool's machines.
 	mux.HandleFunc("GET /nodes", func(w http.ResponseWriter, r *http.Request) {
-		nodes, err := reg.List(r.Context())
+		p, ok := poolFromBearer(w, r, pools)
+		if !ok {
+			return
+		}
+
+		all, err := reg.List(r.Context())
 		if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
 		}
 
-		// Check whether a specific pool was requested.
-		poolID := r.URL.Query().Get("pool")
-
-		if poolID != "" {
-			filtered := make([]store.Node, 0)
-
-			// Only keep nodes that belong to the requested pool.
-			for _, n := range nodes {
-				if n.PoolID == poolID {
-					filtered = append(filtered, n)
-				}
+		nodes := make([]store.Node, 0)
+		for _, n := range all {
+			if n.PoolID == p.ID {
+				nodes = append(nodes, n)
 			}
-
-			nodes = filtered
 		}
 
 		// Mark each node online or offline from its last heartbeat.
@@ -373,19 +379,16 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		})
 	})
 
-	// Gets a job by ID.
+	// Gets a job by ID. Another pool's job is a 404, the same as a job that
+	// doesn't exist, so a token can't tell whether it exists.
 	mux.HandleFunc("GET /jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-
-		j, err := jobs.Get(r.Context(), id)
-
-		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "job not found", http.StatusNotFound)
+		p, ok := poolFromBearer(w, r, pools)
+		if !ok {
 			return
 		}
 
-		if err != nil {
-			http.Error(w, "store error", http.StatusInternalServerError)
+		j, ok := poolJob(w, r, jobs, p.ID)
+		if !ok {
 			return
 		}
 
@@ -393,28 +396,24 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		json.NewEncoder(w).Encode(j)
 	})
 
-	// Lists all jobs, optionally filtered by pool ID.
+	// Lists the jobs in the bearer token's pool.
 	mux.HandleFunc("GET /jobs", func(w http.ResponseWriter, r *http.Request) {
-		jobsList, err := jobs.List(r.Context())
+		p, ok := poolFromBearer(w, r, pools)
+		if !ok {
+			return
+		}
+
+		all, err := jobs.List(r.Context())
 		if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
 		}
 
-		// Check whether a specific pool was requested.
-		poolID := r.URL.Query().Get("pool")
-
-		if poolID != "" {
-			filtered := make([]store.Job, 0)
-
-			// Only keep jobs belonging to the requested pool.
-			for _, j := range jobsList {
-				if j.PoolID == poolID {
-					filtered = append(filtered, j)
-				}
+		jobsList := make([]store.Job, 0)
+		for _, j := range all {
+			if j.PoolID == p.ID {
+				jobsList = append(jobsList, j)
 			}
-
-			jobsList = filtered
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -424,9 +423,19 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 	// Hands a node its oldest assigned or running job. Handing back a running
 	// job means a node that restarted mid-job gets its work back.
 	mux.HandleFunc("GET /nodes/{id}/jobs/next", func(w http.ResponseWriter, r *http.Request) {
+		p, ok := poolFromBearer(w, r, pools)
+		if !ok {
+			return
+		}
+
+		// Only a node in the token's pool can take that node's jobs.
+		// Anyone else gets 403 whether or not the node exists.
+		nodeID := r.PathValue("id")
+		if !nodeInPool(w, r, reg, nodeID, p.ID) {
+			return
+		}
 
 		// Get the next job for the node, prioritizing the oldest assigned or running job.
-		nodeID := r.PathValue("id")
 		all, err := jobs.List(r.Context())
 		if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
@@ -462,6 +471,11 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 
 	// Accepts a job result from the node running it.
 	mux.HandleFunc("POST /jobs/{id}/result", func(w http.ResponseWriter, r *http.Request) {
+		p, ok := poolFromBearer(w, r, pools)
+		if !ok {
+			return
+		}
+
 		id := r.PathValue("id")
 
 		// ExitCode is a pointer so an empty body can't read as success.
@@ -503,6 +517,12 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			return
 		}
 
+		// A token can only report results for its own pool's jobs.
+		if j.PoolID != p.ID {
+			http.Error(w, "token does not match this job's pool", http.StatusForbidden)
+			return
+		}
+
 		// Reject the result if the job is no longer active on this node
 		// for this attempt. It was requeued or reassigned.
 		if (j.Status != store.JobAssigned && j.Status != store.JobRunning) ||
@@ -540,15 +560,14 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 
 	// Serves the output a finished job reported.
 	mux.HandleFunc("GET /jobs/{id}/output", func(w http.ResponseWriter, r *http.Request) {
-
-		// Read the job ID from the request and fetch the job from the store.
-		j, err := jobs.Get(r.Context(), r.PathValue("id"))
-		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "job not found", http.StatusNotFound)
+		p, ok := poolFromBearer(w, r, pools)
+		if !ok {
 			return
 		}
-		if err != nil {
-			http.Error(w, "store error", http.StatusInternalServerError)
+
+		// Another pool's job is a 404, the same as GET /jobs/{id}.
+		j, ok := poolJob(w, r, jobs, p.ID)
+		if !ok {
 			return
 		}
 
@@ -685,4 +704,73 @@ func checkAdmin(r *http.Request, hash string) bool {
 	}
 	got := store.HashToken(token)
 	return subtle.ConstantTimeCompare([]byte(got), []byte(hash)) == 1
+}
+
+// poolFromBearer finds the pool that owns the request's bearer join token.
+// On a missing or unknown token it answers 403 and returns false, and on a
+// store error it answers 500 and returns false.
+func poolFromBearer(w http.ResponseWriter, r *http.Request, pools store.PoolStore) (store.Pool, bool) {
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || token == "" {
+		http.Error(w, "invalid pool token", http.StatusForbidden)
+		return store.Pool{}, false
+	}
+	p, err := pools.GetByToken(r.Context(), token)
+	if errors.Is(err, store.ErrNotFound) {
+		http.Error(w, "invalid pool token", http.StatusForbidden)
+		return store.Pool{}, false
+	}
+	if err != nil {
+		http.Error(w, "store error", http.StatusInternalServerError)
+		return store.Pool{}, false
+	}
+	return p, true
+}
+
+// poolJob loads the job in the path and checks it belongs to poolID. A job
+// in another pool gets the same 404 as a missing one.
+func poolJob(w http.ResponseWriter, r *http.Request, jobs store.JobStore, poolID string) (store.Job, bool) {
+	j, err := jobs.Get(r.Context(), r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) || (err == nil && j.PoolID != poolID) {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return store.Job{}, false
+	}
+	if err != nil {
+		http.Error(w, "store error", http.StatusInternalServerError)
+		return store.Job{}, false
+	}
+	return j, true
+}
+
+// nodeInPool answers 403 and returns false unless nodeID is registered in
+// poolID. An unknown node gets the same 403, so the route doesn't reveal
+// which node IDs exist.
+func nodeInPool(w http.ResponseWriter, r *http.Request, reg store.Registry, nodeID, poolID string) bool {
+	nodes, err := reg.List(r.Context())
+	if err != nil {
+		http.Error(w, "store error", http.StatusInternalServerError)
+		return false
+	}
+	for _, n := range nodes {
+		if n.ID == nodeID && n.PoolID == poolID {
+			return true
+		}
+	}
+	http.Error(w, "token does not match this node's pool", http.StatusForbidden)
+	return false
+}
+
+// checkServerAdmin answers 401 and returns false unless the bearer token is
+// the server admin token. With no token stored yet, nothing matches.
+func checkServerAdmin(w http.ResponseWriter, r *http.Request, server store.ServerStore) bool {
+	hash, err := server.AdminTokenHash(r.Context())
+	if err != nil {
+		http.Error(w, "store error", http.StatusInternalServerError)
+		return false
+	}
+	if !checkAdmin(r, hash) {
+		http.Error(w, "invalid server admin token", http.StatusUnauthorized)
+		return false
+	}
+	return true
 }
