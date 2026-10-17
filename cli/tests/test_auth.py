@@ -4,6 +4,7 @@ import sys
 
 import httpx
 import pytest
+
 from relay import profile
 from relay.__main__ import DEFAULT_SCHEDULER, resolve
 from relay.commands import auth
