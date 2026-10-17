@@ -121,15 +121,39 @@ chmod +x relayd-linux-amd64
 relay pool create my-pool             # prints a join token; send it to contributors
 ```
 
+
 ## Submitter: Run a job
 
-With the CLI installed:
+With the CLI installed, log in using your pool token:
 
 ```sh
-relay --scheduler http://<scheduler>:8080 submit -- echo hi   # prints <id>
-relay --scheduler http://<scheduler>:8080 status <id>
-relay --scheduler http://<scheduler>:8080 logs <id>
+relay login --scheduler http://<scheduler>:8080 --pool-token <pool-token> --name <your-name>
 ```
+
+Submit a job and wait for it to finish:
+
+```sh
+relay submit --wait -- uname -n
+```
+
+The CLI checks the job's status once per second, prints each status change, then displays the job's output and exits with the job's exit code.
+
+To stop waiting after a certain number of seconds, use `--timeout`:
+
+```sh
+relay submit --wait --timeout 30 -- uname -n
+```
+
+If the timeout expires, the CLI exits with code `124`. Pressing Ctrl+C while waiting exits with code `130`. In both cases, the submitted job continues running and can be checked later.
+
+To submit a job without waiting, omit `--wait`:
+
+```sh
+relay submit -- uname -n
+relay status <id>
+relay logs <id>
+```
+
 
 # For developers
 
