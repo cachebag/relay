@@ -2,6 +2,8 @@ import sys
 
 import httpx
 
+from relay import profile
+
 
 def register(sub) -> None:
     p = sub.add_parser("logs", help="show a job's output")
@@ -12,11 +14,15 @@ def register(sub) -> None:
 def print_job_output(
     scheduler: str,
     job_id: str,
+    token: str,
     client: httpx.Client | None = None,
 ) -> int:
     """Fetch and print a finished job's output; return its exit code."""
     client = client or httpx.Client(timeout=5)
-    r = client.get(f"{scheduler.rstrip('/')}/jobs/{job_id}/output")
+    r = client.get(
+        f"{scheduler.rstrip('/')}/jobs/{job_id}/output",
+        headers=profile.bearer(token),
+    )
 
     if r.status_code == 404:
         print("no such job", file=sys.stderr)
@@ -44,4 +50,7 @@ def print_job_output(
 
 def run(args, client: httpx.Client | None = None) -> None:
     """Show a job's output and exit with the remote job's exit code."""
-    sys.exit(print_job_output(args.scheduler, args.id, client=client))
+    prof = profile.require_login()
+    sys.exit(
+        print_job_output(args.scheduler, args.id, prof["pool_token"], client=client)
+    )

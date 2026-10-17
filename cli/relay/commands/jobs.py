@@ -2,20 +2,19 @@ from datetime import UTC, datetime
 
 import httpx
 
+from relay import profile
 from relay.commands.status import runtime
 
 
 def register(sub) -> None:
-    p = sub.add_parser("jobs", help="list jobs")
-    p.add_argument("--pool", help="only show jobs in this pool id")
+    p = sub.add_parser("jobs", help="list jobs in your pool")
     p.set_defaults(func=run)
 
 
-def fetch(
-    scheduler: str, pool: str | None = None, client: httpx.Client | None = None
-) -> list[dict]:
+def fetch(scheduler: str, token: str, client: httpx.Client | None = None) -> list[dict]:
+    """List the jobs in the pool the join token belongs to."""
     client = client or httpx.Client(timeout=5)
-    r = client.get(f"{scheduler}/jobs", params={"pool": pool} if pool else None)
+    r = client.get(f"{scheduler}/jobs", headers=profile.bearer(token))
     r.raise_for_status()
     return r.json()
 
@@ -51,7 +50,8 @@ def shorten(command: str) -> str:
 
 
 def run(args) -> None:
-    rows = fetch(args.scheduler, args.pool)
+    prof = profile.require_login()
+    rows = fetch(args.scheduler, prof["pool_token"])
 
     print(
         f"{'ID':<16} {'STATUS':<10} {'NODE':<16} "

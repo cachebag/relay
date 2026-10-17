@@ -2,8 +2,7 @@ import os
 
 import httpx
 
-from relay import profile
-from relay.commands.pool import get_pool_name
+from relay.commands.pool import confirm_pool, pool_from_login
 
 
 def register(sub) -> None:
@@ -43,23 +42,14 @@ def run_remove(args) -> None:
         )
 
     # The pool comes from the login profile, like rotate-token's --pool.
-    pool_id = args.pool or profile.load().get("pool_id")
-    if not pool_id:
-        raise SystemExit("no pool selected: run relay login first or pass --pool")
+    pool_id, name = pool_from_login(args.pool)
 
     client = httpx.Client(timeout=5)
 
     # UI-11: removing someone's machine is destructive, so make the admin
     # type the pool name unless --yes was given.
     if not args.yes:
-        name = get_pool_name(args.scheduler, pool_id, client)
-        typed = input(
-            f"type the pool name ({name}) to confirm removing {args.node_id}: "
-        ).strip()
-        if typed != name:
-            raise SystemExit(
-                "name did not match; aborted. The machine was not removed."
-            )
+        confirm_pool(pool_id, name, f"removing {args.node_id}")
 
     try:
         remove(args.scheduler, pool_id, args.node_id, admin_token, client)

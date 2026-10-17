@@ -3,7 +3,14 @@ import argparse
 import httpx
 import pytest
 
-from relay.commands import node
+from relay.commands import node, pool
+
+
+@pytest.fixture(autouse=True)
+def no_login(monkeypatch):
+    """Tests that pass --pool explicitly don't need a saved login."""
+    monkeypatch.setattr(pool.profile, "load", dict)
+
 
 _RealClient = httpx.Client
 
@@ -44,16 +51,19 @@ def test_remove_aborts_on_wrong_name(monkeypatch):
 
     def handler(req):
         methods.append(req.method)
-        return httpx.Response(200, json=[{"id": "pool1", "name": "lab"}])
+        return httpx.Response(204)
 
     monkeypatch.setattr(node.httpx, "Client", lambda **kw: mock_client(handler))
+    monkeypatch.setattr(
+        pool.profile, "load", lambda: {"pool_id": "pool1", "pool_name": "lab"}
+    )
     monkeypatch.setattr("builtins.input", lambda _: "wrong")
 
     with pytest.raises(SystemExit):
         node.run_remove(remove_args())
 
-    # Only the pool-name lookup ran; the machine was never removed.
-    assert methods == ["GET"]
+    # The name comes from the login, so no request was made at all.
+    assert methods == []
 
 
 def test_remove_confirmed_by_name(monkeypatch):
@@ -61,15 +71,16 @@ def test_remove_confirmed_by_name(monkeypatch):
 
     def handler(req):
         methods.append(req.method)
-        if req.method == "GET":
-            return httpx.Response(200, json=[{"id": "pool1", "name": "lab"}])
         return httpx.Response(204)
 
     monkeypatch.setattr(node.httpx, "Client", lambda **kw: mock_client(handler))
+    monkeypatch.setattr(
+        pool.profile, "load", lambda: {"pool_id": "pool1", "pool_name": "lab"}
+    )
     monkeypatch.setattr("builtins.input", lambda _: "lab")
 
     node.run_remove(remove_args())
-    assert methods == ["GET", "DELETE"]
+    assert methods == ["DELETE"]
 
 
 def test_remove_uses_env_admin_token_and_profile_pool(monkeypatch):
@@ -82,7 +93,9 @@ def test_remove_uses_env_admin_token_and_profile_pool(monkeypatch):
 
     monkeypatch.setattr(node.httpx, "Client", lambda **kw: mock_client(handler))
     monkeypatch.setenv("RELAY_ADMIN_TOKEN", "envtok")
-    monkeypatch.setattr(node.profile, "load", lambda: {"pool_id": "frompro"})
+    monkeypatch.setattr(
+        pool.profile, "load", lambda: {"pool_id": "frompro", "pool_name": "lab"}
+    )
 
     node.run_remove(remove_args(admin_token=None, pool=None, yes=True))
     assert seen["url"] == "http://test/pools/frompro/nodes/n1"

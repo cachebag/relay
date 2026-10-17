@@ -114,18 +114,3 @@ def test_scheduler_precedence():
     a = ns()
     resolve(a, {}, {})
     assert a.scheduler == DEFAULT_SCHEDULER
-
-
-def test_pool_defaults_to_profile_for_listing_commands():
-    for cmd in ("nodes", "jobs", "dash"):
-        a = ns(subcommand=cmd)
-        resolve(a, {}, PROF)
-        assert a.pool == "p1"
-
-    a = ns(pool="other")
-    resolve(a, {}, PROF)
-    assert a.pool == "other"
-
-    a = ns(subcommand="status")
-    resolve(a, {}, PROF)
-    assert not hasattr(a, "pool") or a.pool is None

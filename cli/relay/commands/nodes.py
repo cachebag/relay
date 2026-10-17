@@ -2,18 +2,18 @@ from datetime import UTC, datetime
 
 import httpx
 
+from relay import profile
+
 
 def register(sub) -> None:
-    p = sub.add_parser("nodes", help="list nodes in the pool")
-    p.add_argument("--pool", help="only show nodes in this pool id")
+    p = sub.add_parser("nodes", help="list nodes in your pool")
     p.set_defaults(func=run)
 
 
-def fetch(
-    scheduler: str, pool: str | None = None, client: httpx.Client | None = None
-) -> list[dict]:
+def fetch(scheduler: str, token: str, client: httpx.Client | None = None) -> list[dict]:
+    """List the nodes in the pool the join token belongs to."""
     client = client or httpx.Client(timeout=5)
-    r = client.get(f"{scheduler}/nodes", params={"pool": pool} if pool else None)
+    r = client.get(f"{scheduler}/nodes", headers=profile.bearer(token))
     r.raise_for_status()
     return r.json()
 
@@ -28,7 +28,8 @@ def status(iso: str) -> str:
 
 
 def run(args) -> None:
-    rows = fetch(args.scheduler, args.pool)
+    prof = profile.require_login()
+    rows = fetch(args.scheduler, prof["pool_token"])
     print(
         f"{'HOST':<16} {'STATUS':<8} {'OS/ARCH':<14} {'CPU':>4} {'MEM':>8}  {'SEEN':>9}  {'POOL':<16}"
     )
