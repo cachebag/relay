@@ -92,10 +92,7 @@ def test_connection_error_is_friendly(monkeypatch, capsys):
     assert exc.value.code == 1
 
     captured = capsys.readouterr()
-    assert (
-        captured.err
-        == "relay: can't reach scheduler at http://unreachable\n"
-    )
+    assert captured.err == "relay: can't reach scheduler at http://unreachable\n"
     assert "Traceback" not in captured.err
 
     def test_empty_scheduler_env_uses_default(monkeypatch):

@@ -46,10 +46,10 @@ def get_pool_name(scheduler: str, pool_id: str, client: httpx.Client) -> str:
 
 
 def rotate_token(
-        scheduler: str,
-        pool_id: str,
-        admin_token: str,
-        client: httpx.Client | None = None,
+    scheduler: str,
+    pool_id: str,
+    admin_token: str,
+    client: httpx.Client | None = None,
 ) -> str:
     client = client or httpx.Client(timeout=5)
     r = client.post(
@@ -63,18 +63,24 @@ def rotate_token(
 def run_rotate_token(args) -> None:
     admin_token = args.admin_token or os.environ.get("RELAY_ADMIN_TOKEN")
     if not admin_token:
-        raise SystemExit("an admin token is required: pass --admin-token or set RELAY_ADMIN_TOKEN")
+        raise SystemExit(
+            "an admin token is required: pass --admin-token or set RELAY_ADMIN_TOKEN"
+        )
 
     if not args.yes:
         name = get_pool_name(args.scheduler, args.pool, httpx.Client(timeout=5))
         typed = input(f"type the pool name ({name}) to confirm rotation: ").strip()
         if typed != name:
-            raise SystemExit("name did not match; aborted. The join token was not changed.")
+            raise SystemExit(
+                "name did not match; aborted. The join token was not changed."
+            )
 
     try:
         new_token = rotate_token(args.scheduler, args.pool, admin_token)
     except httpx.HTTPStatusError as e:
-        raise SystemExit(f"rotation failed: {e.response.status_code} {e.response.text.strip()}")
+        raise SystemExit(
+            f"rotation failed: {e.response.status_code} {e.response.text.strip()}"
+        )
 
     print(f"new join token: {new_token}")
     print("the old join token no longer works.")
