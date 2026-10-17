@@ -1,3 +1,4 @@
+import argparse
 import sys
 
 import httpx
@@ -116,3 +117,13 @@ def test_connection_error_is_friendly(monkeypatch, capsys):
         relay_main.main()
 
         assert actual["scheduler"] == "http://localhost:8080"
+
+
+def test_resolve_survives_submit_argv():
+    """`submit` has a positional named `command`, so the subparser's dest must
+    not be `command` or resolve() sees the job's argv instead of the name."""
+    args = argparse.Namespace(
+        scheduler=None, subcommand="submit", command=["echo", "hi"]
+    )
+    relay_main.resolve(args, {}, {"scheduler": "http://saved:1"})
+    assert args.scheduler == "http://saved:1"

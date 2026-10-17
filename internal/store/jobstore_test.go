@@ -56,6 +56,9 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	j.ExitCode = 3
 	j.Stdout = "hi\n"
 	j.Stderr = "boom \u00e9\n"
+	started := j.CreatedAt.Add(5 * time.Second)
+	finished := j.CreatedAt.Add(95 * time.Second)
+	j.StartedAt, j.FinishedAt = &started, &finished
 	if err := js.Update(ctx, j); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -78,6 +81,9 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	}
 	if got.Stdout != "hi\n" {
 		t.Fatalf("want stdout %q, got %q", "hi\n", got.Stdout)
+	}
+	if got.StartedAt == nil || !got.StartedAt.Equal(started) || got.FinishedAt == nil || !got.FinishedAt.Equal(finished) {
+		t.Fatalf("want started_at %v finished_at %v, got %v %v", started, finished, got.StartedAt, got.FinishedAt)
 	}
 	if got.Stderr != "boom \u00e9\n" {
 		t.Fatalf("want stderr %q, got %q", "boom \u00e9\n", got.Stderr)

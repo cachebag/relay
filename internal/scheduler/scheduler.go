@@ -166,11 +166,15 @@ func (s *Scheduler) requeueLost(ctx context.Context, now time.Time, nodes []stor
 		// Fail jobs that have already reached the attempt limit.
 		if j.Attempts >= maxAttempts {
 			j.Status = store.JobFailed
+			finished := now.UTC()
+			j.FinishedAt = &finished
 		} else {
 			j.Status = store.JobQueued
 		}
 
+		// The next node starts the clock fresh.
 		j.NodeID = ""
+		j.StartedAt = nil
 
 		if err := s.jobs.Update(ctx, j); err != nil {
 			return err

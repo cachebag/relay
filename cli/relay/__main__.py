@@ -20,7 +20,7 @@ def resolve(args: argparse.Namespace, env: dict, prof: dict) -> None:
     explicit = args.scheduler or env.get("RELAY_SCHEDULER")
     args.scheduler_given = bool(explicit)
     args.scheduler = explicit or prof.get("scheduler") or DEFAULT_SCHEDULER
-    if args.command in POOL_COMMANDS:
+    if args.subcommand in POOL_COMMANDS:
         args.pool = args.pool or prof.get("pool_id")
 
 
@@ -40,7 +40,7 @@ def main() -> None:
             f"saved login, then {DEFAULT_SCHEDULER})"),
     )
 
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="subcommand", required=True)
     nodes.register(sub)
     jobs.register(sub)
     logs.register(sub)
