@@ -1,6 +1,13 @@
 import os
+import sys
 
 import httpx
+
+from relay import profile
+
+ADMIN_TOKEN_HINT = (
+    "a server admin token is required: pass --admin-token or set RELAY_ADMIN_TOKEN"
+)
 
 
 def register(sub) -> None:
@@ -9,24 +16,52 @@ def register(sub) -> None:
 
     c = ps.add_parser("create", help="create a pool and print its join token")
     c.add_argument("name")
+    c.add_argument(
+        "--admin-token",
+        help="server admin token printed by relayd (defaults to $RELAY_ADMIN_TOKEN)",
+    )
     c.set_defaults(func=run_create)
 
     r = ps.add_parser("rotate-token", help="replace a pool's join token")
-    r.add_argument("--pool", required=True, help="pool id")
-    r.add_argument("--admin-token", help="admin token (defaults to $RELAY_ADMIN_TOKEN)")
+    r.add_argument("--pool", help="pool id (defaults to the pool you logged in to)")
+    r.add_argument(
+        "--admin-token", help="pool admin token (defaults to $RELAY_ADMIN_TOKEN)"
+    )
     r.add_argument("--yes", action="store_true", help="skip the name confirmation")
     r.set_defaults(func=run_rotate_token)
 
 
-def create(scheduler: str, name: str, client: httpx.Client | None = None) -> dict:
+def server_admin_token(flag: str | None) -> str:
+    """The server admin token from the flag or the environment, or exit 1."""
+    token = flag or os.environ.get("RELAY_ADMIN_TOKEN")
+    if not token:
+        print(ADMIN_TOKEN_HINT, file=sys.stderr)
+        sys.exit(1)
+    return token
+
+
+def create(
+    scheduler: str, name: str, admin_token: str, client: httpx.Client | None = None
+) -> dict:
+    """Create a pool. Only the server admin token is allowed to."""
     client = client or httpx.Client(timeout=5)
-    r = client.post(f"{scheduler}/pools", json={"name": name})
+    r = client.post(
+        f"{scheduler}/pools", json={"name": name}, headers=profile.bearer(admin_token)
+    )
     r.raise_for_status()
     return r.json()
 
 
 def run_create(args) -> None:
-    p = create(args.scheduler, args.name)
+    admin_token = server_admin_token(args.admin_token)
+    try:
+        p = create(args.scheduler, args.name, admin_token)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            raise SystemExit("create failed: the server admin token was rejected")
+        raise SystemExit(
+            f"create failed: {e.response.status_code} {e.response.text.strip()}"
+        )
     print(f"pool id:    {p['id']}")
     print(f"join token: {p['token']}")
     print(f"admin token: {p['admin_token']}")
@@ -36,25 +71,41 @@ def run_create(args) -> None:
     print(f"relay-agent --scheduler {args.scheduler} --pool-token {p['token']}")
 
 
-def get_pool_name(scheduler: str, pool_id: str, client: httpx.Client) -> str:
-    r = client.get(f"{scheduler}/pools")
-    r.raise_for_status()
-    for p in r.json():
-        if p["id"] == pool_id:
-            return p["name"]
-    raise SystemExit(f"no pool with id {pool_id}")
+def pool_from_login(flag: str | None) -> tuple[str, str]:
+    """The pool to act on: --pool, or the one in the saved login.
+
+    Returns the pool ID and the name to confirm with. The name only comes
+    from the login, since listing pools needs the server admin token.
+    """
+    prof = profile.load()
+    pool_id = flag or prof.get("pool_id")
+    if not pool_id:
+        raise SystemExit("no pool selected: run relay login first or pass --pool")
+    name = prof.get("pool_name", "") if pool_id == prof.get("pool_id") else ""
+    return pool_id, name
+
+
+def confirm_pool(pool_id: str, name: str, what: str) -> None:
+    """Make the admin type the pool name before a destructive action (UI-11)."""
+    if not name:
+        raise SystemExit(
+            f"can't confirm pool {pool_id}: log in to it first, or pass --yes"
+        )
+    typed = input(f"type the pool name ({name}) to confirm {what}: ").strip()
+    if typed != name:
+        raise SystemExit("name did not match; aborted. Nothing was changed.")
 
 
 def rotate_token(
-        scheduler: str,
-        pool_id: str,
-        admin_token: str,
-        client: httpx.Client | None = None,
+    scheduler: str,
+    pool_id: str,
+    admin_token: str,
+    client: httpx.Client | None = None,
 ) -> str:
     client = client or httpx.Client(timeout=5)
     r = client.post(
         f"{scheduler}/pools/{pool_id}/token",
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers=profile.bearer(admin_token),
     )
     r.raise_for_status()
     return r.json()["token"]
@@ -63,18 +114,20 @@ def rotate_token(
 def run_rotate_token(args) -> None:
     admin_token = args.admin_token or os.environ.get("RELAY_ADMIN_TOKEN")
     if not admin_token:
-        raise SystemExit("an admin token is required: pass --admin-token or set RELAY_ADMIN_TOKEN")
+        raise SystemExit(
+            "an admin token is required: pass --admin-token or set RELAY_ADMIN_TOKEN"
+        )
 
+    pool_id, name = pool_from_login(args.pool)
     if not args.yes:
-        name = get_pool_name(args.scheduler, args.pool, httpx.Client(timeout=5))
-        typed = input(f"type the pool name ({name}) to confirm rotation: ").strip()
-        if typed != name:
-            raise SystemExit("name did not match; aborted. The join token was not changed.")
+        confirm_pool(pool_id, name, "rotation")
 
     try:
-        new_token = rotate_token(args.scheduler, args.pool, admin_token)
+        new_token = rotate_token(args.scheduler, pool_id, admin_token)
     except httpx.HTTPStatusError as e:
-        raise SystemExit(f"rotation failed: {e.response.status_code} {e.response.text.strip()}")
+        raise SystemExit(
+            f"rotation failed: {e.response.status_code} {e.response.text.strip()}"
+        )
 
     print(f"new join token: {new_token}")
     print("the old join token no longer works.")

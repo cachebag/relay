@@ -1,4 +1,3 @@
-
 import argparse
 from datetime import UTC, datetime
 
@@ -7,33 +6,13 @@ import httpx
 from relay.commands import jobs
 
 
-def test_fetch_sends_pool_when_given() -> None:
-    """jobs.fetch sends the pool ID as a query parameter."""
+def test_fetch_sends_join_token() -> None:
+    """jobs.fetch sends the join token; the scheduler picks the pool from it."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert request.url.path == "/jobs"
-        assert request.url.params.get("pool") == "pool-123"
-
-        return httpx.Response(200, json=[])
-
-    client = httpx.Client(transport=httpx.MockTransport(handler))
-
-    result = jobs.fetch(
-        "http://test",
-        pool="pool-123",
-        client=client,
-    )
-
-    assert result == []
-
-
-def test_fetch_without_pool() -> None:
-    """Listing jobs without a pool filter omits the parameter."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.method == "GET"
-        assert request.url.path == "/jobs"
+        assert request.headers["Authorization"] == "Bearer tok-123"
         assert "pool" not in request.url.params
 
         return httpx.Response(200, json=[])
@@ -42,6 +21,7 @@ def test_fetch_without_pool() -> None:
 
     result = jobs.fetch(
         "http://test",
+        "tok-123",
         client=client,
     )
 
@@ -73,16 +53,14 @@ def test_jobs_displays_submitter(monkeypatch, capsys) -> None:
         },
     ]
 
+    monkeypatch.setattr(jobs.profile, "load", lambda: {"pool_token": "tok"})
     monkeypatch.setattr(
         jobs,
         "fetch",
-        lambda scheduler, pool=None: test_jobs,
+        lambda scheduler, token: test_jobs,
     )
 
-    args = argparse.Namespace(
-        scheduler="http://scheduler",
-        pool="pool-123",
-    )
+    args = argparse.Namespace(scheduler="http://scheduler")
 
     jobs.run(args)
 
@@ -112,16 +90,14 @@ def test_jobs_missing_submitter(monkeypatch, capsys) -> None:
         },
     ]
 
+    monkeypatch.setattr(jobs.profile, "load", lambda: {"pool_token": "tok"})
     monkeypatch.setattr(
         jobs,
         "fetch",
-        lambda scheduler, pool=None: test_jobs,
+        lambda scheduler, token: test_jobs,
     )
 
-    args = argparse.Namespace(
-        scheduler="http://scheduler",
-        pool=None,
-    )
+    args = argparse.Namespace(scheduler="http://scheduler")
 
     jobs.run(args)
 

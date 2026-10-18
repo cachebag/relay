@@ -34,7 +34,7 @@ func TestHealthz(t *testing.T) {
 
 	// Create our API handler and send the fake request to it.
 	// The response produced by the handler is stored in rec.
-	NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits()).ServeHTTP(rec, req)
+	NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits(), testServer()).ServeHTTP(rec, req)
 
 	// Check that the server returned HTTP status 200 OK.
 	if rec.Code != http.StatusOK {
@@ -52,7 +52,7 @@ func TestHealthz(t *testing.T) {
 func TestNodeHeartbeatAndList(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 
 	// Create a pool first so we can get a valid pool token.
 	poolBody := `{
@@ -65,6 +65,7 @@ func TestNodeHeartbeatAndList(t *testing.T) {
 		strings.NewReader(poolBody),
 	)
 	poolReq.Header.Set("Content-Type", "application/json")
+	poolReq.Header.Set("Authorization", "Bearer "+testServerToken)
 
 	poolRec := httptest.NewRecorder()
 
@@ -111,12 +112,13 @@ func TestNodeHeartbeatAndList(t *testing.T) {
 		t.Fatalf("expected status 204, got %d", rec.Code)
 	}
 
-	// Request only the nodes belonging to this pool.
+	// Request the nodes with this pool's token.
 	req = httptest.NewRequest(
 		http.MethodGet,
-		"/nodes?pool="+pool.ID,
+		"/nodes",
 		nil,
 	)
+	req.Header.Set("Authorization", "Bearer "+pool.Token)
 
 	rec = httptest.NewRecorder()
 
@@ -154,12 +156,17 @@ func TestNodeHeartbeatAndList(t *testing.T) {
 		t.Error("expected LastSeen to be set")
 	}
 
-	// Request nodes from a different pool ID.
+	// Request nodes with another pool's token.
+	other := store.Pool{ID: "other", Name: "other", Token: "other-token", CreatedAt: time.Now().UTC()}
+	if err := pools.Create(context.Background(), other); err != nil {
+		t.Fatal(err)
+	}
 	req = httptest.NewRequest(
 		http.MethodGet,
-		"/nodes?pool=other",
+		"/nodes",
 		nil,
 	)
+	req.Header.Set("Authorization", "Bearer "+other.Token)
 
 	rec = httptest.NewRecorder()
 
@@ -182,7 +189,7 @@ func TestNodeHeartbeatAndList(t *testing.T) {
 func TestNodeHeartbeatInvalidJSON(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -205,13 +212,15 @@ func TestNodeHeartbeatInvalidJSON(t *testing.T) {
 func TestNodeListEmpty(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits())
+	createTestPool(t, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 
 	req := httptest.NewRequest(
 		http.MethodGet,
 		"/nodes",
 		nil,
 	)
+	req.Header.Set("Authorization", "Bearer test-token")
 
 	rec := httptest.NewRecorder()
 
@@ -231,7 +240,7 @@ func TestNodeListEmpty(t *testing.T) {
 func TestPoolCreateAndList(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 
 	// Create a new pool.
 	body := `{
@@ -244,6 +253,7 @@ func TestPoolCreateAndList(t *testing.T) {
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+testServerToken)
 
 	rec := httptest.NewRecorder()
 
@@ -282,6 +292,7 @@ func TestPoolCreateAndList(t *testing.T) {
 		"/pools",
 		nil,
 	)
+	req.Header.Set("Authorization", "Bearer "+testServerToken)
 
 	rec = httptest.NewRecorder()
 
@@ -317,7 +328,7 @@ func TestPoolCreateAndList(t *testing.T) {
 // token without exposing the token, and rejects bad or missing credentials.
 func TestPoolSelf(t *testing.T) {
 	pools := store.NewMemPools()
-	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 
 	p := store.Pool{ID: "pool-1", Name: "lab", Token: "secret-token", CreatedAt: time.Now().UTC()}
 	if err := pools.Create(context.Background(), p); err != nil {
@@ -365,7 +376,7 @@ func TestPoolSelf(t *testing.T) {
 func TestNodeHeartbeatInvalidPoolToken(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
-	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 
 	body := `{
 		"id":"node-1",
@@ -495,7 +506,7 @@ func TestJobCreate(t *testing.T) {
 	pools := store.NewMemPools()
 	jobs := store.NewMemJobs()
 	pool := createTestPool(t, pools)
-	handler := NewHandler(reg, pools, jobs, store.NewMemCredits())
+	handler := NewHandler(reg, pools, jobs, store.NewMemCredits(), testServer())
 
 	rec := submitTestJob(handler, []string{"echo", "hi"}, "alice")
 	if rec.Code != http.StatusCreated {
@@ -539,7 +550,7 @@ func TestJobCreate(t *testing.T) {
 func TestJobCreateEmptyCommand(t *testing.T) {
 	pools := store.NewMemPools()
 	createTestPool(t, pools)
-	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 	rec := submitTestJob(handler, []string{}, "alice")
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rec.Code)
@@ -550,7 +561,7 @@ func TestJobCreateInvalidPoolToken(t *testing.T) {
 	pools := store.NewMemPools()
 	jobs := store.NewMemJobs()
 	createTestPool(t, pools)
-	handler := NewHandler(store.NewMem(), pools, jobs, store.NewMemCredits())
+	handler := NewHandler(store.NewMem(), pools, jobs, store.NewMemCredits(), testServer())
 
 	tests := []struct{ name, header string }{
 		{"missing token", ""},
@@ -582,7 +593,7 @@ func TestJobCreateInvalidPoolToken(t *testing.T) {
 func TestJobCreateEmptySubmitter(t *testing.T) {
 	pools := store.NewMemPools()
 	createTestPool(t, pools)
-	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 	for _, submitter := range []string{"", "   "} {
 		rec := submitTestJob(handler, []string{"echo", "hello"}, submitter)
 		if rec.Code != http.StatusBadRequest {
@@ -596,7 +607,7 @@ func TestJobCreateUsesAuthenticatedPool(t *testing.T) {
 	pools := store.NewMemPools()
 	jobs := store.NewMemJobs()
 	pool := createTestPool(t, pools)
-	handler := NewHandler(store.NewMem(), pools, jobs, store.NewMemCredits())
+	handler := NewHandler(store.NewMem(), pools, jobs, store.NewMemCredits(), testServer())
 	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(`{"command":["echo","hello"],"submitter":"alice","pool_id":"another-pool"}`))
 	req.Header.Set("Authorization", "Bearer test-token")
 	rec := httptest.NewRecorder()
@@ -626,7 +637,7 @@ func TestJobCreateUsesAuthenticatedPool(t *testing.T) {
 func TestJobGet(t *testing.T) {
 	pools := store.NewMemPools()
 	createTestPool(t, pools)
-	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 	rec := submitTestJob(handler, []string{"echo", "hi"}, "alice")
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", rec.Code)
@@ -637,9 +648,7 @@ func TestJobGet(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatal(err)
 	}
-	req := httptest.NewRequest(http.MethodGet, "/jobs/"+created.ID, nil)
-	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	rec = getJSON(handler, "/jobs/"+created.ID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
@@ -663,10 +672,10 @@ func TestJobGet(t *testing.T) {
 
 // TestJobGetNotFound checks that requesting an unknown job returns 404.
 func TestJobGetNotFound(t *testing.T) {
-	handler := NewHandler(store.NewMem(), store.NewMemPools(), store.NewMemJobs(), store.NewMemCredits())
-	req := httptest.NewRequest(http.MethodGet, "/jobs/doesnotexist", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	pools := store.NewMemPools()
+	createTestPool(t, pools)
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
+	rec := getJSON(handler, "/jobs/doesnotexist")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d", rec.Code)
 	}
@@ -676,16 +685,14 @@ func TestJobGetNotFound(t *testing.T) {
 func TestJobList(t *testing.T) {
 	pools := store.NewMemPools()
 	createTestPool(t, pools)
-	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 	for _, tc := range []struct{ command, submitter string }{{"first", "alice"}, {"second", "bob"}} {
 		rec := submitTestJob(handler, []string{"echo", tc.command}, tc.submitter)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d", rec.Code)
 		}
 	}
-	req := httptest.NewRequest(http.MethodGet, "/jobs", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	rec := getJSON(handler, "/jobs")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
@@ -712,10 +719,16 @@ func TestJobList(t *testing.T) {
 	}
 }
 
-// TestJobListFilterByPool checks that filtering includes only jobs in the requested pool.
+// TestJobListFilterByPool checks that each pool's token lists only that pool's jobs.
 func TestJobListFilterByPool(t *testing.T) {
 	jobs := store.NewMemJobs()
-	handler := NewHandler(store.NewMem(), store.NewMemPools(), jobs, store.NewMemCredits())
+	pools := store.NewMemPools()
+	for _, p := range []store.Pool{{ID: "pool-a", Name: "a", Token: "tok-a"}, {ID: "pool-b", Name: "b", Token: "tok-b"}} {
+		if err := pools.Create(context.Background(), p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := NewHandler(store.NewMem(), pools, jobs, store.NewMemCredits(), testServer())
 	for _, job := range []store.Job{
 		{ID: "job-a1", PoolID: "pool-a", Submitter: "alice", Status: store.JobQueued},
 		{ID: "job-a2", PoolID: "pool-a", Submitter: "bob", Status: store.JobQueued},
@@ -726,18 +739,14 @@ func TestJobListFilterByPool(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
-		name, path, pool string
-		expected         int
+		name, token, pool string
+		expected          int
 	}{
-		{"all jobs", "/jobs", "", 3},
-		{"pool A", "/jobs?pool=pool-a", "pool-a", 2},
-		{"pool B", "/jobs?pool=pool-b", "pool-b", 1},
-		{"unknown pool", "/jobs?pool=unknown", "unknown", 0},
+		{"pool A", "tok-a", "pool-a", 2},
+		{"pool B", "tok-b", "pool-b", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
+			rec := getAs(handler, "/jobs", tc.token)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("expected 200, got %d", rec.Code)
 			}
@@ -764,17 +773,11 @@ func TestJobListFilterByPool(t *testing.T) {
 func TestJobListEmpty(t *testing.T) {
 	reg := store.NewMem()
 	pools := store.NewMemPools()
+	createTestPool(t, pools)
 	jobs := store.NewMemJobs()
-	handler := NewHandler(reg, pools, jobs, store.NewMemCredits())
+	handler := NewHandler(reg, pools, jobs, store.NewMemCredits(), testServer())
 
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/jobs",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	rec := getJSON(handler, "/jobs")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
@@ -793,6 +796,7 @@ func postResult(handler http.Handler, jobID, body string) int {
 		strings.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
 
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -804,11 +808,7 @@ func postResult(handler http.Handler, jobID, body string) int {
 // an old attempt, or an already-done job are rejected with 409.
 func TestPostJobResultStale(t *testing.T) {
 	newHandler := func(j store.Job) (http.Handler, store.JobStore) {
-		jobs := store.NewMemJobs()
-		if err := jobs.Create(context.Background(), j); err != nil {
-			t.Fatalf("failed to create job: %v", err)
-		}
-		return NewHandler(store.NewMem(), store.NewMemPools(), jobs, store.NewMemCredits()), jobs
+		return newJobHandler(t, j)
 	}
 
 	assigned := store.Job{
@@ -872,24 +872,58 @@ func TestPostJobResultStale(t *testing.T) {
 	})
 }
 
-// getJSON sends a GET and returns the recorder.
+// testServerToken is the server admin token every test handler accepts.
+const testServerToken = "server-admin"
+
+// testServer returns a server store that knows testServerToken.
+func testServer() store.ServerStore {
+	s := store.NewMemServer()
+	s.SetAdminTokenHash(context.Background(), store.HashToken(testServerToken))
+	return s
+}
+
+// getJSON sends a GET with the test pool's join token and returns the recorder.
 func getJSON(handler http.Handler, path string) *httptest.ResponseRecorder {
+	return getAs(handler, path, "test-token")
+}
+
+// getAs sends a GET with the given bearer token ("" for none).
+func getAs(handler http.Handler, path, token string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	handler.ServeHTTP(rec, req)
 	return rec
 }
 
 // Creates a new HTTP handler and in-memory job store that is pre-populated
 // with the given jobs.
+// Every job is put in the test pool unless it names another, and every node
+// a job mentions is registered there, so the token checks pass.
 func newJobHandler(t *testing.T, js ...store.Job) (http.Handler, store.JobStore) {
 	t.Helper()
+	ctx := context.Background()
+	pools := store.NewMemPools()
+	pool := createTestPool(t, pools)
+	reg := store.NewMem()
 	jobs := store.NewMemJobs()
 	for _, j := range js {
-		if err := jobs.Create(context.Background(), j); err != nil {
+		if j.PoolID == "" {
+			j.PoolID = pool.ID
+		}
+		if j.NodeID != "" {
+			n := store.Node{ID: j.NodeID, Hostname: j.NodeID, PoolID: j.PoolID, LastSeen: time.Now().UTC()}
+			if err := reg.Upsert(ctx, n); err != nil {
+				t.Fatalf("failed to upsert node: %v", err)
+			}
+		}
+		if err := jobs.Create(ctx, j); err != nil {
 			t.Fatalf("failed to create job: %v", err)
 		}
 	}
-	return NewHandler(store.NewMem(), store.NewMemPools(), jobs, store.NewMemCredits()), jobs
+	return NewHandler(reg, pools, jobs, store.NewMemCredits(), testServer()), jobs
 }
 
 // TestNextJobNothingAssigned checks that a node with no work, or an unknown
@@ -900,11 +934,12 @@ func TestNextJobNothingAssigned(t *testing.T) {
 		store.Job{ID: "other", Status: store.JobAssigned, NodeID: "node2"},
 		store.Job{ID: "fin", Status: store.JobDone, NodeID: "node1"},
 	)
-	for _, path := range []string{"/nodes/node1/jobs/next", "/nodes/ghost/jobs/next"} {
-		rec := getJSON(handler, path)
-		if rec.Code != http.StatusNoContent {
-			t.Fatalf("%s: expected 204, got %d", path, rec.Code)
-		}
+	if rec := getJSON(handler, "/nodes/node1/jobs/next"); rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rec.Code)
+	}
+	// A node the pool has never heard of can't take jobs.
+	if rec := getJSON(handler, "/nodes/ghost/jobs/next"); rec.Code != http.StatusForbidden {
+		t.Fatalf("unknown node: expected 403, got %d", rec.Code)
 	}
 }
 
@@ -1066,10 +1101,12 @@ func TestJobResponsesOmitOutput(t *testing.T) {
 // recently seen node and offline for one last seen 60 seconds ago.
 func TestNodeListStatus(t *testing.T) {
 	reg := store.NewMem()
-	handler := NewHandler(reg, store.NewMemPools(), store.NewMemJobs(), store.NewMemCredits())
+	pools := store.NewMemPools()
+	createTestPool(t, pools)
+	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 
-	fresh := store.Node{ID: "fresh", LastSeen: time.Now().UTC()}
-	old := store.Node{ID: "old", LastSeen: time.Now().UTC().Add(-60 * time.Second)}
+	fresh := store.Node{ID: "fresh", PoolID: "test-pool", LastSeen: time.Now().UTC()}
+	old := store.Node{ID: "old", PoolID: "test-pool", LastSeen: time.Now().UTC().Add(-60 * time.Second)}
 
 	for _, n := range []store.Node{fresh, old} {
 		if err := reg.Upsert(context.Background(), n); err != nil {
@@ -1077,9 +1114,7 @@ func TestNodeListStatus(t *testing.T) {
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/nodes", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	rec := getJSON(handler, "/nodes")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
@@ -1134,7 +1169,7 @@ func newLeaveHandler(t *testing.T, js ...store.Job) (http.Handler, store.Registr
 		}
 	}
 
-	return NewHandler(reg, pools, jobs, store.NewMemCredits()), reg, jobs
+	return NewHandler(reg, pools, jobs, store.NewMemCredits(), testServer()), reg, jobs
 }
 
 // deleteNode sends DELETE /nodes/{id} with the given bearer token ("" for
@@ -1250,7 +1285,11 @@ func chargeFixture(t *testing.T, ago time.Duration) (http.Handler, store.JobStor
 		t.Fatal(err)
 	}
 	credits := store.NewMemCredits()
-	return NewHandler(store.NewMem(), store.NewMemPools(), jobs, credits), jobs, credits
+	pools := store.NewMemPools()
+	if err := pools.Create(context.Background(), store.Pool{ID: "p1", Name: "one", Token: "test-token"}); err != nil {
+		t.Fatal(err)
+	}
+	return NewHandler(store.NewMem(), pools, jobs, credits, testServer()), jobs, credits
 }
 
 // TestResultChargesSubmitter checks that an accepted result stamps

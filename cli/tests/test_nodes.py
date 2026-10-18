@@ -25,7 +25,7 @@ def test_fetch_returns_nodes():
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    nodes = fetch("http://scheduler", client=client)
+    nodes = fetch("http://scheduler", "tok", client=client)
     assert len(nodes) == 1
     assert nodes[0]["hostname"] == "node-a"
 
@@ -51,13 +51,16 @@ def test_old_node_is_offline():
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    nodes = fetch("http://scheduler", client=client)
+    nodes = fetch("http://scheduler", "tok", client=client)
     assert status(nodes[0]["last_seen"]) == "offline"
 
 
-def test_fetch_sends_pool_query_param():
+def test_fetch_sends_join_token():
+    """The join token goes in the Authorization header; no pool parameter."""
+
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.params["pool"] == "abc"
+        assert request.headers["Authorization"] == "Bearer abc"
+        assert "pool" not in request.url.params
         return httpx.Response(200, json=[])
 
     client = httpx.Client(transport=httpx.MockTransport(handler))

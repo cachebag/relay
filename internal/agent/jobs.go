@@ -51,6 +51,9 @@ func (a *Agent) Next(ctx context.Context) (*store.Job, error) {
 		return nil, err
 	}
 
+	// The scheduler only hands out a node's jobs to its own pool.
+	req.Header.Set("Authorization", "Bearer "+a.poolToken)
+
 	// Sends the HTTP request to the scheduler.
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -66,6 +69,8 @@ func (a *Agent) Next(ctx context.Context) (*store.Job, error) {
 	switch resp.StatusCode {
 	case http.StatusNoContent:
 		return nil, nil
+	case http.StatusForbidden:
+		return nil, fmt.Errorf("%w: scheduler returned %d", ErrBadToken, resp.StatusCode)
 	case http.StatusOK:
 		var j store.Job
 		if err := json.NewDecoder(resp.Body).Decode(&j); err != nil {
@@ -103,6 +108,9 @@ func (a *Agent) Report(
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	// Results are only accepted from the job's own pool.
+	req.Header.Set("Authorization", "Bearer "+a.poolToken)
+
 	// Sends the HTTP request to the scheduler.
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -119,6 +127,8 @@ func (a *Agent) Report(
 		return nil
 	case code == http.StatusConflict:
 		return errStale
+	case code == http.StatusForbidden:
+		return fmt.Errorf("%w: scheduler returned %d", ErrBadToken, code)
 	case code >= 400 && code < 500:
 		return fmt.Errorf("%w: scheduler returned %d", errRejected, code)
 	default:

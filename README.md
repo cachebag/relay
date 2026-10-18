@@ -116,20 +116,52 @@ uv tool uninstall relay
 curl -LO https://github.com/cachebag/relay/releases/latest/download/relayd-linux-amd64
 chmod +x relayd-linux-amd64
 ./relayd-linux-amd64                  # listens on :8080; leave it running
-
-# in another terminal, with the CLI installed
-relay pool create my-pool             # prints a join token; send it to contributors
 ```
+
+The first time it starts, `relayd` prints a server admin token. Save it. It is the only thing that can create pools on this scheduler, so strangers can't make pools on your server once it is reachable from the internet. If you lose it, `./relayd-linux-amd64 --new-admin-token` prints a new one and exits.
+
+```sh
+# in another terminal, with the CLI installed
+relay pool create my-pool --admin-token <server admin token>
+```
+
+This prints the pool's join token, which you send to contributors and submitters, and the pool's admin token, which only you keep. Instead of `--admin-token` you can set `RELAY_ADMIN_TOKEN`.
+
+Every other command works on the pool you are logged in to (`relay login`), and sends its join token with each request. Nobody without a pool's join token can see its machines, jobs, or output.
+
 
 ## Submitter: Run a job
 
-With the CLI installed:
+With the CLI installed, log in using your pool token:
 
 ```sh
-relay --scheduler http://<scheduler>:8080 submit -- echo hi   # prints <id>
-relay --scheduler http://<scheduler>:8080 status <id>
-relay --scheduler http://<scheduler>:8080 logs <id>
+relay login --scheduler http://<scheduler>:8080 --pool-token <pool-token> --name <your-name>
 ```
+
+Submit a job and wait for it to finish:
+
+```sh
+relay submit --wait -- uname -n
+```
+
+The CLI checks the job's status once per second, prints each status change, then displays the job's output and exits with the job's exit code.
+
+To stop waiting after a certain number of seconds, use `--timeout`:
+
+```sh
+relay submit --wait --timeout 30 -- uname -n
+```
+
+If the timeout expires, the CLI exits with code `124`. Pressing Ctrl+C while waiting exits with code `130`. In both cases, the submitted job continues running and can be checked later.
+
+To submit a job without waiting, omit `--wait`:
+
+```sh
+relay submit -- uname -n
+relay status <id>
+relay logs <id>
+```
+
 
 # For developers
 

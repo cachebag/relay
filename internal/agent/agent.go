@@ -51,6 +51,10 @@ type Agent struct {
 	// and its result has been reported once.
 	busy atomic.Bool
 	wg   sync.WaitGroup
+
+	// removed is set by Tick when the scheduler says a pool admin removed
+	// this machine. Run then stops instead of retrying forever.
+	removed bool
 }
 
 // New returns an Agent for node n that talks to the scheduler at schedulerURL
@@ -116,6 +120,10 @@ func (a *Agent) Tick(ctx context.Context) {
 		// Give the user a more helpful message depending on why the
 		// heartbeat failed.
 		switch {
+		case errors.Is(err, ErrRemoved):
+			log.Printf("removed from this pool by the admin")
+			a.removed = true
+
 		case errors.Is(err, ErrBadToken):
 			log.Printf(
 				"pool token rejected; check it with your pool admin",
@@ -160,6 +168,10 @@ func (a *Agent) Tick(ctx context.Context) {
 	}
 
 	job, err := a.Next(ctx)
+	if errors.Is(err, ErrBadToken) {
+		log.Printf("pool token rejected; check it with your pool admin")
+		return
+	}
 	if err != nil {
 		log.Printf("fetching next job failed: %v", err)
 		return
@@ -206,13 +218,24 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 	// when the next retry will occur.
 	a.retryInterval = interval
 
+	// stopJob kills a running job if this machine gets removed from the
+	// pool. The scheduler has already put that job back in the queue.
+	ctx, stopJob := context.WithCancel(ctx)
+	defer stopJob()
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	defer a.wg.Wait()
 
 	for {
 		a.Tick(ctx)
-
+		// Removed by the pool admin: stop the job and return nil, so
+		// relay-agent exits 0 instead of retrying a heartbeat that will
+		// never be accepted. The deferred wg.Wait lets the job wind down.
+		if a.removed {
+			stopJob()
+			return nil
+		}
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():

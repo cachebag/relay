@@ -1,3 +1,4 @@
+import os
 from typing import ClassVar
 
 import httpx
@@ -8,6 +9,7 @@ from textual.binding import BindingType
 from textual.containers import Horizontal
 from textual.widgets import DataTable, Footer, Header, Input, Label
 
+from relay import profile
 from relay.commands import jobs as jobs_cmd
 from relay.commands import pool as pool_cmd
 from relay.commands.nodes import fetch, seconds_ago, status
@@ -48,11 +50,14 @@ class Dashboard(App):
         ("q", "quit", "Quit"),
     ]
 
-    def __init__(self, scheduler: str, pool: str | None = None) -> None:
-        """Store connection/filter settings and initialize dashboard state."""
+    def __init__(
+        self, scheduler: str, token: str, admin_token: str | None = None
+    ) -> None:
+        """Store the scheduler, the join token, and the optional server admin token."""
         super().__init__()
         self.scheduler = scheduler
-        self.pool = pool
+        self.token = token
+        self.admin_token = admin_token
         self.node_rows: list[dict] = []
         self.job_rows: list[dict] = []
         self.error: str | None = None
@@ -79,7 +84,7 @@ class Dashboard(App):
     def on_mount(self) -> None:
         """Configure the tables and start the automatic refresh timers."""
         self.title = "relay"
-        self.sub_title = self.scheduler + (f"  --pool {self.pool}" if self.pool else "")
+        self.sub_title = self.scheduler
 
         # Add the proper columns to each table.
         self.query_one("#nodes", DataTable).add_columns(*NODE_COLUMNS)
@@ -96,9 +101,9 @@ class Dashboard(App):
     def refresh_data(self) -> None:
         """Fetch the latest nodes and jobs and detect job node changes."""
         try:
-            # Fetch nodes and jobs using the same pool filter.
-            node_rows = fetch(self.scheduler, self.pool)
-            job_rows = jobs_cmd.fetch(self.scheduler, self.pool)
+            # The join token decides which pool's nodes and jobs we see.
+            node_rows = fetch(self.scheduler, self.token)
+            job_rows = jobs_cmd.fetch(self.scheduler, self.token)
             self.error = None
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             # Keep displaying the previous data if a refresh fails.
@@ -131,8 +136,12 @@ class Dashboard(App):
     @work(exclusive=True, thread=True)
     def create_pool(self, name: str) -> None:
         """Create a pool, show its ID/token, and refresh the dashboard."""
+        if not self.admin_token:
+            self.error = pool_cmd.ADMIN_TOKEN_HINT
+            self.call_from_thread(self.redraw)
+            return
         try:
-            p = pool_cmd.create(self.scheduler, name)
+            p = pool_cmd.create(self.scheduler, name, self.admin_token)
             self.error = None
 
             self.call_from_thread(
@@ -245,11 +254,16 @@ class Dashboard(App):
 
 def register(sub) -> None:
     """Register the `relay dash` command with the CLI argument parser."""
-    p = sub.add_parser("dash", help="live dashboard of nodes in a pool")
-    p.add_argument("--pool", help="only show nodes and jobs in this pool id")
+    p = sub.add_parser("dash", help="live dashboard of your pool")
+    p.add_argument(
+        "--admin-token",
+        help="server admin token, only needed to create pools (defaults to $RELAY_ADMIN_TOKEN)",
+    )
     p.set_defaults(func=run)
 
 
 def run(args) -> None:
-    """Launch the Textual dashboard."""
-    Dashboard(args.scheduler, args.pool).run()
+    """Launch the Textual dashboard for the pool you are logged in to."""
+    prof = profile.require_login()
+    admin_token = args.admin_token or os.environ.get("RELAY_ADMIN_TOKEN")
+    Dashboard(args.scheduler, prof["pool_token"], admin_token).run()
