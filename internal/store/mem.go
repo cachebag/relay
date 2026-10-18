@@ -13,7 +13,8 @@ type Mem struct {
 	// often than Upsert (heartbeats aside), and concurrent readers shouldn't
 	// block each other.
 	mu    sync.RWMutex
-	nodes map[string]Node
+	nodes map[string]Node]
+	
 }
 
 // NewMem returns an empty Mem. Use this instead of &Mem{} — the zero value has
