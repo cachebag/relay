@@ -6,7 +6,7 @@ from importlib.metadata import version
 import httpx
 
 from relay import profile
-from relay.commands import auth, credits, dash, jobs, logs, nodes, pool, status, submit
+from relay.commands import auth, credits, dash, jobs, logs, node, nodes, pool, status, submit
 
 DEFAULT_SCHEDULER = "http://localhost:8080"
 
@@ -52,6 +52,7 @@ def main() -> None:
     dash.register(sub)
     auth.register(sub)
     credits.register(sub)
+    node.register(sub)
 
     args = parser.parse_args()
 

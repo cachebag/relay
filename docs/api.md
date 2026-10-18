@@ -32,6 +32,15 @@ Checks whether the relay server is running.
 
 #### Request
 
+If a pool admin removed this node from the pool with `DELETE /pools/{id}/nodes/{node_id}`:
+
+```text
+410 Gone
+```
+
+The response body is `removed from pool by admin`. Nothing about the node is saved, so it does not reappear in `GET /nodes`. `relay-agent` logs `removed from this pool by the admin` and exits with status 0 instead of retrying.
+
+
 No request body is required.
 
 ```http
@@ -547,6 +556,11 @@ If the `pool` query parameter is not provided, all registered nodes are returned
 
 ## Leave a Pool
 
+
+
+
+
+
 ### DELETE /nodes/{id}
 
 Removes a node from its pool.
@@ -599,6 +613,60 @@ If no node has that ID:
 `relay-agent leave` treats a 404 as success because it means the node is already gone.
 
 If the node or its jobs cannot be read or updated:
+
+```text
+500 Internal Server Error
+```
+## Remove a Node (Admin)
+
+### DELETE /pools/{id}/nodes/{node_id}
+
+Lets a pool admin remove any node from the pool, for example one that keeps failing jobs or one whose owner left without running `relay-agent leave`.
+
+`relay node remove <node-id>` calls this endpoint.
+
+This operation requires the pool's admin token rather than its join token.
+
+Any job that is `assigned` or `running` on the node goes back to `queued` with its `node_id` and `started_at` cleared, and the attempt the scheduler counted is given back, the same as leaving.
+
+The node record is then deleted, so the node disappears from `GET /nodes` immediately.
+
+A tombstone is also recorded for the node in this pool. Its later heartbeats get `410 Gone` instead of registering it again, so the agent stops on its next heartbeat. Tombstones are not purged yet.
+
+#### Request
+
+The pool's admin token is sent as a bearer token.
+
+```http
+DELETE /pools/pool-id/nodes/node-1
+Authorization: Bearer <admin-token>
+```
+
+No request body is required.
+
+#### Success Response
+
+Status:
+
+```text
+204 No Content
+```
+
+#### Error Responses
+
+If the admin token is missing or invalid, or the pool does not exist:
+
+```text
+401 Unauthorized
+```
+
+If no node with that ID is in this pool, including a node that belongs to a different pool:
+
+```text
+404 Not Found
+```
+
+If the node, its jobs or the tombstone cannot be read or updated:
 
 ```text
 500 Internal Server Error

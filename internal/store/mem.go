@@ -14,7 +14,7 @@ type Mem struct {
 	// block each other.
 	mu    sync.RWMutex
 	nodes map[string]Node]
-	
+	tombstones map[tombstoneKey]Tombstone
 }
 
 // NewMem returns an empty Mem. Use this instead of &Mem{} — the zero value has
