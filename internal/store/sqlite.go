@@ -48,6 +48,19 @@ func NewSQLite(path string) (*SQLite, error) {
 	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN pool_id TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN owner TEXT NOT NULL DEFAULT ''`)
 
+	// Machines a pool admin removed. One row per (pool, node), so removing
+	// the same machine twice keeps a single tombstone.
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS tombstones (
+    		pool_id    TEXT NOT NULL,
+    		node_id    TEXT NOT NULL,
+    		created_at INTEGER NOT NULL,
+    		PRIMARY KEY (pool_id, node_id)
+    	)`)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+
 	return &SQLite{db: db}, nil
 }
 
