@@ -16,7 +16,7 @@ POOL_COMMANDS = {"nodes", "jobs", "dash"}
 
 def resolve(args: argparse.Namespace, env: dict, prof: dict) -> None:
     """Fill in the scheduler (flag, env, profile, default) and pool (flag, profile)."""
-    
+
     explicit = args.scheduler or env.get("RELAY_SCHEDULER")
     args.scheduler_given = bool(explicit)
     args.scheduler = explicit or prof.get("scheduler") or DEFAULT_SCHEDULER
@@ -36,8 +36,10 @@ def main() -> None:
     parser.add_argument(
         "--scheduler",
         default=None,
-        help=("scheduler base URL (default: flag, $RELAY_SCHEDULER,"
-            f"saved login, then {DEFAULT_SCHEDULER})"),
+        help=(
+            "scheduler base URL (default: flag, $RELAY_SCHEDULER,"
+            f"saved login, then {DEFAULT_SCHEDULER})"
+        ),
     )
 
     sub = parser.add_subparsers(dest="subcommand", required=True)

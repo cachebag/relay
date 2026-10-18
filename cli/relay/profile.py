@@ -33,7 +33,7 @@ def load() -> dict:
     """Return the saved profile, or an empty dict if not logged in."""
     try:
         data = json.loads(path().read_text())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     return data if isinstance(data, dict) else {}
 
