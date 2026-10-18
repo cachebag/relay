@@ -431,7 +431,7 @@ func TestNodeHeartbeatRejectsIDFromAnotherPool(t *testing.T) {
 	if err := reg.Upsert(context.Background(), original); err != nil {
 		t.Fatal(err)
 	}
-	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits())
+	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 
 	sendHeartbeat := func(token, hostname string) *httptest.ResponseRecorder {
 		body := fmt.Sprintf(`{

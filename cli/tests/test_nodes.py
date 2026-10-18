@@ -64,7 +64,7 @@ def test_fetch_sends_join_token():
         return httpx.Response(200, json=[])
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    assert fetch("http://scheduler", pool="abc", client=client) == []
+    assert fetch("http://scheduler", token="abc", client=client) == []
 
  
 # This test mocks the fetch function to return a node with a specific ID and checks
@@ -87,6 +87,11 @@ def test_run_prints_node_id(monkeypatch, capsys):
         ],
     )
 
+    monkeypatch.setattr(
+        nodes_command.profile,
+        "require_login",
+        lambda: {"pool_token": "test-token"},
+    )
     nodes_command.run(SimpleNamespace(scheduler="http://scheduler", pool=None))
 
     output = capsys.readouterr().out
