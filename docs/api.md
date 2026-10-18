@@ -32,15 +32,6 @@ Checks whether the relay server is running.
 
 #### Request
 
-If a pool admin removed this node from the pool with `DELETE /pools/{id}/nodes/{node_id}`:
-
-```text
-410 Gone
-```
-
-The response body is `removed from pool by admin`. Nothing about the node is saved, so it does not reappear in `GET /nodes`. `relay-agent` logs `removed from this pool by the admin` and exits with status 0 instead of retrying.
-
-
 No request body is required.
 
 ```http
@@ -423,6 +414,14 @@ If the pool token is invalid:
 403 Forbidden
 ```
 
+If a pool admin removed this node from the pool with `DELETE /pools/{id}/nodes/{node_id}`:
+
+```text
+410 Gone
+```
+
+The response body is `removed from pool by admin`. Nothing about the node is saved, so it does not reappear in `GET /nodes`. `relay-agent` logs `removed from this pool by the admin` and exits with status 0 instead of retrying.
+
 If the node cannot be stored:
 
 ```text
@@ -556,11 +555,6 @@ If the `pool` query parameter is not provided, all registered nodes are returned
 
 ## Leave a Pool
 
-
-
-
-
-
 ### DELETE /nodes/{id}
 
 Removes a node from its pool.
@@ -617,6 +611,7 @@ If the node or its jobs cannot be read or updated:
 ```text
 500 Internal Server Error
 ```
+
 ## Remove a Node (Admin)
 
 ### DELETE /pools/{id}/nodes/{node_id}
