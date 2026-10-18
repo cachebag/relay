@@ -128,6 +128,9 @@ func (a *Agent) Tick(ctx context.Context) {
 				a.retryInterval,
 			)
 
+		case errors.Is(err, ErrPoolConflict):
+			log.Printf("node ID already belongs to another pool; leave that pool before joining this one")
+
 		default:
 			// Keep a general fallback for scheduler errors that are
 			// neither a bad token nor a networking failure.

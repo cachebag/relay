@@ -16,6 +16,11 @@ import (
 // heartbeat errors, such as connection failures.
 var ErrBadToken = errors.New("pool token rejected")
 
+// ErrPoolConflict is returned when the node ID already belongs to another pool.
+var ErrPoolConflict = errors.New(
+	"node ID already belongs to another pool; leave that pool before joining this one",
+)
+
 // heartbeat contains the node information and pool token
 // that are sent to the scheduler with each heartbeat.
 type heartbeat struct {
@@ -79,6 +84,11 @@ func Send(
 			ErrBadToken,
 			resp.StatusCode,
 		)
+	}
+
+	// A 409 Conflict response means the node ID already belongs to another pool.
+	if resp.StatusCode == http.StatusConflict {
+		return fmt.Errorf("%w: scheduler returned %d", ErrPoolConflict, resp.StatusCode)
 	}
 
 	// HTTP 204 No Content is the expected successful response.
