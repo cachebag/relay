@@ -21,18 +21,13 @@ from relay.commands import (
 
 DEFAULT_SCHEDULER = "http://localhost:8080"
 
-# Commands whose --pool falls back to the logged-in pool.
-POOL_COMMANDS = {"nodes", "jobs", "dash"}
-
 
 def resolve(args: argparse.Namespace, env: dict, prof: dict) -> None:
-    """Fill in the scheduler (flag, env, profile, default) and pool (flag, profile)."""
+    """Fill in the scheduler: flag, then $RELAY_SCHEDULER, then the saved login."""
 
     explicit = args.scheduler or env.get("RELAY_SCHEDULER")
     args.scheduler_given = bool(explicit)
     args.scheduler = explicit or prof.get("scheduler") or DEFAULT_SCHEDULER
-    if args.subcommand in POOL_COMMANDS:
-        args.pool = args.pool or prof.get("pool_id")
 
 
 def main() -> None:

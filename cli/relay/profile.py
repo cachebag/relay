@@ -51,3 +51,21 @@ def save(profile: dict) -> None:
 
 def delete() -> None:
     path().unlink(missing_ok=True)
+
+
+def require_login() -> dict:
+    """Return the saved profile, or exit 1 with a hint if there isn't one.
+
+    Every command that talks to a pool needs the join token from the login,
+    so they all go through here.
+    """
+    prof = load()
+    if not prof.get("pool_token"):
+        print("not logged in, run relay login first", file=sys.stderr)
+        sys.exit(1)
+    return prof
+
+
+def bearer(token: str) -> dict:
+    """The Authorization header the scheduler expects."""
+    return {"Authorization": f"Bearer {token}"}

@@ -62,11 +62,16 @@ A pool is used to group nodes and jobs together. When a pool is created, the ser
 
 Nodes use the pool join token when sending heartbeats. Users also use the join token to submit jobs to that pool.
 
+Only the server admin can create pools. `relayd` prints the server admin token the first time it starts and stores only its hash. `relayd --new-admin-token` replaces it. `relay pool create <name> --admin-token <token>` calls this endpoint.
+
 #### Request
+
+The server admin token is sent as a bearer token.
 
 ```http
 POST /pools
 Content-Type: application/json
+Authorization: Bearer <server-admin-token>
 ```
 
 Example body:
@@ -107,6 +112,12 @@ Both tokens should be kept private.
 
 #### Error Responses
 
+If the server admin token is missing or wrong:
+
+```text
+401 Unauthorized
+```
+
 If the request body is invalid or the pool name is missing:
 
 ```text
@@ -123,12 +134,13 @@ If the pool cannot be stored:
 
 ### GET /pools
 
-Returns the existing pools.
+Returns the existing pools. Server admin only, the same as creating one.
 
 #### Request
 
 ```http
 GET /pools
+Authorization: Bearer <server-admin-token>
 ```
 
 No request body is required.
@@ -162,7 +174,13 @@ If no pools exist, the response is an empty JSON array:
 []
 ```
 
-#### Error Response
+#### Error Responses
+
+If the server admin token is missing or wrong:
+
+```text
+401 Unauthorized
+```
 
 If the pools cannot be retrieved:
 
@@ -432,12 +450,15 @@ If the node cannot be stored:
 
 ### GET /nodes
 
-Returns all registered nodes with their current online/offline status.
+Returns the nodes in the pool that owns the bearer join token, with their current online/offline status. The token decides the pool, so a member never sees another pool's machines.
+
+`relay nodes` and `relay dash` call this endpoint with the token from the saved login.
 
 #### Request
 
 ```http
 GET /nodes
+Authorization: Bearer <join-token>
 ```
 
 #### Success Response
@@ -488,70 +509,25 @@ Example response:
 
 The 30-second window is `store.NodeTimeout`, the same value the scheduler uses to decide whether a node can receive jobs.
 
-If no nodes have been registered, the endpoint returns:
+If the pool has no registered nodes, the endpoint returns:
 
 ```json
 []
 ```
 
-#### Error Response
+#### Error Responses
+
+If the join token is missing or does not match any pool:
+
+```text
+403 Forbidden
+```
 
 If the nodes cannot be retrieved:
 
 ```text
 500 Internal Server Error
 ```
-
-## List Nodes by Pool
-
-### GET /nodes?pool=<pool-id>
-
-The `pool` query parameter can be used to return only nodes belonging to a specific pool.
-
-#### Request
-
-Example:
-
-```http
-GET /nodes?pool=pool-id
-```
-
-#### Success Response
-
-Status:
-
-```text
-200 OK
-```
-
-Only nodes whose `pool_id` matches the requested pool are returned.
-
-Example:
-
-```json
-[
-  {
-    "id": "node-1",
-    "hostname": "test-host",
-    "os": "linux",
-    "arch": "amd64",
-    "cpus": 4,
-    "mem_bytes": 8000000000,
-    "pool_id": "pool-id",
-    "owner": "akrm",
-    "last_seen": "2026-09-19T12:00:00Z",
-    "status": "online"
-  }
-]
-```
-
-If the requested pool has no registered nodes, the response is:
-
-```json
-[]
-```
-
-If the `pool` query parameter is not provided, all registered nodes are returned.
 
 ## Leave a Pool
 
@@ -754,7 +730,9 @@ If the pool or job cannot be retrieved or stored:
 
 ### GET /jobs/{id}
 
-Returns a specific job using its ID.
+Returns a specific job using its ID. The job must belong to the pool that owns the bearer join token.
+
+`relay status` calls this endpoint.
 
 #### Request
 
@@ -762,6 +740,7 @@ Example:
 
 ```http
 GET /jobs/40ca4109f082
+Authorization: Bearer <join-token>
 ```
 
 No request body is required.
@@ -811,7 +790,13 @@ Legacy jobs without a pool ID cannot be scheduled onto a node in an existing poo
 
 #### Error Responses
 
-If the requested job does not exist:
+If the join token is missing or does not match any pool:
+
+```text
+403 Forbidden
+```
+
+If the requested job does not exist, or belongs to another pool (the two look the same, so a token can't tell whether another pool's job exists):
 
 ```text
 404 Not Found
@@ -827,25 +812,18 @@ If the job cannot be retrieved:
 
 ### GET /jobs
 
-Returns all stored jobs, including the pool each job belongs to and the name of the person who submitted it.
+Returns the jobs in the pool that owns the bearer join token, including the name of the person who submitted each one.
 
-An optional `pool` query parameter filters the results to a specific pool.
+`relay jobs` and `relay dash` call this endpoint.
 
 #### Request
 
-To retrieve all jobs:
-
 ```http
 GET /jobs
+Authorization: Bearer <join-token>
 ```
 
-To retrieve jobs belonging to one pool:
-
-```http
-GET /jobs?pool=<pool-id>
-```
-
-No request body or authentication is required.
+No request body is required.
 
 #### Success Response
 
@@ -874,7 +852,7 @@ Example response:
     "command": ["sleep", "5"],
     "status": "assigned",
     "node_id": "node-2",
-    "pool_id": "pool-b",
+    "pool_id": "pool-a",
     "submitter": "bob",
     "attempts": 1,
     "created_at": "2026-09-23T15:02:00Z"
@@ -882,17 +860,9 @@ Example response:
 ]
 ```
 
-When the `pool` parameter is provided, only jobs whose `pool_id` matches the requested value are returned.
+Every job returned has the token's `pool_id`. Jobs in other pools are never included.
 
-For example:
-
-```http
-GET /jobs?pool=pool-a
-```
-
-returns only the job submitted by `alice` in the example above.
-
-If no jobs match the requested pool, or no jobs exist, the response is an empty JSON array:
+If the pool has no jobs, the response is an empty JSON array:
 
 ```json
 []
@@ -902,7 +872,13 @@ The `relay jobs` CLI displays a `SUBMITTER` column using the job's stored submit
 
 Legacy jobs without submitter information display `-`.
 
-#### Error Response
+#### Error Responses
+
+If the join token is missing or does not match any pool:
+
+```text
+403 Forbidden
+```
 
 If the jobs cannot be retrieved:
 
@@ -942,6 +918,8 @@ The server only accepts the result if it comes from the node currently holding t
 
 This prevents a node that went offline, and whose job was requeued and assigned elsewhere, from overwriting a newer result.
 
+The request carries the pool's join token, and the job must belong to that pool. Without it, anyone who guessed a job ID could send a fake result.
+
 #### Request
 
 Example:
@@ -949,6 +927,7 @@ Example:
 ```http
 POST /jobs/40ca4109f082/result
 Content-Type: application/json
+Authorization: Bearer <join-token>
 ```
 
 Example body:
@@ -997,6 +976,12 @@ If the JSON request is malformed or `exit_code` is missing:
 400 Bad Request
 ```
 
+If the join token is missing, does not match any pool, or belongs to a different pool than the job:
+
+```text
+403 Forbidden
+```
+
 If the requested job does not exist:
 
 ```text
@@ -1033,7 +1018,7 @@ If the job cannot be retrieved or updated:
 
 Returns the oldest job assigned to the node that is still `assigned` or `running`.
 
-A node calls this endpoint to pick up work.
+A node calls this endpoint to pick up work. It carries the pool's join token, and the node must be registered in that pool, so nobody can take another machine's jobs by guessing its ID.
 
 #### Request
 
@@ -1041,6 +1026,7 @@ Example:
 
 ```http
 GET /nodes/node-1/jobs/next
+Authorization: Bearer <join-token>
 ```
 
 No request body is required.
@@ -1083,7 +1069,13 @@ If there is nothing for the node:
 204 No Content
 ```
 
-#### Error Response
+#### Error Responses
+
+If the join token is missing or does not match any pool, or the node is not registered in the token's pool (an unknown node gets the same answer):
+
+```text
+403 Forbidden
+```
 
 If the jobs cannot be retrieved or updated:
 
@@ -1097,7 +1089,7 @@ If the jobs cannot be retrieved or updated:
 
 Returns the output a node reported for a finished job.
 
-`relay logs` calls this endpoint.
+`relay logs` calls this endpoint. The job must belong to the pool that owns the bearer join token.
 
 #### Request
 
@@ -1105,6 +1097,7 @@ Example:
 
 ```http
 GET /jobs/40ca4109f082/output
+Authorization: Bearer <join-token>
 ```
 
 No request body is required.
@@ -1135,7 +1128,13 @@ The response has empty `stdout` and `stderr` and an `exit_code` of `-1`, so `rel
 
 #### Error Responses
 
-If the requested job does not exist:
+If the join token is missing or does not match any pool:
+
+```text
+403 Forbidden
+```
+
+If the requested job does not exist, or belongs to another pool:
 
 ```text
 404 Not Found
@@ -1549,29 +1548,18 @@ Once Agent A resumes heartbeating, the queued job should become eligible for sch
 
 ### Test 3: Job Filtering
 
-With jobs stored in both pools, request:
+With jobs stored in both pools, request the list with Pool A's join token:
 
 ```http
-GET /jobs?pool=<pool-a-id>
+GET /jobs
+Authorization: Bearer <pool-a-join-token>
 ```
 
 Verify that only Pool A's jobs are returned.
 
-Then request:
+Then request it with Pool B's join token and verify that only Pool B's jobs are returned.
 
-```http
-GET /jobs?pool=<pool-b-id>
-```
-
-Verify that only Pool B's jobs are returned.
-
-Finally, request:
-
-```http
-GET /jobs
-```
-
-Verify that jobs from both pools are returned.
+There is no way to list jobs from both pools at once. The token decides the pool.
 
 ### Test 4: Submitter Tracking
 
@@ -1613,7 +1601,7 @@ The job API tests verify that:
 - A client cannot override the authenticated pool by supplying `pool_id`.
 - Jobs can be retrieved by ID.
 - Unknown job IDs return `404 Not Found`.
-- Jobs can be filtered using `GET /jobs?pool=<pool-id>`.
+- `GET /jobs` only returns the jobs in the join token's pool.
 - A fresh job store returns an empty JSON array.
 
 The scheduler tests verify that:

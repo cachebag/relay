@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 
 import httpx
 
+from relay import profile
+
 
 def register(sub) -> None:
     p = sub.add_parser("status", help="show a job's status")
@@ -9,9 +11,12 @@ def register(sub) -> None:
     p.set_defaults(func=run)
 
 
-def fetch(scheduler: str, job_id: str, client: httpx.Client | None = None) -> dict:
+def fetch(
+    scheduler: str, job_id: str, token: str, client: httpx.Client | None = None
+) -> dict:
+    """Get one job. The scheduler only returns jobs in the token's pool."""
     client = client or httpx.Client(timeout=5)
-    r = client.get(f"{scheduler}/jobs/{job_id}")
+    r = client.get(f"{scheduler}/jobs/{job_id}", headers=profile.bearer(token))
     r.raise_for_status()
     return r.json()
 
@@ -38,7 +43,8 @@ def runtime(job: dict) -> str | None:
 
 
 def run(args) -> None:
-    j = fetch(args.scheduler, args.job_id)
+    prof = profile.require_login()
+    j = fetch(args.scheduler, args.job_id, prof["pool_token"])
     node = j["node_id"] or "-"
     attempts = j.get("attempts", 0)
     ran = runtime(j)

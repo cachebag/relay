@@ -85,6 +85,7 @@ def _print_wait_hint(job_id: str) -> None:
 def wait_for_job(
     scheduler: str,
     job_id: str,
+    token: str,
     client: httpx.Client | None = None,
     poll_interval: float = 1.0,
     initial_job: dict | None = None,
@@ -106,7 +107,7 @@ def wait_for_job(
                 return 124
 
             # Request the latest job information from the scheduler.
-            job = status.fetch(scheduler, job_id, client=client)
+            job = status.fetch(scheduler, job_id, token, client=client)
             current_state = _job_state(job)
 
             # Only print an update when the job's state has changed.
@@ -136,7 +137,7 @@ def wait_for_job(
             return 130
 
     # Print the output and return the job's exit code, just like relay logs.
-    return logs.print_job_output(scheduler, job_id, client=client)
+    return logs.print_job_output(scheduler, job_id, token, client=client)
 
 
 def run(args) -> None:
@@ -198,6 +199,7 @@ def run(args) -> None:
             wait_for_job(
                 args.scheduler,
                 job["id"],
+                token,
                 initial_job=job,
                 timeout=timeout,
             )

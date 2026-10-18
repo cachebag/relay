@@ -6,6 +6,7 @@ from relay.commands.status import fetch
 def test_fetch_returns_job():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/jobs/abc123"
+        assert request.headers["Authorization"] == "Bearer tok"
         return httpx.Response(
             200,
             json={
@@ -19,6 +20,6 @@ def test_fetch_returns_job():
         )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    job = fetch("http://scheduler", "abc123", client=client)
+    job = fetch("http://scheduler", "abc123", "tok", client=client)
     assert job["status"] == "queued"
     assert job["command"] == ["echo", "hi"]

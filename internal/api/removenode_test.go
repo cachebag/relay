@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,7 +49,7 @@ func newRemoveHandler(t *testing.T, js ...store.Job) (http.Handler, *store.Mem, 
 		}
 	}
 
-	return NewHandler(reg, pools, jobs, store.NewMemCredits()), reg, jobs
+	return NewHandler(reg, pools, jobs, store.NewMemCredits(), testServer()), reg, jobs
 }
 
 // removeNode sends DELETE /pools/{pool}/nodes/{id} with the given admin
@@ -75,29 +74,11 @@ func heartbeatAs(handler http.Handler, id, poolToken string) *httptest.ResponseR
 	return rec
 }
 
-// listedNodeIDs returns the IDs GET /nodes reports.
-func listedNodeIDs(t *testing.T, handler http.Handler) map[string]bool {
-	t.Helper()
-	rec := getJSON(handler, "/nodes")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /nodes: expected 200, got %d", rec.Code)
-	}
-	var nodes []store.Node
-	if err := json.NewDecoder(rec.Body).Decode(&nodes); err != nil {
-		t.Fatalf("decode nodes: %v", err)
-	}
-	ids := map[string]bool{}
-	for _, n := range nodes {
-		ids[n.ID] = true
-	}
-	return ids
-}
-
 // TestAdminRemoveNode checks that removing a machine returns 204, drops it
 // from GET /nodes, puts its running job back in the queue with the attempt
 // given back, and that the machine's next heartbeat gets 410.
 func TestAdminRemoveNode(t *testing.T) {
-	handler, _, jobs := newRemoveHandler(t,
+	handler, reg, jobs := newRemoveHandler(t,
 		store.Job{ID: "running", Command: []string{"a"}, Status: store.JobRunning, NodeID: "n1", PoolID: "p1", Attempts: 1},
 		store.Job{ID: "other", Command: []string{"b"}, Status: store.JobRunning, NodeID: "n2", PoolID: "p2", Attempts: 1},
 	)
@@ -106,7 +87,7 @@ func TestAdminRemoveNode(t *testing.T) {
 		t.Fatalf("expected 204, got %d", code)
 	}
 
-	if ids := listedNodeIDs(t, handler); ids["n1"] || !ids["n2"] {
+	if ids := nodeIDs(t, reg); ids["n1"] || !ids["n2"] {
 		t.Fatalf("expected only n2 in GET /nodes, got %v", ids)
 	}
 
@@ -132,7 +113,7 @@ func TestAdminRemoveNode(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "removed from pool by admin") {
 		t.Errorf("expected 410 body to say why, got %q", rec.Body.String())
 	}
-	if ids := listedNodeIDs(t, handler); ids["n1"] {
+	if ids := nodeIDs(t, reg); ids["n1"] {
 		t.Error("removed node came back after heartbeating")
 	}
 
