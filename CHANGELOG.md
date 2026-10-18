@@ -9,8 +9,75 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-18
+
+**Breaking:** every route except `/healthz` now needs a token, and `relayd`
+prints a server admin token on first start that `relay pool create` requires.
+Update `relayd`, every agent and the CLI together. An old agent against the
+new `relayd` gets `403` on every job poll.
+
 ### Added
 
+- **Tokens on every route.** The join token is now required for
+  `GET /nodes`, `GET /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/output`,
+  `GET /nodes/{id}/jobs/next` and `POST /jobs/{id}/result`, and each of them
+  only works within the token's own pool. Reads of another pool's job return
+  `404`, the same as a missing job. The `?pool=` filter is gone, since the
+  token decides the pool. `relayd` creates a server admin token on first start,
+  prints it once and stores only its hash; `POST /pools` and `GET /pools`
+  require it (`401` otherwise) and `relayd --new-admin-token` replaces it. The
+  agent sends the join token on job polls and results. The CLI sends the token
+  from the saved login for `nodes`, `jobs`, `status`, `logs`, `dash` and
+  `submit --wait`, and exits with `not logged in, run relay login first` when
+  there isn't one. `relay pool create` takes the server admin token from
+  `--admin-token` or `RELAY_ADMIN_TOKEN`; `rotate-token` and `node remove`
+  confirm with the pool name from the login instead of listing pools.
+  ([#108](https://github.com/cachebag/relay/pull/108))
+- **Admin removes a machine.** `DELETE /pools/{id}/nodes/{node_id}` with the
+  admin token requeues the machine's jobs without using an attempt, deletes
+  it, and records a tombstone so its next heartbeat gets `410 Gone`. The agent
+  prints `removed from this pool by the admin` and exits `0`.
+  `relay node remove <node-id>` calls it, asking for the pool name first
+  unless `--yes` is passed. ([#107](https://github.com/cachebag/relay/pull/107))
+- **`relay submit --wait`.** Polls the job once a second, prints each state
+  change, then prints the output and exits with the job's exit code.
+  `--timeout <seconds>` stops waiting with exit `124`; Ctrl-C with `130`.
+  Neither cancels the job. ([#106](https://github.com/cachebag/relay/pull/106))
+- **Credits: jobs are charged.** Jobs record `started_at` and `finished_at`,
+  and the submitter is charged 1 credit for every minute a job ran, rounded
+  up, minimum 1. A job the scheduler failed after 3 lost nodes is not charged,
+  and neither is one whose command couldn't start. `relay status` shows
+  `running for 11s` or `ran 1m01s`; `relay jobs` gains a `TIME` column.
+  ([#102](https://github.com/cachebag/relay/pull/102))
+- **Credits: ledger and balances.** Each machine has an owner (`--owner`,
+  then `RELAY_OWNER`, then the OS username) who earns 1 credit per minute the
+  machine is online, written in 10-minute blocks plus the remainder when it
+  goes offline. `GET /pools/{id}/credits` and `relay credits` show balances.
+  ([#92](https://github.com/cachebag/relay/pull/92))
+- **Jobs belong to a pool and record their submitter.** `POST /jobs` requires
+  the join token and the submitter's name; the job gets the token's `pool_id`.
+  The scheduler only places a job on a node in the same pool. `relay jobs`
+  shows a `SUBMITTER` column. ([#86](https://github.com/cachebag/relay/pull/86))
+- **`relay-agent leave`.** Removes the machine from its pool right away. Its
+  jobs go back in the queue without using an attempt, and the agent deletes
+  its local data. `--drain` finishes the current job first.
+  `DELETE /nodes/{id}` with the join token.
+  ([#85](https://github.com/cachebag/relay/pull/85))
+- **CLI login.** `relay login [--scheduler URL] [--pool-token TOKEN]
+  [--name NAME]` checks the token with `GET /pools/self` and saves the
+  scheduler, pool and name in a file only the user can read. `relay whoami`
+  shows it and `relay logout` deletes it. Logged-in commands default to the
+  saved scheduler. ([#78](https://github.com/cachebag/relay/pull/78))
+- **Pool admin token and rotation.** Each pool gets an admin token on
+  creation, shown once with only its hash stored. `POST /pools/{id}/token`
+  rotates the join token with it; the old join token stops working at once.
+  `relay pool rotate-token` asks for the pool name unless `--yes` is passed.
+  Older `relay.db` files are migrated. ([#76](https://github.com/cachebag/relay/pull/76))
+- **Agent: clearer startup and errors.** The agent prints the machine's
+  hostname, OS, CPUs and memory on start, says when it connects, tells a
+  rejected pool token apart from an unreachable scheduler, and takes the token
+  from `RELAY_POOL_TOKEN` as well as `--pool-token`.
+  ([#75](https://github.com/cachebag/relay/pull/75))
 - **Agent: run assigned jobs.** After each heartbeat, `relay-agent` asks the
   scheduler for its next job, runs the command directly on the machine and
   reports the exit code, stdout and stderr. The job runs in the background so
@@ -43,7 +110,9 @@ without a pull request link their commit instead.
   server-computed `status` of `online` or `offline`.
   ([#52](https://github.com/cachebag/relay/pull/52))
 - **CLI: job visibility.**
-  - `relay jobs [--pool <id>]` lists jobs.
+  - `relay jobs [--pool <id>]` lists jobs. (`--pool` was removed again in
+    [#108](https://github.com/cachebag/relay/pull/108); the login's token
+    decides the pool.)
   - `relay logs <id>` prints a job's output and exits with the job's exit
     code. It reports an error if the job hasn't finished or doesn't exist.
   - `relay dash` shows a jobs table alongside the nodes.
@@ -66,6 +135,8 @@ without a pull request link their commit instead.
 
 ### Changed
 
+- **This changelog.** Added, covering v0.1.0 through unreleased.
+  ([#74](https://github.com/cachebag/relay/pull/74))
 - **Pools and jobs persist in SQLite.** Nodes, pools and jobs now share one
   SQLite database, so `relayd` keeps all of its state across a restart.
   Creating a pool whose ID or token already exists returns an error.
@@ -78,6 +149,10 @@ without a pull request link their commit instead.
 
 ### Fixed
 
+- **`relay submit` no longer crashes.** It had been broken since
+  [#78](https://github.com/cachebag/relay/pull/78) because the subparser's
+  `dest` collided with submit's positional `command`.
+  ([#102](https://github.com/cachebag/relay/pull/102))
 - **`database is locked` (`SQLITE_BUSY`) under concurrent writes.** Heartbeats
   and scheduler updates could fail when they hit the database at the same
   time. SQLite now runs in WAL mode with a 5 s busy timeout
@@ -172,6 +247,7 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/cachebag/relay/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/cachebag/relay/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/cachebag/relay/commits/v0.1.0
