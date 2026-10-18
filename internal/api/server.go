@@ -164,10 +164,10 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		n.LastSeen = time.Now().UTC()
 
 		// A machine a pool admin removed gets 410 and nothing is saved,
-        		// so it can't heartbeat its way back into the pool.
-        		if refuseRemoved(w, r, reg, p.ID, n.ID) {
-        			return
-        		}
+		// so it can't heartbeat its way back into the pool.
+		if refuseRemoved(w, r, reg, p.ID, n.ID) {
+			return
+		}
 
 		if err := reg.Upsert(r.Context(), n); err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)

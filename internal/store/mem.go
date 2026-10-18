@@ -12,8 +12,8 @@ type Mem struct {
 	// RWMutex rather than Mutex because List is expected to be called far more
 	// often than Upsert (heartbeats aside), and concurrent readers shouldn't
 	// block each other.
-	mu    sync.RWMutex
-	nodes map[string]Node]
+	mu         sync.RWMutex
+	nodes      map[string]Node
 	tombstones map[tombstoneKey]Tombstone
 }
 

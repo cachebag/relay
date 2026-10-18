@@ -16,7 +16,6 @@ import (
 // heartbeat errors, such as connection failures.
 var ErrBadToken = errors.New("pool token rejected")
 
-
 // ErrRemoved is returned when the scheduler answers 410 Gone, meaning a pool
 // admin removed this machine from the pool. Unlike a connection failure,
 // retrying will never succeed, so the agent stops.
@@ -78,13 +77,13 @@ func Send(
 	defer resp.Body.Close()
 
 	// A 410 Gone response means a pool admin removed this machine.
-    	if resp.StatusCode == http.StatusGone {
-    		return fmt.Errorf(
-    			"%w: scheduler returned %d",
-    			ErrRemoved,
-    			resp.StatusCode,
-    		)
-    	}
+	if resp.StatusCode == http.StatusGone {
+		return fmt.Errorf(
+			"%w: scheduler returned %d",
+			ErrRemoved,
+			resp.StatusCode,
+		)
+	}
 
 	// A 403 Forbidden response means the scheduler rejected
 	// the pool token provided by the agent.

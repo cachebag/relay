@@ -120,8 +120,8 @@ func (a *Agent) Tick(ctx context.Context) {
 		// heartbeat failed.
 		switch {
 		case errors.Is(err, ErrRemoved):
-        			log.Printf("removed from this pool by the admin")
-        			a.removed = true
+			log.Printf("removed from this pool by the admin")
+			a.removed = true
 
 		case errors.Is(err, ErrBadToken):
 			log.Printf(
@@ -211,9 +211,9 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 	a.retryInterval = interval
 
 	// stopJob kills a running job if this machine gets removed from the
-    	// pool. The scheduler has already put that job back in the queue.
-    	ctx, stopJob := context.WithCancel(ctx)
-    	defer stopJob()
+	// pool. The scheduler has already put that job back in the queue.
+	ctx, stopJob := context.WithCancel(ctx)
+	defer stopJob()
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -222,12 +222,12 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 	for {
 		a.Tick(ctx)
 		// Removed by the pool admin: stop the job and return nil, so
-        // relay-agent exits 0 instead of retrying a heartbeat that will
-        // never be accepted. The deferred wg.Wait lets the job wind down.
-        if a.removed {
-        	stopJob()
-        	return nil
-        	}
+		// relay-agent exits 0 instead of retrying a heartbeat that will
+		// never be accepted. The deferred wg.Wait lets the job wind down.
+		if a.removed {
+			stopJob()
+			return nil
+		}
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
