@@ -33,6 +33,17 @@ def invite_scheduler_url(scheduler: str) -> tuple[str, bool]:
     return urlunsplit(parts._replace(netloc=f"<your address>{port}")), True
 
 
+def print_agent_invite(scheduler: str, token: str) -> None:
+    """Print the contributor command, with a hint for local schedulers."""
+    invite_url, needs_address = invite_scheduler_url(scheduler)
+    print(f"relay-agent --scheduler {invite_url} --pool-token {token}")
+    if needs_address:
+        print(
+            "replace <your address> with an address contributors can reach, "
+            "for example your Tailscale name."
+        )
+
+
 def register(sub) -> None:
     p = sub.add_parser("pool", help="manage pools")
     ps = p.add_subparsers(dest="pool_command", required=True)
@@ -91,7 +102,7 @@ def run_create(args) -> None:
     print("warning: the admin token is shown only once. Save it now.")
     print()
     print("share the token with contributors; they run:")
-    print(f"relay-agent --scheduler {args.scheduler} --pool-token {p['token']}")
+    print_agent_invite(args.scheduler, p["token"])
 
 
 def pool_from_login(flag: str | None) -> tuple[str, str]:
@@ -155,4 +166,4 @@ def run_rotate_token(args) -> None:
     print(f"new join token: {new_token}")
     print("the old join token no longer works.")
     print("restart every contributor's agent with the new token:")
-    print(f"relay-agent --scheduler {args.scheduler} --pool-token {new_token}")
+    print_agent_invite(args.scheduler, new_token)
