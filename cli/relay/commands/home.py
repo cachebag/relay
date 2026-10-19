@@ -1,3 +1,4 @@
+import os
 from typing import ClassVar
 
 import httpx
@@ -7,6 +8,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Button, Footer, Static
 
+from relay import profile
 from relay.commands.nodes import fetch, status
 
 REFRESH_S = 5.0
@@ -105,9 +107,10 @@ class HomeApp(App[str | None]):
         Binding("q", "quit", "Quit"),
     ]
 
-    def __init__(self, scheduler: str) -> None:
+    def __init__(self, scheduler: str, token: str) -> None:
         super().__init__()
         self.scheduler = scheduler
+        self.token = token
 
     def compose(self) -> ComposeResult:
         with Container(id="frame"):
@@ -129,7 +132,7 @@ class HomeApp(App[str | None]):
     @work(exclusive=True, thread=True)
     def refresh_pool(self) -> None:
         try:
-            rows = fetch(self.scheduler)
+            rows = fetch(self.scheduler, self.token)
             error = None
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             rows = []
@@ -153,7 +156,14 @@ def register(sub) -> None:
 def run(args) -> None:
     from relay.commands.dash import Dashboard
 
+    # Every screen needs the join token from the saved login.
+    prof = profile.require_login()
+    token = prof["pool_token"]
+    admin_token = getattr(args, "admin_token", None) or os.environ.get(
+        "RELAY_ADMIN_TOKEN"
+    )
+
     # Bounce between home and dashboard until one of them quits outright.
-    while HomeApp(args.scheduler).run() == "dash":
-        if Dashboard(args.scheduler).run() != "home":
+    while HomeApp(args.scheduler, token).run() == "dash":
+        if Dashboard(args.scheduler, token, admin_token).run() != "home":
             break

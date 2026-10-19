@@ -14,7 +14,7 @@ def offline(monkeypatch):
 
 
 def test_menu_and_status_render():
-    app = home.HomeApp("http://localhost:0")
+    app = home.HomeApp("http://localhost:0", "tok")
 
     async def drive():
         async with app.run_test() as pilot:
@@ -29,7 +29,7 @@ def test_menu_and_status_render():
 
 
 def test_enter_on_dashboard_exits_with_choice():
-    app = home.HomeApp("http://localhost:0")
+    app = home.HomeApp("http://localhost:0", "tok")
 
     async def drive():
         async with app.run_test() as pilot:
@@ -40,7 +40,7 @@ def test_enter_on_dashboard_exits_with_choice():
 
 
 def test_quit_exits_with_none():
-    app = home.HomeApp("http://localhost:0")
+    app = home.HomeApp("http://localhost:0", "tok")
 
     async def drive():
         async with app.run_test() as pilot:
@@ -54,7 +54,7 @@ def test_dashboard_escape_returns_home(monkeypatch):
     from relay.commands import dash
 
     monkeypatch.setattr(dash, "fetch", lambda *_a, **_k: [])
-    app = dash.Dashboard("http://localhost:0")
+    app = dash.Dashboard("http://localhost:0", "tok")
 
     async def drive():
         async with app.run_test() as pilot:
@@ -74,7 +74,7 @@ def test_run_loops_home_and_dash(monkeypatch):
     class FakeHome:
         results = iter(["dash", "dash", None])
 
-        def __init__(self, _s):
+        def __init__(self, *_a):
             pass
 
         def run(self):
@@ -84,7 +84,7 @@ def test_run_loops_home_and_dash(monkeypatch):
     class FakeDash:
         results = iter(["home", None])
 
-        def __init__(self, _s):
+        def __init__(self, *_a):
             pass
 
         def run(self):
@@ -93,5 +93,6 @@ def test_run_loops_home_and_dash(monkeypatch):
 
     monkeypatch.setattr(home, "HomeApp", FakeHome)
     monkeypatch.setattr(dash, "Dashboard", FakeDash)
+    monkeypatch.setattr(home.profile, "load", lambda: {"pool_token": "tok"})
     home.run(SimpleNamespace(scheduler="x"))
     assert calls == ["home", "dash", "home", "dash"]
