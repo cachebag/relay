@@ -79,3 +79,112 @@ def test_create_returns_pool():
     pool = create("http://scheduler", "csc4996", "sat", client=client)
     assert pool["id"] == "pool-123"
     assert pool["token"] == "tok-abc"
+
+
+INVITE_CASES = [
+    pytest.param(
+        "http://localhost:8080",
+        "http://<your address>:8080",
+        True,
+        id="localhost",
+    ),
+    pytest.param(
+        "http://127.0.0.1:9000",
+        "http://<your address>:9000",
+        True,
+        id="ipv4-loopback",
+    ),
+    pytest.param(
+        "http://[::1]:8080",
+        "http://<your address>:8080",
+        True,
+        id="ipv6-loopback",
+    ),
+    pytest.param(
+        "http://10.1.4.3:8888",
+        "http://10.1.4.3:8888",
+        False,
+        id="remote-ipv4",
+    ),
+]
+
+
+@pytest.mark.parametrize("scheduler, expected_invite, needs_hint", INVITE_CASES)
+def test_invite_scheduler_url(scheduler, expected_invite, needs_hint):
+    assert pool.invite_scheduler_url(scheduler) == (expected_invite, needs_hint)
+
+
+@pytest.mark.parametrize(
+    "scheduler, expected_invite, needs_hint",
+    [
+        pytest.param(
+            "http://127.1.2.3:8080",
+            "http://<your address>:8080",
+            True,
+            id="other-ipv4-loopback",
+        ),
+        pytest.param(
+            "https://localhost:8443",
+            "https://<your address>:8443",
+            True,
+            id="https-loopback",
+        ),
+        pytest.param(
+            "http://scheduler.tailnet.ts.net:8080",
+            "http://scheduler.tailnet.ts.net:8080",
+            False,
+            id="tailscale-host",
+        ),
+    ],
+)
+def test_invite_scheduler_url_additional_hosts(scheduler, expected_invite, needs_hint):
+    assert pool.invite_scheduler_url(scheduler) == (expected_invite, needs_hint)
+
+
+@pytest.mark.parametrize("scheduler, expected_invite, needs_hint", INVITE_CASES)
+def test_create_invite_handles_scheduler_addresses(
+    monkeypatch, capsys, scheduler, expected_invite, needs_hint
+):
+    requests = []
+
+    def handler(req):
+        requests.append((str(req.url), req.headers.get("Authorization")))
+        return httpx.Response(
+            201, json={"id": "p1", "name": "lab", "token": "jt", "admin_token": "at"}
+        )
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    pool.run_create(
+        argparse.Namespace(scheduler=scheduler, name="lab", admin_token="sat")
+    )
+
+    out = capsys.readouterr().out
+    assert requests == [(f"{scheduler}/pools", "Bearer sat")]
+    assert f"relay-agent --scheduler {expected_invite} --pool-token jt" in out
+    assert ("replace <your address>" in out) is needs_hint
+    assert ("Tailscale name" in out) is needs_hint
+
+
+@pytest.mark.parametrize("scheduler, expected_invite, needs_hint", INVITE_CASES)
+def test_rotate_invite_handles_scheduler_addresses(
+    monkeypatch, capsys, scheduler, expected_invite, needs_hint
+):
+    requests = []
+
+    def handler(req):
+        requests.append((str(req.url), req.headers.get("Authorization")))
+        return httpx.Response(200, json={"token": "newtok"})
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    monkeypatch.setattr(
+        pool.profile, "load", lambda: {"pool_id": "p1", "pool_name": "lab"}
+    )
+    pool.run_rotate_token(
+        argparse.Namespace(scheduler=scheduler, pool="p1", admin_token="at", yes=True)
+    )
+
+    out = capsys.readouterr().out
+    assert requests == [(f"{scheduler}/pools/p1/token", "Bearer at")]
+    assert f"relay-agent --scheduler {expected_invite} --pool-token newtok" in out
+    assert ("replace <your address>" in out) is needs_hint
+    assert ("Tailscale name" in out) is needs_hint
