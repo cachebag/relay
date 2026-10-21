@@ -56,8 +56,31 @@ func main() {
 		"Replace the server admin token, print the new one, and exit",
 	)
 
+	// Public mode: an embedded Tailscale node serves the same handler over
+	// Funnel, so contributors anywhere can reach relayd without the admin
+	// opening a port. Needs TS_AUTHKEY. The plain --port listener stays up.
+	public := flag.Bool(
+		"public",
+		false,
+		"Also serve on a public https address through Tailscale Funnel (needs TS_AUTHKEY)",
+	)
+	name := flag.String(
+		"name",
+		"relay",
+		"Hostname of the Tailscale node used by --public",
+	)
+
 	// Makes the 'flag' package inspect cli arguments.
 	flag.Parse()
+
+	var pub publicConfig
+	if *public {
+		var err error
+		if pub, err = newPublicConfig(*name, os.Getenv("TS_AUTHKEY")); err != nil {
+			fmt.Fprintln(os.Stderr, "relayd:", err)
+			os.Exit(2)
+		}
+	}
 
 	if err := validPort(*port); err != nil {
 		fmt.Fprintln(os.Stderr, "relayd:", err)
@@ -119,9 +142,28 @@ func main() {
 	// Starts the scheduler in the background.
 	go scheduler.New(reg, jobs, credit.NewEarner(credits)).Run(context.Background(), 2*time.Second)
 
+	handler := api.NewHandler(reg, pools, jobs, credits, server)
+
+	// With --public, join the tailnet and serve the same handler on the
+	// Funnel listener too. A failure here is fatal on purpose: silently
+	// running local-only would leave the admin handing out an address
+	// nobody can reach.
+	if *public {
+		pln, url, err := listenPublic(context.Background(), pub)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("relayd public address: %s\n", url)
+		go func() {
+			if err := http.Serve(pln, handler); err != nil {
+				log.Fatal(err)
+			}
+		}()
+	}
+
 	// Saves any error as a variable called err, and if an error occurs
 	// it will print the error and stop the program.
-	if err := http.Serve(ln, api.NewHandler(reg, pools, jobs, credits, server)); err != nil {
+	if err := http.Serve(ln, handler); err != nil {
 		log.Fatal(err)
 	}
 }
