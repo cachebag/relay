@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"tailscale.com/tsnet"
 )
 
 // errNoAuthKey is returned by publicConfig when --public is set but
@@ -43,4 +48,27 @@ func stateDir() (string, error) {
 		return "", fmt.Errorf("no user config directory for Tailscale state: %w", err)
 	}
 	return filepath.Join(dir, "relay", "tsnet"), nil
+}
+
+// Starts the embedded Tailscale node and opens a Funnel listener on :443.
+// Returns the listener and the public https URL. This is the only place
+// that touches tsnet, so everything else in --public can be tested
+// without a tailnet.
+func listenPublic(ctx context.Context, cfg publicConfig) (net.Listener, string, error) {
+	srv := &tsnet.Server{
+		Hostname: cfg.Name,
+		AuthKey:  cfg.AuthKey,
+		Dir:      cfg.Dir,
+	}
+	status, err := srv.Up(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("joining the tailnet: %w", err)
+	}
+	ln, err := srv.ListenFunnel("tcp", ":443")
+	if err != nil {
+		srv.Close()
+		return nil, "", fmt.Errorf("opening a Funnel listener: %w", err)
+	}
+	// DNSName ends with a dot ("relay.tail1234.ts.net.").
+	return ln, "https://" + strings.TrimSuffix(status.Self.DNSName, "."), nil
 }
