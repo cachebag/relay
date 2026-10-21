@@ -10,7 +10,6 @@ from relay.commands import (
     auth,
     credits,
     dash,
-    home,
     jobs,
     logs,
     node,
@@ -60,14 +59,13 @@ def main() -> None:
     auth.register(sub)
     credits.register(sub)
     node.register(sub)
-    home.register(sub)
 
     args = parser.parse_args()
 
     try:
         resolve(args, os.environ, profile.load())
         if args.subcommand is None:
-            home.run(args)
+            dash.run(args)
             return
         args.func(args)
     except httpx.ConnectError:
