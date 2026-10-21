@@ -1,3 +1,4 @@
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/c4043fe3-7570-4408-a93e-7644c74e6a86">
@@ -126,6 +127,26 @@ relay pool create my-pool --admin-token <server admin token>
 ```
 
 This prints the pool's join token, which you send to contributors and submitters, and the pool's admin token, which only you keep. Instead of `--admin-token` you can set `RELAY_ADMIN_TOKEN`.
+
+If you create a pool using a scheduler on your own machine (for example,
+`http://localhost:8080`), Relay prints an invitation like this:
+
+```text
+relay-agent --scheduler http://<your address>:8080 --pool-token <join token>
+replace <your address> with an address contributors can reach, for example your Tailscale name.
+```
+
+Before sharing the command, replace `<your address>` with the scheduler's reachable
+LAN IP address or Tailscale hostname. The placeholder is not a usable address,
+and `localhost` on a contributor's computer refers to their own computer, not
+the admin's scheduler. Relay keeps the original port in the invitation. If you
+already connect using a non-local scheduler address, the command displays that
+address unchanged without the replacement hint.
+
+`relay pool rotate-token` prints the same contributor command and address hint
+when applicable. After rotating, distribute the new join token and restart
+contributor agents, since the old join token no longer works. Never share the
+server or pool admin token with contributors.
 
 Every other command works on the pool you are logged in to (`relay login`), and sends its join token with each request. Nobody without a pool's join token can see its machines, jobs, or output.
 
