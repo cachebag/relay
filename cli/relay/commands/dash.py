@@ -274,8 +274,8 @@ def run(args) -> None:
     Dashboard(args.scheduler, prof["pool_token"], admin_token).run()
 
 
-
 def run_app(args) -> None:
     from relay.dash import DashApp
+
     admin_token = args.admin_token or os.environ.get("RELAY_ADMIN_TOKEN")
     DashApp(args.scheduler, admin_token).run()

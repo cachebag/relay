@@ -6,7 +6,8 @@ from textual.binding import BindingType
 
 from relay import profile
 
-AGENT = " relay-agent"
+AGENT = "relay-agent"
+
 
 def invite_line(scheduler: str, token: str) -> str:
     return f"{AGENT} --scheduler {scheduler} --pool-token {token}"
@@ -47,7 +48,6 @@ def parse_invite(text: str, default_scheduler: str) -> tuple[str, str]:
 
 
 class DashApp(App[None]):
-
     TITLE = "relay"
 
     CSS = """

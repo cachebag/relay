@@ -18,6 +18,7 @@ class PoolScreen(Screen):
         Binding("ctrl+n", "nodes", "Nodes & jobs", priority=True),
         Binding("ctrl+l", "logout", "Log out", priority=True),
     ]
+
     def compose(self) -> ComposeResult:
         prof = profile.load()
         scheduler = prof.get("scheduler", self.app.scheduler)
@@ -41,7 +42,7 @@ class PoolScreen(Screen):
                 placeholder="server admin token",
                 password=True,
                 id="admin-token",
-                )
+            )
             yield Input(placeholder="new pool name, then enter", id="new-pool")
             yield Label("", id="create-result")
             yield Label("", id="create-error", classes="error")
@@ -93,7 +94,6 @@ class PoolScreen(Screen):
             f"invite: {invite_line(self.app.scheduler, p['token'])}\n"
             f"pool admin token: {p.get('admin_token', '-')}  (shown once, save it now)"
         )
-
 
     def action_nodes(self) -> None:
         self.app.show_nodes()

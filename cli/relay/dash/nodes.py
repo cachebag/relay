@@ -114,7 +114,7 @@ class NodesScreen(Screen):
                 f"{n.get('mem_bytes', 0) / 1e9:.1f}GB",
                 human_ago(nodes_cmd.seconds_ago(n["last_seen"])),
                 n.get("pool_id", "") or "-",
-                )
+            )
 
         for job in self.job_rows:
             state = job["status"]
@@ -125,7 +125,7 @@ class NodesScreen(Screen):
                 str(job.get("attempts", 0)),
                 jobs_cmd.age(job["created_at"]),
                 jobs_cmd.shorten(" ".join(job["command"])),
-                )
+            )
 
         pool_name = profile.load().get("pool_name", "")
         self.query_one("#summary", Label).update(
