@@ -66,7 +66,7 @@ def test_fetch_sends_join_token():
     client = httpx.Client(transport=httpx.MockTransport(handler))
     assert fetch("http://scheduler", token="abc", client=client) == []
 
- 
+
 # This test mocks the fetch function to return a node with a specific ID and checks
 # that the run command includes this ID in its output.
 def test_run_prints_node_id(monkeypatch, capsys):

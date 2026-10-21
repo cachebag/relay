@@ -20,6 +20,7 @@ var ErrBadToken = errors.New("pool token rejected")
 var ErrPoolConflict = errors.New(
 	"node ID already belongs to another pool; leave that pool before joining this one",
 )
+
 // ErrRemoved is returned when the scheduler answers 410 Gone, meaning a pool
 // admin removed this machine from the pool. Unlike a connection failure,
 // retrying will never succeed, so the agent stops.
