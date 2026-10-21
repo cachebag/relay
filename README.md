@@ -151,6 +151,30 @@ server or pool admin token with contributors.
 Every other command works on the pool you are logged in to (`relay login`), and sends its join token with each request. Nobody without a pool's join token can see its machines, jobs, or output.
 
 
+## Admin: Run relayd on the internet
+
+Contributors on other networks can't reach a scheduler on your laptop. `relayd --public` gets it a public `https://` address through [Tailscale Funnel](https://tailscale.com/kb/1223/funnel). No router changes, no domain, no certificate, and nothing to install on contributors' machines. Only you need a Tailscale account, and the free plan is enough.
+
+One-time setup, in the [Tailscale admin console](https://login.tailscale.com/admin). There is a [step-by-step guide with screenshots](docs/TAILSCALE.md).
+
+1. **DNS**: make sure MagicDNS and HTTPS Certificates are enabled.
+2. **Settings, Keys**: generate an auth key. Tick **Reusable** so a restart keeps the same address.
+
+Then run `relayd` with the key:
+
+```sh
+export TS_AUTHKEY=tskey-auth-...
+./relayd-linux-amd64 --public          # add --name <hostname> to pick the name
+```
+
+The first run prints a link to click if Funnel isn't enabled for your tailnet yet. Once it's up, `relayd` prints one line you paste to everyone:
+
+```text
+relayd public address: https://relay.tail1234.ts.net
+```
+
+Use that as `--scheduler` in `relay pool create` and the invite it prints is ready to share. The plain `:8080` listener stays up too, so machines on your LAN can keep using the local address. Tailscale state lives in `relay/tsnet` under your user config directory (`~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows), so the address survives restarts. Funnel has a bandwidth cap, which is fine for heartbeats and job output (capped at 1 MB) but not for bulk data.
+
 ## Submitter: Run a job
 
 With the CLI installed, log in using your pool token:
