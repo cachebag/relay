@@ -104,7 +104,7 @@ The scheduler address is selected in this order:
 
 ### Public address
 
-`relayd --public` also serves on a public `https://` address through Tailscale Funnel, for contributors who aren't on your network. It needs `TS_AUTHKEY` set to a reusable auth key from your Tailscale admin console, and exits with code 2 if it isn't. `--name` picks the hostname (default `relay`). See the README section "Run relayd on the internet" for the one-time Tailscale setup. You don't need this for local development; the CLI and agent on your own machine use `http://localhost:8080`.
+`relayd --public` also serves on a public `https://` address through Tailscale Funnel, for contributors who aren't on your network. It needs `TS_AUTHKEY` set to a reusable auth key from your Tailscale admin console, and exits with code 2 if it isn't. `--name` picks the hostname (default `relay`). See [TAILSCALE.md](TAILSCALE.md) for the one-time Tailscale setup with screenshots. You don't need this for local development; the CLI and agent on your own machine use `http://localhost:8080`.
 
 ## 7. Tests
 

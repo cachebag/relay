@@ -155,7 +155,7 @@ Every other command works on the pool you are logged in to (`relay login`), and 
 
 Contributors on other networks can't reach a scheduler on your laptop. `relayd --public` gets it a public `https://` address through [Tailscale Funnel](https://tailscale.com/kb/1223/funnel). No router changes, no domain, no certificate, and nothing to install on contributors' machines. Only you need a Tailscale account, and the free plan is enough.
 
-One-time setup, in the [Tailscale admin console](https://login.tailscale.com/admin):
+One-time setup, in the [Tailscale admin console](https://login.tailscale.com/admin). There is a [step-by-step guide with screenshots](docs/TAILSCALE.md).
 
 1. **DNS**: make sure MagicDNS and HTTPS Certificates are enabled.
 2. **Settings, Keys**: generate an auth key. Tick **Reusable** so a restart keeps the same address.
