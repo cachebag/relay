@@ -2,7 +2,9 @@
 
 `relayd --public` gives your scheduler a public `https://` address through Tailscale. Contributors anywhere can join your pool, and they install nothing extra. You don't open ports, buy a domain, or set up certificates. Only you need a Tailscale account, and the free plan is enough.
 
-Five minutes the first time. One command after that.
+Setup takes about five minutes the first time, and everything after that is just one command.
+
+**Is this safe?** Yes. Nothing on your machine is opened up except relayd itself, and every relayd route needs a token: the join token for pool members, the admin token for admin actions. Strangers who find the address get turned away on every request. Traffic is HTTPS, contributors never join your tailnet, and your other Tailscale machines stay invisible to them.
 
 ## 1. Make a Tailscale account
 
@@ -79,7 +81,7 @@ relay nodes
 
 ## Good to know
 
-- `--name` picks the hostname. `relayd --public --name lab` gets `https://lab.<tailnet>.ts.net`.
+- `--name` picks the hostname. For instance: `relayd --public --name lab` gets `https://lab.<tailnet>.ts.net`.
 - The plain `:8080` listener stays up, so machines on your LAN can keep using `http://<your-ip>:8080`.
 - Tailscale state lives in `relay/tsnet` under your user config directory. Delete that folder to start over with a fresh node.
 - Funnel has a bandwidth cap. Fine for heartbeats and job output, which is capped at 1 MB. Not for moving big files.
