@@ -67,6 +67,7 @@ func New(schedulerURL, poolToken string, n store.Node) *Agent {
 // newAgent is New with the cache directory chosen by the caller, so tests
 // can use a temp directory.
 func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Agent {
+	n.ID = loadOrCreateNodeID(cacheDir, n.ID)
 	a := &Agent{
 		schedulerURL: schedulerURL,
 		poolToken:    poolToken,
@@ -134,6 +135,9 @@ func (a *Agent) Tick(ctx context.Context) {
 				a.schedulerURL,
 				a.retryInterval,
 			)
+
+		case errors.Is(err, ErrPoolConflict):
+			log.Printf("node ID already belongs to another pool; leave that pool before joining this one")
 
 		default:
 			// Keep a general fallback for scheduler errors that are

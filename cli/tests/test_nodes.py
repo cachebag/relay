@@ -1,5 +1,9 @@
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
 import httpx
 
+import relay.commands.nodes as nodes_command
 from relay.commands.nodes import fetch, seconds_ago, status
 
 
@@ -60,4 +64,37 @@ def test_fetch_sends_join_token():
         return httpx.Response(200, json=[])
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    assert fetch("http://scheduler", "abc", client=client) == []
+    assert fetch("http://scheduler", token="abc", client=client) == []
+
+
+# This test mocks the fetch function to return a node with a specific ID and checks
+# that the run command includes this ID in its output.
+def test_run_prints_node_id(monkeypatch, capsys):
+    monkeypatch.setattr(
+        nodes_command,
+        "fetch",
+        lambda *_args: [
+            {
+                "id": "a1b2c3d4e5f6",
+                "hostname": "shared-host",
+                "status": "online",
+                "os": "linux",
+                "arch": "amd64",
+                "cpus": 4,
+                "mem_bytes": 8_000_000_000,
+                "last_seen": datetime.now(UTC).isoformat(),
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        nodes_command.profile,
+        "require_login",
+        lambda: {"pool_token": "test-token"},
+    )
+    nodes_command.run(SimpleNamespace(scheduler="http://scheduler", pool=None))
+
+    output = capsys.readouterr().out
+    header, row = output.splitlines()
+    assert "ID" in header
+    assert "a1b2c3d4e5f6" in row

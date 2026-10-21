@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cachebag/relay/internal/store"
 )
@@ -15,6 +16,9 @@ import (
 // pendingFile is the name of the file, inside the agent's cache directory,
 // that holds a finished result the scheduler hasn't acknowledged yet.
 const pendingFile = "pending.json"
+
+// nodeIDFile stores the agent's stable identity in its cache directory.
+const nodeIDFile = "node-id"
 
 // pending is a finished job's result that hasn't been reported yet. The agent
 // keeps at most one, and won't ask for new work until it is reported or
@@ -25,9 +29,8 @@ type pending struct {
 	Result  Result `json:"result"`
 }
 
-// defaultCacheDir is where the agent keeps its pending result: relay/ inside
-// the OS's per-user cache directory. It returns "" if there isn't one, in
-// which case the pending result is only kept in memory.
+// defaultCacheDir is where the agent keeps its node ID and pending result:
+// relay/ inside the OS's per-user cache directory.
 func defaultCacheDir() string {
 	dir, err := os.UserCacheDir()
 	if err != nil {
@@ -35,6 +38,43 @@ func defaultCacheDir() string {
 		return ""
 	}
 	return filepath.Join(dir, "relay")
+}
+
+// Retrieves the agent's stable node ID from the cache directory,
+// or creates a new one if it doesn't exist. If a candidate ID is provided, it will
+// be used as the node ID if no existing ID is found. The ID is persisted to the
+// node-id file in the cache directory. If the cache directory is unavailable, a
+// new ID is generated for each run.
+func loadOrCreateNodeID(cacheDir, candidate string) string {
+	if cacheDir == "" {
+		log.Printf("warning: no cache directory, this agent will use a new ID on each run")
+		return store.NewID()
+	}
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		log.Printf("warning: using a new node ID because cache directory %s is unavailable: %v", cacheDir, err)
+		return store.NewID()
+	}
+
+	path := filepath.Join(cacheDir, nodeIDFile)
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if id := strings.TrimSpace(string(data)); id != "" {
+			return id
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		log.Printf("warning: using a new node ID because %s could not be read: %v", path, err)
+		return store.NewID()
+	}
+
+	id := candidate
+	if id == "" {
+		id = store.NewID()
+	}
+	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil {
+		log.Printf("warning: using a new node ID because %s could not be saved: %v", path, err)
+		return store.NewID()
+	}
+	return id
 }
 
 // loadPending reads a pending result left behind by a previous run. A file

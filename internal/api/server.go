@@ -178,7 +178,10 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			return
 		}
 
-		if err := reg.Upsert(r.Context(), n); err != nil {
+		if err := reg.Upsert(r.Context(), n); errors.Is(err, store.ErrPoolConflict) {
+			http.Error(w, "node ID already belongs to another pool; leave that pool before joining this one", http.StatusConflict)
+			return
+		} else if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
 		}

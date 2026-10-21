@@ -404,6 +404,76 @@ func TestNodeHeartbeatInvalidPoolToken(t *testing.T) {
 	}
 }
 
+// Checks that a heartbeat from a node with an ID that belongs
+// to a different pool is rejected with 409 Conflict.
+func TestNodeHeartbeatRejectsIDFromAnotherPool(t *testing.T) {
+	reg := store.NewMem()
+	pools := store.NewMemPools()
+	poolA := store.Pool{ID: "pool-a", Name: "Pool A", Token: "token-a"}
+	poolB := store.Pool{ID: "pool-b", Name: "Pool B", Token: "token-b"}
+	if err := pools.Create(context.Background(), poolA); err != nil {
+		t.Fatal(err)
+	}
+	if err := pools.Create(context.Background(), poolB); err != nil {
+		t.Fatal(err)
+	}
+
+	original := store.Node{
+		ID:       "shared-node-id",
+		PoolID:   poolA.ID,
+		Hostname: "first-machine",
+		OS:       "linux",
+		Arch:     "amd64",
+		CPUs:     4,
+		MemBytes: 8_000_000_000,
+		LastSeen: time.Now().Add(-time.Hour).UTC(),
+	}
+	if err := reg.Upsert(context.Background(), original); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(reg, pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
+
+	sendHeartbeat := func(token, hostname string) *httptest.ResponseRecorder {
+		body := fmt.Sprintf(`{
+			"id":%q,"hostname":%q,"os":"linux","arch":"amd64",
+			"cpus":8,"mem_bytes":16000000000,"pool_token":%q
+		}`, original.ID, hostname, token)
+		req := httptest.NewRequest(http.MethodPost, "/nodes/heartbeat", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// Send a heartbeat with a token from a different pool and expect a 409 Conflict.
+	rec := sendHeartbeat(poolB.Token, "changed-machine")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("cross-pool heartbeat status = %d, want 409", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "leave that pool") {
+		t.Errorf("conflict response should explain how to proceed, got %q", rec.Body.String())
+	}
+	nodes, err := reg.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0] != original {
+		t.Fatalf("cross-pool heartbeat changed stored node: got %+v, want %+v", nodes, original)
+	}
+
+	// Send a heartbeat with a token from the same pool and expect a 204 No Content.
+	rec = sendHeartbeat(poolA.Token, "updated-machine")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("same-pool heartbeat status = %d, want 204", rec.Code)
+	}
+	nodes, err = reg.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nodes) != 1 || nodes[0].PoolID != poolA.ID || nodes[0].Hostname != "updated-machine" {
+		t.Fatalf("same-pool heartbeat did not update node: %+v", nodes)
+	}
+}
+
 // createTestPool creates a pool with a known join token for API tests.
 func createTestPool(t *testing.T, pools store.PoolStore) store.Pool {
 	t.Helper()
