@@ -1,8 +1,8 @@
 import shlex
 from typing import ClassVar
 
-from Textual.app import App
-from Textual.binding import BindingType
+from textual.app import App
+from textual.binding import BindingType
 
 from relay import profile
 

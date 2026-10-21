@@ -13,7 +13,7 @@ from relay.commands import pool as pool_cmd
 from relay.dash.app import invite_line
 
 
-class PoolScreen(screen):
+class PoolScreen(Screen):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+n", "nodes", "Nodes & jobs", priority=True),
         Binding("ctrl+l", "logout", "Log out", priority=True),

@@ -256,7 +256,7 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   gets `400`. ([#19](https://github.com/cachebag/relay/pull/19))
 - **CLI: `relay nodes`** lists the nodes the scheduler knows about.
   ([#20](https://github.com/cachebag/relay/pull/20))
-- **Pools.** A `Pool` type, `PoolStore` interface and in-memory store, with
+- **Pools.** A `pool.py` type, `PoolStore` interface and in-memory store, with
   generated IDs and join tokens. Nodes belong to a pool.
   ([#32](https://github.com/cachebag/relay/pull/32))
 - **Pool endpoints.** `POST /pools` creates a pool and returns its join token.
