@@ -1,10 +1,27 @@
 package main
 
 import (
+	"errors"
 	"path/filepath"
 	"runtime"
 	"testing"
 )
+
+// Verifies that --public without TS_AUTHKEY is refused with the message
+// that says what to set.
+func TestPublicConfigNeedsAuthKey(t *testing.T) {
+	_, err := newPublicConfig("relay", "")
+	if !errors.Is(err, errNoAuthKey) {
+		t.Fatalf("got %v, want errNoAuthKey", err)
+	}
+	cfg, err := newPublicConfig("relay", "tskey-auth-test")
+	if err != nil {
+		t.Fatalf("with a key: %v", err)
+	}
+	if cfg.Name != "relay" || cfg.AuthKey != "tskey-auth-test" || cfg.Dir == "" {
+		t.Errorf("config = %+v, want name, key and a state dir", cfg)
+	}
+}
 
 // Verifies that the Tailscale state directory is relay/tsnet under the
 // per-user config directory for the current OS.
