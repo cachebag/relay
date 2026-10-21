@@ -432,6 +432,14 @@ If the pool token is invalid:
 403 Forbidden
 ```
 
+If the node ID already belongs to a node in a different pool:
+
+```text
+409 Conflict
+```
+
+The response body is `node ID already belongs to another pool; leave that pool before joining this one`. Nothing is saved. A node that wants to move pools has to run `relay-agent leave` first. The agent prints that message and keeps heartbeating, so fixing the token or leaving the old pool is enough.
+
 If a pool admin removed this node from the pool with `DELETE /pools/{id}/nodes/{node_id}`:
 
 ```text

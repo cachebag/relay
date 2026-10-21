@@ -254,10 +254,9 @@ func TestTickBadTokenMessage(t *testing.T) {
 	}
 }
 
-// Verifies that the agent correctly persists its node ID
-// to the cache directory and reuses it on subsequent instantiations. Also checks
-// that the node ID is written to the node-id file and that a new agent created
-// with the same cache directory retrieves the same ID.
+// Verifies that a 409 from the scheduler is explained in plain words: the
+// node ID already belongs to another pool, so the agent has to leave that
+// pool before it can join this one.
 func TestTickPoolConflictMessage(t *testing.T) {
 	srv := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
