@@ -48,7 +48,7 @@ def main() -> None:
         ),
     )
 
-    sub = parser.add_subparsers(dest="subcommand", required=True)
+    sub = parser.add_subparsers(dest="subcommand")
     nodes.register(sub)
     jobs.register(sub)
     logs.register(sub)
@@ -64,6 +64,9 @@ def main() -> None:
 
     try:
         resolve(args, os.environ, profile.load())
+        if args.subcommand is None:
+            dash.run(args)
+            return
         args.func(args)
     except httpx.ConnectError:
         print(
