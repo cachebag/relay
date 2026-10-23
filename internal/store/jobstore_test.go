@@ -16,6 +16,7 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	j := Job{
 		ID:        NewID(),
 		Command:   []string{"echo", "hello"},
+		Requires:  Requires{OS: "linux"},
 		Status:    JobQueued,
 		PoolID:    "pool-a",
 		Submitter: "alice",
@@ -34,6 +35,9 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	}
 	if !slices.Equal(got.Command, j.Command) {
 		t.Fatalf("want command %v, got %v", j.Command, got.Command)
+	}
+	if got.Requires.OS != j.Requires.OS {
+		t.Fatalf("want requires.os %q, got %q", j.Requires.OS, got.Requires.OS)
 	}
 	if got.Status != JobQueued {
 		t.Fatalf("want status %q, got %q", JobQueued, got.Status)

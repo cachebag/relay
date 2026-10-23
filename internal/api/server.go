@@ -333,8 +333,9 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 
 		// Read the command and submitter from the request.
 		var req struct {
-			Command   []string `json:"command"`
-			Submitter string   `json:"submitter"`
+			Command   []string       `json:"command"`
+			Submitter string         `json:"submitter"`
+			Requires  store.Requires `json:"requires"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -354,11 +355,17 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			return
 		}
 
+		if !req.Requires.Valid() {
+			http.Error(w, "requires.os must be linux, darwin, windows, or empty", http.StatusBadRequest)
+			return
+		}
+
 		// Create the job with a server-generated ID and queued status.
 		// The authenticated token determines the pool, not the request body.
 		j := store.Job{
 			ID:        store.NewID(),
 			Command:   req.Command,
+			Requires:  req.Requires,
 			Status:    store.JobQueued,
 			PoolID:    p.ID,
 			Submitter: req.Submitter,
