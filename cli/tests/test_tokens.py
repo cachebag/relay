@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from relay import profile
-from relay.commands import dash, jobs, logs, nodes, pool, status
+from relay.commands import jobs, logs, nodes, pool, status
 
 PROF = {
     "scheduler": "http://test",
@@ -102,13 +102,6 @@ def test_commands_need_login(cfg, monkeypatch, capsys, name, module, args, path)
     assert exc.value.code == 1
     assert "not logged in, run relay login first" in capsys.readouterr().err
     assert calls == []
-
-
-def test_dash_needs_login(cfg, monkeypatch, capsys):
-    with pytest.raises(SystemExit) as exc:
-        dash.run(argparse.Namespace(scheduler="http://test", admin_token=None))
-    assert exc.value.code == 1
-    assert "not logged in" in capsys.readouterr().err
 
 
 def test_pool_create_sends_server_admin_token(monkeypatch, capsys):

@@ -48,6 +48,25 @@ func testRoundTrip(t *testing.T, reg Registry) {
 	if len(got) != 1 || got[0].CPUs != 8 {
 		t.Fatalf("want 1 node with 8 cpus, got %+v", got)
 	}
+	if err := reg.Upsert(ctx, got[0]); err != nil {
+		t.Fatalf("identical upsert in same pool: %v", err)
+	}
+
+	// Attempt to move the node to a different pool should fail with ErrPoolConflict.
+	original := got[0]
+	moved := original
+	moved.PoolID = "pool-b"
+	moved.Hostname = "other-machine"
+	if err := reg.Upsert(ctx, moved); !errors.Is(err, ErrPoolConflict) {
+		t.Fatalf("upsert from another pool = %v, want ErrPoolConflict", err)
+	}
+	got, err = reg.List(ctx)
+	if err != nil {
+		t.Fatalf("list after rejected upsert: %v", err)
+	}
+	if len(got) != 1 || got[0] != original {
+		t.Fatalf("rejected upsert changed the stored node: got %+v, want %+v", got, original)
+	}
 }
 
 // testDelete checks that Delete removes only the named node and reports

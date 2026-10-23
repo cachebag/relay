@@ -16,6 +16,11 @@ import (
 // heartbeat errors, such as connection failures.
 var ErrBadToken = errors.New("pool token rejected")
 
+// ErrPoolConflict is returned when the node ID already belongs to another pool.
+var ErrPoolConflict = errors.New(
+	"node ID already belongs to another pool; leave that pool before joining this one",
+)
+
 // ErrRemoved is returned when the scheduler answers 410 Gone, meaning a pool
 // admin removed this machine from the pool. Unlike a connection failure,
 // retrying will never succeed, so the agent stops.
@@ -93,6 +98,11 @@ func Send(
 			ErrBadToken,
 			resp.StatusCode,
 		)
+	}
+
+	// A 409 Conflict response means the node ID already belongs to another pool.
+	if resp.StatusCode == http.StatusConflict {
+		return fmt.Errorf("%w: scheduler returned %d", ErrPoolConflict, resp.StatusCode)
 	}
 
 	// HTTP 204 No Content is the expected successful response.

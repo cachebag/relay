@@ -9,6 +9,33 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-21
+
+### Added
+
+- **Stable node IDs.** `relay-agent` no longer uses the hostname as its node
+  ID. It generates a random ID on first run and keeps it in
+  `<user cache dir>/relay/node-id`, so a machine keeps the same identity
+  across restarts and two machines with the same hostname don't collide. If
+  the cache directory can't be used, the agent warns and uses a fresh ID for
+  that run. A heartbeat whose node ID already belongs to another pool gets
+  `409 Conflict` and nothing is saved; the agent prints
+  `node ID already belongs to another pool; leave that pool before joining
+  this one` and keeps trying, so `relay-agent leave` on the old pool is
+  enough to fix it. `relay nodes` shows an `ID` column.
+  ([#105](https://github.com/cachebag/relay/pull/105))
+
+### Fixed
+
+- **Pool invites no longer point at localhost.** When the admin's CLI reached
+  `relayd` over `localhost`, `127.x.x.x` or `::1`, `relay pool create` and
+  `relay pool rotate-token` printed that address in the `relay-agent` command,
+  which on a contributor's machine means their own machine. The command now
+  reads `--scheduler http://<your address>:<port>` with the real port kept,
+  followed by a hint to fill in an address contributors can reach, such as a
+  Tailscale name. Any other address is printed unchanged.
+  ([#112](https://github.com/cachebag/relay/pull/112))
+
 ## [0.2.0] - 2026-10-18
 
 **Breaking:** every route except `/healthz` now needs a token, and `relayd`
@@ -229,7 +256,7 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   gets `400`. ([#19](https://github.com/cachebag/relay/pull/19))
 - **CLI: `relay nodes`** lists the nodes the scheduler knows about.
   ([#20](https://github.com/cachebag/relay/pull/20))
-- **Pools.** A `Pool` type, `PoolStore` interface and in-memory store, with
+- **Pools.** A `pool.py` type, `PoolStore` interface and in-memory store, with
   generated IDs and join tokens. Nodes belong to a pool.
   ([#32](https://github.com/cachebag/relay/pull/32))
 - **Pool endpoints.** `POST /pools` creates a pool and returns its join token.
@@ -247,7 +274,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/cachebag/relay/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cachebag/relay/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/cachebag/relay/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/cachebag/relay/commits/v0.1.0
