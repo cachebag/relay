@@ -488,3 +488,47 @@ def test_submit_register_accepts_wait_and_timeout():
     assert args.wait is True
     assert args.timeout == 1.0
     assert args.command == ["uname", "-n"]
+
+
+def test_submit_register_accepts_os(monkeypatch):
+    """The CLI parser accepts the --os option for specifying the required OS."""
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers()
+    submit_command.register(sub)
+
+    args = parser.parse_args(
+        ["submit", "--os", "linux", "--", "uname", "-n"]
+    )
+
+    assert args.os == "linux"
+    assert args.command == ["uname", "-n"]
+
+
+def test_submit_register_rejects_invalid_os(monkeypatch, capsys):
+    """The CLI parser rejects invalid values for the --os option."""
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers()
+    submit_command.register(sub)
+
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(
+            ["submit", "--os", "invalid-os", "--", "uname", "-n"]
+        )
+
+    assert exc.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+def test_submit_register_accepts_no_os(monkeypatch):
+    """The CLI parser correctly handles the absence of the --os option."""
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers()
+    submit_command.register(sub)
+
+    args = parser.parse_args(
+        ["submit", "--", "uname", "-n"]
+    )
+
+    assert args.os is None
+    assert args.command == ["uname", "-n"]
+
+

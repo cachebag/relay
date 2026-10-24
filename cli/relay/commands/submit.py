@@ -25,6 +25,14 @@ def register(sub) -> None:
         help="stop waiting after this many seconds (requires --wait)",
     )
 
+    # Restrict the job to run only on nodes with the specified
+    # operating system.
+    p.add_argument(
+        "--os",
+        choices=["linux", "darwin", "windows"],
+        help="required operating system for the job",
+    )
+
     p.add_argument("command", nargs="+", help="command to run, after --")
     p.set_defaults(func=run)
 
@@ -35,17 +43,27 @@ def submit(
     token: str,
     submitter: str,
     client: httpx.Client | None = None,
+    os: str | None = None,
 ) -> dict:
     """Submit a job using the logged-in pool token and user name."""
     client = client or httpx.Client(timeout=5)
 
+    if os is not None:
+        body = {
+            "command": command,
+            "submitter": submitter,
+            "requires": {"os": os},
+        }
+    else:
+        body = {
+            "command": command,
+            "submitter": submitter,
+        }
+
     r = client.post(
         f"{scheduler.rstrip('/')}/jobs",
         headers={"Authorization": f"Bearer {token}"},
-        json={
-            "command": command,
-            "submitter": submitter,
-        },
+        json=body,
     )
 
     r.raise_for_status()
@@ -179,6 +197,7 @@ def run(args) -> None:
             args.command,
             token,
             name,
+            os=getattr(args, "os", None),
         )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 403:

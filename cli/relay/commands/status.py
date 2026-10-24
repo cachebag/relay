@@ -11,6 +11,11 @@ def register(sub) -> None:
     p.set_defaults(func=run)
 
 
+def requires(job: dict) -> str:
+    """The required OS for the job, or an empty string if it can run on any OS."""
+    return (job.get("requires") or {}).get("os", "")
+
+
 def fetch(
     scheduler: str, job_id: str, token: str, client: httpx.Client | None = None
 ) -> dict:
@@ -54,7 +59,10 @@ def run(args) -> None:
         timing = f"running for {ran}  "
     else:
         timing = f"ran {ran}  "
+    state = j["status"]
+    if requires(j):
+        state += f" (requires {requires(j)})"
     print(
-        f"{j['id']}  {j['status']:<9} node={node}  attempts={attempts}  "
+        f"{j['id']}  {state:<9} node={node}  attempts={attempts}  "
         f"{timing}{' '.join(j['command'])}"
     )

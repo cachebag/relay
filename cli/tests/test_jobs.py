@@ -107,3 +107,38 @@ def test_jobs_missing_submitter(monkeypatch, capsys) -> None:
     assert "old-job" in output
     assert "-" in output
     assert "echo old" in output
+
+
+def test_jobs_requires_os(monkeypatch, capsys) -> None:
+    """Jobs that require a specific OS display it in the REQUIRES column."""
+    now = datetime.now(UTC).isoformat()
+
+    test_jobs = [
+        {
+            "id": "job-1",
+            "status": "done",
+            "node_id": "node-1",
+            "attempts": 1,
+            "created_at": now,
+            "requires": {"os": "linux"},
+            "command": ["echo", "hello"],
+        },
+    ]
+
+    monkeypatch.setattr(jobs.profile, "load", lambda: {"pool_token": "tok"})
+    monkeypatch.setattr(
+        jobs,
+        "fetch",
+        lambda scheduler, token: test_jobs,
+    )
+
+    args = argparse.Namespace(scheduler="http://scheduler")
+
+    jobs.run(args)
+
+    output = capsys.readouterr().out
+
+    assert "REQUIRES" in output
+    assert "linux" in output
+    assert "job-1" in output
+    assert "echo hello" in output

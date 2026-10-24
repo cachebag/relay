@@ -624,3 +624,84 @@ func TestRequeueLostResetsClock(t *testing.T) {
 		t.Errorf("failed job: status=%s started=%v finished=%v, want failed/nil/set", failed.Status, failed.StartedAt, failed.FinishedAt)
 	}
 }
+
+// osNodes returns one online Linux node and one online Windows node in pool-a.
+// The registry sorts by ID, so Linux is first in the rotation.
+func osNodes(now time.Time) []store.Node {
+	return []store.Node{
+		{ID: "node-a-linux", PoolID: "pool-a", OS: "linux", LastSeen: now},
+		{ID: "node-b-windows", PoolID: "pool-a", OS: "windows", LastSeen: now},
+	}
+}
+
+// job-1 takes the Linux node, leaving round-robin pointed at Windows.
+// job-2 requires Linux, so it must still be assigned to the Linux node.
+func TestRequiresOSOverridesRoundRobin(t *testing.T) {
+	now := time.Now()
+	jobs := []store.Job{
+		{ID: "job-1", PoolID: "pool-a", Status: store.JobQueued},
+		{
+			ID:       "job-2",
+			PoolID:   "pool-a",
+			Status:   store.JobQueued,
+			Requires: store.Requires{OS: "linux"},
+		},
+	}
+
+	got := tickAndGet(t, now, osNodes(now), jobs, "job-2")
+	if got.Status != store.JobAssigned || got.NodeID != "node-a-linux" {
+		t.Errorf("expected job assigned to node-a-linux, got status %q on node %q", got.Status, got.NodeID)
+	}
+}
+
+// A job requiring an OS that no online node runs stays queued.
+func TestRequiresOSNoFittingNodeStaysQueued(t *testing.T) {
+	now := time.Now()
+	job := store.Job{
+		ID:       "job-1",
+		PoolID:   "pool-a",
+		Status:   store.JobQueued,
+		Requires: store.Requires{OS: "darwin"},
+	}
+
+	got := tickAndGet(t, now, osNodes(now), []store.Job{job}, job.ID)
+	if got.Status != store.JobQueued || got.NodeID != "" || got.Attempts != 0 {
+		t.Errorf("expected untouched queued job, got %+v", got)
+	}
+}
+
+// A job that cannot be placed must not advance round-robin. The next
+// unrestricted job should still be assigned to the first node.
+func TestStuckJobDoesNotAdvanceRoundRobin(t *testing.T) {
+	now := time.Now()
+	jobs := []store.Job{
+		{
+			ID:       "job-1",
+			PoolID:   "pool-a",
+			Status:   store.JobQueued,
+			Requires: store.Requires{OS: "darwin"},
+		},
+		{ID: "job-2", PoolID: "pool-a", Status: store.JobQueued},
+	}
+
+	got := tickAndGet(t, now, osNodes(now), jobs, "job-2")
+	if got.NodeID != "node-a-linux" {
+		t.Errorf("expected node-a-linux, got %q", got.NodeID)
+	}
+}
+
+// Jobs without requirements still round-robin across both nodes.
+func TestNoRequirementStillRoundRobins(t *testing.T) {
+	now := time.Now()
+	jobs := []store.Job{
+		{ID: "job-1", PoolID: "pool-a", Status: store.JobQueued},
+		{ID: "job-2", PoolID: "pool-a", Status: store.JobQueued},
+	}
+
+	first := tickAndGet(t, now, osNodes(now), jobs, "job-1")
+	second := tickAndGet(t, now, osNodes(now), jobs, "job-2")
+
+	if first.NodeID != "node-a-linux" || second.NodeID != "node-b-windows" {
+		t.Errorf("expected Linux then Windows, got %q then %q", first.NodeID, second.NodeID)
+	}
+}

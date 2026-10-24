@@ -356,7 +356,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		}
 
 		if !req.Requires.Valid() {
-			http.Error(w, "requires.os must be linux, darwin, windows, or empty", http.StatusBadRequest)
+			http.Error(w, "required os must be either linux, darwin, windows, or empty", http.StatusBadRequest)
 			return
 		}
 

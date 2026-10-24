@@ -487,11 +487,16 @@ func createTestPool(t *testing.T, pools store.PoolStore) store.Pool {
 }
 
 // submitTestJob sends an authenticated job submission request.
-func submitTestJob(handler http.Handler, command []string, submitter string) *httptest.ResponseRecorder {
+func submitTestJob(handler http.Handler, command []string, submitter string, os string) *httptest.ResponseRecorder {
 	body, _ := json.Marshal(struct {
 		Command   []string `json:"command"`
 		Submitter string   `json:"submitter"`
-	}{Command: command, Submitter: submitter})
+		Requires  struct {
+			OS string `json:"os"`
+		} `json:"requires"`
+	}{Command: command, Submitter: submitter, Requires: struct {
+		OS string `json:"os"`
+	}{OS: os}})
 	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test-token")
@@ -508,7 +513,7 @@ func TestJobCreate(t *testing.T) {
 	pool := createTestPool(t, pools)
 	handler := NewHandler(reg, pools, jobs, store.NewMemCredits(), testServer())
 
-	rec := submitTestJob(handler, []string{"echo", "hi"}, "alice")
+	rec := submitTestJob(handler, []string{"echo", "hi"}, "alice", "linux")
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d: %s", rec.Code, rec.Body.String())
 	}
@@ -551,7 +556,7 @@ func TestJobCreateEmptyCommand(t *testing.T) {
 	pools := store.NewMemPools()
 	createTestPool(t, pools)
 	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
-	rec := submitTestJob(handler, []string{}, "alice")
+	rec := submitTestJob(handler, []string{}, "alice", "linux")
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rec.Code)
 	}
@@ -595,7 +600,7 @@ func TestJobCreateEmptySubmitter(t *testing.T) {
 	createTestPool(t, pools)
 	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 	for _, submitter := range []string{"", "   "} {
-		rec := submitTestJob(handler, []string{"echo", "hello"}, submitter)
+		rec := submitTestJob(handler, []string{"echo", "hello"}, submitter, "windows")
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("submitter %q: expected 400, got %d", submitter, rec.Code)
 		}
@@ -633,12 +638,40 @@ func TestJobCreateUsesAuthenticatedPool(t *testing.T) {
 	}
 }
 
+// TestJobCreateRequiredOS checks that requires.os is stored and echoed.
+func TestJobCreateRequiredOS(t *testing.T) {
+	pools := store.NewMemPools()
+	createTestPool(t, pools)
+	jobs := store.NewMemJobs()
+	handler := NewHandler(store.NewMem(), pools, jobs, store.NewMemCredits(), testServer())
+	rec := submitTestJob(handler, []string{"echo", "hello"}, "omar", "linux")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", rec.Code)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	job, err := jobs.Get(context.Background(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Requires.OS != "linux" {
+		t.Errorf("expected requires.os to be 'linux', got %q", job.Requires.OS)
+	}
+	if job.Submitter != "omar" {
+		t.Errorf("expected submitter to be 'omar', got %q", job.Submitter)
+	}
+}
+
 // TestJobGet checks that a submitted job can be retrieved by its ID.
 func TestJobGet(t *testing.T) {
 	pools := store.NewMemPools()
 	createTestPool(t, pools)
 	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
-	rec := submitTestJob(handler, []string{"echo", "hi"}, "alice")
+	rec := submitTestJob(handler, []string{"echo", "hi"}, "alice", "linux")
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected status 201, got %d", rec.Code)
 	}
@@ -687,7 +720,7 @@ func TestJobList(t *testing.T) {
 	createTestPool(t, pools)
 	handler := NewHandler(store.NewMem(), pools, store.NewMemJobs(), store.NewMemCredits(), testServer())
 	for _, tc := range []struct{ command, submitter string }{{"first", "alice"}, {"second", "bob"}} {
-		rec := submitTestJob(handler, []string{"echo", tc.command}, tc.submitter)
+		rec := submitTestJob(handler, []string{"echo", tc.command}, tc.submitter, "darwin")
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("expected 201, got %d", rec.Code)
 		}
