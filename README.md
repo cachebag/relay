@@ -207,48 +207,6 @@ relay status <id>
 relay logs <id>
 ```
 
-## Scheduler Restart Recovery
-
-Relay includes a 30-second startup grace period to prevent jobs
-from being unnecessarily requeued when the scheduler restarts.
-
-When `relayd` is offline, agents may continue executing jobs,
-but their stored heartbeat timestamps can become outdated.
-Previously, restarting the scheduler could cause these agents
-to be considered offline, resulting in duplicate job execution.
-
-### How It Works
-
-- The scheduler records its startup time when initialized.
-- During the first 30 seconds, offline-node recovery is
-  temporarily skipped to allow agents to reconnect.
-- Agents that reconnect can report their original job results
-  without their assignments being prematurely requeued.
-- Once the grace period expires, normal offline-node recovery
-  resumes for agents that remain disconnected.
-- New jobs can still be assigned to available agents during
-  the grace period.
-
-### Testing
-
-Run the scheduler regression tests:
-
-```bash
-go test ./internal/scheduler -count=1
-```
-
-Run the complete test suite:
-
-```bash
-go test ./... -count=1
-```
-
-The regression tests verify that existing assignments are
-preserved during scheduler startup, returning agents retain
-their original job attempts, and genuinely offline agents
-are recovered once the grace period expires.
-
-
 # For developers
 
 Please read the [setup guide](docs/SETUP.md) to get your development environment setup.
