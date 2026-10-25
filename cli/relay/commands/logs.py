@@ -11,6 +11,25 @@ def register(sub) -> None:
     p.set_defaults(func=run)
 
 
+def fetch_output(
+    scheduler: str,
+    job_id: str,
+    token: str,
+    client: httpx.Client | None = None,
+) -> tuple[int, dict | None]:
+    """Get a job's output. Returns (status code, body): 404 is no such job
+    and 409 is not finished yet, both with no body. Other errors raise."""
+    client = client or httpx.Client(timeout=5)
+    r = client.get(
+        f"{scheduler.rstrip('/')}/jobs/{job_id}/output",
+        headers=profile.bearer(token),
+    )
+    if r.status_code in (404, 409):
+        return r.status_code, None
+    r.raise_for_status()
+    return r.status_code, r.json()
+
+
 def print_job_output(
     scheduler: str,
     job_id: str,
@@ -18,22 +37,16 @@ def print_job_output(
     client: httpx.Client | None = None,
 ) -> int:
     """Fetch and print a finished job's output; return its exit code."""
-    client = client or httpx.Client(timeout=5)
-    r = client.get(
-        f"{scheduler.rstrip('/')}/jobs/{job_id}/output",
-        headers=profile.bearer(token),
-    )
+    code, result = fetch_output(scheduler, job_id, token, client)
 
-    if r.status_code == 404:
+    if code == 404:
         print("no such job", file=sys.stderr)
         sys.exit(1)
 
-    if r.status_code == 409:
+    if code == 409:
         print(f"job {job_id} has not finished", file=sys.stderr)
         sys.exit(1)
-
-    r.raise_for_status()
-    result = r.json()
+    assert result is not None
 
     stdout = result.get("stdout", "")
     stderr = result.get("stderr", "")
