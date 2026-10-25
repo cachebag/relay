@@ -1,6 +1,9 @@
 """The nodes and jobs tables. Each one takes the scheduler's rows and draws them."""
 
+from typing import ClassVar
+
 from rich.text import Text
+from textual.binding import Binding, BindingType
 from textual.widgets import DataTable
 
 from relay.commands import jobs as jobs_cmd
@@ -29,50 +32,96 @@ def node_state(n: dict) -> str:
     return n.get("status") or nodes_cmd.status(n["last_seen"])
 
 
-class NodesTable(DataTable):
-    def on_mount(self) -> None:
-        # Nothing to do on a node yet, so no cursor to wander around.
-        self.cursor_type = "none"
-        self.add_columns(*NODE_COLUMNS)
+class LiveTable(DataTable):
+    """A table redrawn every second that doesn't lose your place.
 
-    def show(self, rows: list[dict]) -> None:
-        self.clear()
-        for n in sorted(rows, key=lambda n: (node_state(n) != "online", n["hostname"])):
-            online = node_state(n) == "online"
-            self.add_row(
-                n["id"],
-                n["hostname"],
-                Text("● online", style=ONLINE)
-                if online
-                else Text("● offline", style=OFFLINE),
-                f"{n['os']}/{n['arch']}",
-                str(n.get("cpus", 0)),
-                f"{n.get('mem_bytes', 0) / 1e9:.1f}GB",
-                human_ago(nodes_cmd.seconds_ago(n["last_seen"])),
-                key=n["id"],
-            )
+    When the same rows are still there, cells are updated in place. When
+    rows came or went, the table is rebuilt and the cursor is put back on
+    the row it was on."""
 
+    COLUMNS: tuple[str, ...] = ()
 
-class JobsTable(DataTable):
     def on_mount(self) -> None:
         self.cursor_type = "row"
-        self.add_columns(*JOB_COLUMNS)
+        # The cursor row keeps each cell's own colour (green online, red failed).
+        self.cursor_foreground_priority = "renderable"
+        self.column_keys = self.add_columns(*self.COLUMNS)
+
+    def highlighted_key(self) -> str | None:
+        if not self.row_count or self.cursor_row >= self.row_count:
+            return None
+        return str(self.coordinate_to_cell_key(self.cursor_coordinate).row_key.value)
+
+    def replace(self, rows: list[tuple[str, tuple]]) -> None:
+        keys = [key for key, _ in rows]
+        if keys == [row_key.value for row_key in self.rows]:
+            for key, cells in rows:
+                for column, value in zip(self.column_keys, cells, strict=True):
+                    self.update_cell(key, column, value, update_width=True)
+            return
+        was_on = self.highlighted_key()
+        self.clear()
+        for key, cells in rows:
+            self.add_row(*cells, key=key)
+        if was_on in keys:
+            self.move_cursor(row=keys.index(was_on), animate=False)
+
+
+class NodesTable(LiveTable):
+    COLUMNS = NODE_COLUMNS
+
+    def show(self, rows: list[dict]) -> None:
+        ordered = sorted(rows, key=lambda n: (node_state(n) != "online", n["hostname"]))
+        self.replace(
+            [
+                (
+                    n["id"],
+                    (
+                        n["id"],
+                        n["hostname"],
+                        Text.assemble(("● online", ONLINE))
+                        if node_state(n) == "online"
+                        else Text.assemble(("● offline", OFFLINE)),
+                        f"{n['os']}/{n['arch']}",
+                        str(n.get("cpus", 0)),
+                        f"{n.get('mem_bytes', 0) / 1e9:.1f}GB",
+                        human_ago(nodes_cmd.seconds_ago(n["last_seen"])),
+                    ),
+                )
+                for n in ordered
+            ]
+        )
+
+
+class JobsTable(LiveTable):
+    COLUMNS = JOB_COLUMNS
+
+    # Same action the DataTable already has on enter, named so the footer
+    # says what it does here.
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("enter", "select_cursor", "Output", key_display="enter"),
+    ]
 
     def show(self, rows: list[dict], hostnames: dict[str, str]) -> None:
         """hostnames maps node IDs to hostnames so the NODE column reads well."""
-        self.clear()
+        out = []
         for job in rows:
             state = job["status"]
             node_id = job.get("node_id", "") or ""
-            self.add_row(
-                job["id"],
-                Text(state, style=JOB_STYLES.get(state, "")),
-                hostnames.get(node_id, node_id) or "-",
-                str(job.get("attempts", 0)),
-                jobs_cmd.age(job["created_at"]),
-                jobs_cmd.shorten(" ".join(job["command"])),
-                key=job["id"],
+            out.append(
+                (
+                    job["id"],
+                    (
+                        job["id"],
+                        Text.assemble((state, JOB_STYLES.get(state, ""))),
+                        hostnames.get(node_id, node_id) or "-",
+                        str(job.get("attempts", 0)),
+                        jobs_cmd.age(job["created_at"]),
+                        jobs_cmd.shorten(" ".join(job["command"])),
+                    ),
+                )
             )
+        self.replace(out)
 
 
 def totals(rows: list[dict]) -> str:
