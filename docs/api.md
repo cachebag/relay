@@ -674,7 +674,8 @@ Example body:
 ```json
 {
   "command": ["echo", "hi"],
-  "submitter": "alice"
+  "submitter": "alice",
+  "required": {"os": "linux"}
 }
 ```
 
@@ -684,6 +685,7 @@ Example body:
 | --- | --- |
 | `command` | Command and arguments to execute. Must contain at least one value |
 | `submitter` | Name of the person submitting the job. Cannot be empty or whitespace |
+| `requires` | Optional. When set, only runs job on node with specified OS.
 
 The client does not select the job's `pool_id`.
 
@@ -716,7 +718,7 @@ The scheduler can only assign the job to an online node belonging to the same po
 
 #### Error Responses
 
-If the JSON request is malformed, the command is empty, or the submitter is missing or blank:
+If the JSON request is malformed, the command is empty, the submitter is missing or blank, or `requires.os` is is invalid:
 
 ```text
 400 Bad Request
@@ -767,6 +769,7 @@ Example response:
 {
   "id": "40ca4109f082",
   "command": ["echo", "hi"],
+  "requires": {},
   "status": "queued",
   "node_id": "",
   "pool_id": "pool-id",
@@ -779,6 +782,8 @@ Example response:
 `pool_id` identifies the pool that owns the job. The server determines this value from the join token used during submission.
 
 `submitter` records the name provided by the user who created the job.
+
+`requires` sets the OS requirements for a job created by a user. 
 
 `node_id` is the node the scheduler assigned the job to, or empty while the job is queued.
 
@@ -848,6 +853,7 @@ Example response:
   {
     "id": "40ca4109f082",
     "command": ["echo", "hi"],
+    "requires": {},
     "status": "queued",
     "node_id": "",
     "pool_id": "pool-a",
@@ -858,6 +864,7 @@ Example response:
   {
     "id": "51db5210a193",
     "command": ["sleep", "5"],
+    "requires": {"os": "linux"},
     "status": "assigned",
     "node_id": "node-2",
     "pool_id": "pool-a",
@@ -876,7 +883,7 @@ If the pool has no jobs, the response is an empty JSON array:
 []
 ```
 
-The `relay jobs` CLI displays a `SUBMITTER` column using the job's stored submitter name.
+The `relay jobs` CLI displays a `SUBMITTER` column using the job's stored submitter name along with a `REQUIRES` column that sbows the job's required OS.
 
 Legacy jobs without submitter information display `-`.
 
@@ -912,7 +919,9 @@ For example:
 
 When no online nodes are available in a job's pool, the job remains queued even if another pool has idle nodes.
 
-Round-robin assignment operates independently for each pool within a scheduling tick.
+If a job specifies `requires.os`, only nodes using that OS are eligible. If no online node in the pool matches, the job remains queued, and `relay status` displays `queued (needs <os>)` until a matching node joins. Jobs without an OS requirement can run on nodes with any OS.
+
+Round-robin assignment operates independently for each pool within a scheduling tick. It only advances when a job gets assigned a node.
 
 Jobs created before the introduction of pool ownership have an empty `pool_id` and cannot be assigned to nodes.
 
@@ -1454,6 +1463,14 @@ The CLI automatically includes:
 - The user's name as the `submitter` field in the request body.
 
 The client does not need to supply `pool_id`; the server determines it from the token.
+
+Use `--os linux|darwin|windows` to add an OS requirement to the job request. The job will run only on a node with the specified OS:
+
+```bash
+relay submit --os linux -- uname -a
+```
+
+Until a matching node is online, `relay status <id>` displays `queued (needs linux)`, and `relay jobs` lists the required OS in the `REQUIRED` column.
 
 ### Example
 
