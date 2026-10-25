@@ -207,7 +207,6 @@ relay status <id>
 relay logs <id>
 ```
 
-
 # For developers
 
 Please read the [setup guide](docs/SETUP.md) to get your development environment setup.

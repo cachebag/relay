@@ -35,7 +35,11 @@ func tickAndGet(
 		}
 	}
 
-	if err := New(reg, js, nil).Tick(ctx, now); err != nil {
+	// Existing recovery tests exercise steady-state behavior after the
+	// scheduler's startup grace period has ended.
+	s := New(reg, js, nil)
+	s.started = now.Add(-store.NodeTimeout)
+	if err := s.Tick(ctx, now); err != nil {
 		t.Fatalf("Tick() error: %v", err)
 	}
 

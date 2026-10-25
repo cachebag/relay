@@ -17,12 +17,13 @@ type Scheduler struct {
 	nodes   store.Registry
 	jobs    store.JobStore
 	credits *credit.Earner
+	started time.Time
 }
 
 // New returns a Scheduler. credits pays owners for their machines' online
 // time each tick; nil turns that off.
 func New(nodes store.Registry, jobs store.JobStore, credits *credit.Earner) *Scheduler {
-	return &Scheduler{nodes: nodes, jobs: jobs, credits: credits}
+	return &Scheduler{nodes: nodes, jobs: jobs, credits: credits, started: time.Now()}
 }
 
 // Checks whether a given node satisfies a given job's OS requirement.
@@ -157,6 +158,12 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 //
 // A missing node also counts as lost, since it cannot run the job.
 func (s *Scheduler) requeueLost(ctx context.Context, now time.Time, nodes []store.Node) error {
+	// On restart, stored heartbeats may be stale even though agents are still
+	// running. Give them one NodeTimeout to heartbeat before recovering jobs.
+	if now.Sub(s.started) < store.NodeTimeout {
+		return nil
+	}
+
 	online := map[string]bool{}
 
 	for _, n := range nodes {
