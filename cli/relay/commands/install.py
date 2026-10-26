@@ -12,7 +12,7 @@ from rich.progress import (
     TransferSpeedColumn,
 )
 
-from relay import binaries
+from relay import binaries, pathsetup
 
 ACCENT = "#f0b35a"
 OK = "#7bd88f"
@@ -27,6 +27,9 @@ def register(sub) -> None:
     )
     p.add_argument(
         "--agent-only", action="store_true", help="only relay-agent, for contributors"
+    )
+    p.add_argument(
+        "--no-path", action="store_true", help="don't add the bin folder to your PATH"
     )
     p.set_defaults(func=run)
 
@@ -97,13 +100,27 @@ def run(args) -> None:
                     status=f"[{OK}]{tag}[/] already installed",
                 )
 
-    folder = short(paths[names[0]].parent)
-    console.print(f"\ninstalled to [{ACCENT}]{folder}[/]\n")
+    bin_dir = paths[names[0]].parent
+    folder = short(bin_dir)
+    console.print(f"\ninstalled to [{ACCENT}]{folder}[/]")
+
+    note = ""
+    if not getattr(args, "no_path", False):
+        try:
+            note = pathsetup.ensure_on_path(bin_dir)
+        except OSError as exc:
+            note = f"couldn't add {folder} to your PATH ({exc}); add it yourself"
+    on_path = pathsetup.already_on_path(bin_dir)
+    if note:
+        console.print(f"[{OK}]{note}[/]")
+    by_name = on_path or (note and not note.startswith("couldn't"))
+
+    console.print()
     if "relay-agent" in paths:
+        agent = "relay-agent" if by_name else short(paths["relay-agent"])
         console.print("contribute this machine:")
         console.print(
-            f"  [{ACCENT}]{short(paths['relay-agent'])}[/] "
-            "--scheduler <address> --pool-token <token>"
+            f"  [{ACCENT}]{agent}[/] --scheduler <address> --pool-token <token>"
         )
     if "relayd" in paths:
         console.print("run a scheduler:")
@@ -111,6 +128,7 @@ def run(args) -> None:
             f"  [{ACCENT}]relay scheduler start[/]   "
             "(add --public for an internet address)"
         )
-    console.print(
-        f"\nor add [{ACCENT}]{folder}[/] to your PATH and use the names directly."
-    )
+    if not by_name:
+        console.print(
+            f"\nor add [{ACCENT}]{folder}[/] to your PATH and use the names directly."
+        )
