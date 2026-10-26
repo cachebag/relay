@@ -7,6 +7,9 @@ from textual.widgets import Input
 
 from relay import profile
 from relay.dash import DashApp, invite_line, parse_invite
+from relay.dash.admin import AdminModal
+from relay.dash.credits import CreditsModal
+from relay.dash.job import JobModal
 from relay.dash.modals import JoinModal, NewPoolModal
 
 _RealClient = httpx.Client
@@ -33,12 +36,24 @@ NODE = {
 }
 JOB = {
     "id": "j1",
-    "status": "assigned",
+    "status": "done",
     "node_id": "n1",
     "attempts": 1,
+    "submitter": "akrm",
     "created_at": "2026-01-01T00:00:00+00:00",
+    "started_at": "2026-01-01T00:00:05+00:00",
+    "finished_at": "2026-01-01T00:00:09+00:00",
     "command": ["uname", "-n"],
 }
+OLDER_JOB = {**JOB, "id": "j0", "status": "failed", "command": ["false"]}
+OUTPUT = {"stdout": "box\n", "stderr": "", "exit_code": 0}
+CREDITS = [{"account": "akrm", "balance": 42}, {"account": "omar", "balance": 7}]
+
+
+class Calls(list):
+    """Every request as (method, path, auth), plus JSON bodies by (method, path)."""
+
+    bodies: dict
 
 
 @pytest.fixture
@@ -50,11 +65,30 @@ def cfg(tmp_path, monkeypatch):
 @pytest.fixture
 def calls(monkeypatch):
     """Route every httpx.Client through a MockTransport and record requests."""
-    seen: list[tuple[str, str, str | None]] = []
+    seen = Calls()
+    seen.bodies = {}
 
     def handler(req: httpx.Request) -> httpx.Response:
         seen.append((req.method, req.url.path, req.headers.get("Authorization")))
         auth = req.headers.get("Authorization", "")
+        if req.content:
+            seen.bodies[(req.method, req.url.path)] = json.loads(req.content)
+        if req.url.path == "/jobs" and req.method == "POST":
+            return httpx.Response(201, json={**JOB, "id": "j2", "status": "queued"})
+        if req.url.path == "/jobs/j1":
+            return httpx.Response(200, json=JOB)
+        if req.url.path == "/jobs/j1/output":
+            return httpx.Response(200, json=OUTPUT)
+        if req.url.path == "/pools/p1/credits":
+            return httpx.Response(200, json=CREDITS)
+        if req.url.path == "/pools/p1/token" and req.method == "POST":
+            if auth != "Bearer pat":
+                return httpx.Response(401)
+            return httpx.Response(200, json={"token": "newjt2"})
+        if req.url.path == "/pools/p1/nodes/n1" and req.method == "DELETE":
+            if auth != "Bearer pat":
+                return httpx.Response(401)
+            return httpx.Response(204)
         if req.url.path == "/pools/self":
             if auth == "Bearer bad":
                 return httpx.Response(403)
@@ -73,7 +107,7 @@ def calls(monkeypatch):
         if req.url.path == "/nodes":
             return httpx.Response(200, json=[NODE])
         if req.url.path == "/jobs":
-            return httpx.Response(200, json=[JOB])
+            return httpx.Response(200, json=[JOB, OLDER_JOB])
         return httpx.Response(404)
 
     monkeypatch.setattr(
@@ -141,7 +175,7 @@ def test_shows_pool_and_tables_with_saved_login(cfg, calls):
         assert "lab" in text(app.query_one("#where"))
         assert app.invite_text == invite_line(SCHED, "tok")
         nodes, jobs = app.query_one("#nodes"), app.query_one("#jobs")
-        assert nodes.row_count == 1 and jobs.row_count == 1
+        assert nodes.row_count == 1 and jobs.row_count == 2
         # The jobs table shows the node's hostname, not its ID.
         assert "box" in str(jobs.get_row_at(0)[2])
 
@@ -253,3 +287,168 @@ def test_logout_deletes_profile_and_asks_to_join(cfg, calls):
 
     drive(app, steps)
     assert not cfg.exists()
+
+
+def test_submit_box_posts_the_command(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+    notes = []
+    app.notify = lambda msg, **kw: notes.append(msg)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("s")
+        box = app.query_one("#submit", Input)
+        assert box.has_focus
+        box.value = "echo 'hello world'"
+        await pilot.press("enter")
+        await settle(pilot)
+        assert box.value == ""
+
+    drive(app, steps)
+    assert ("POST", "/jobs", "Bearer tok") in calls
+    assert calls.bodies[("POST", "/jobs")] == {
+        "command": ["echo", "hello world"],
+        "submitter": "akrm",
+    }
+    assert notes == ["submitted j2"]
+
+
+def test_enter_on_a_job_shows_its_output(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        assert main(app).query_one("#jobs").has_focus
+        await pilot.press("enter")
+        await settle(pilot)
+        assert isinstance(app.screen, JobModal)
+        summary = text(app.screen.query_one("#job-summary"))
+        assert "uname -n" in summary and "box" in summary and "ran" in summary
+        assert "exit code  0" in summary
+        assert text(app.screen.query_one("#job-stdout")).strip() == "box"
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, JobModal)
+
+    drive(app, steps)
+    assert ("GET", "/jobs/j1", "Bearer tok") in calls
+    assert ("GET", "/jobs/j1/output", "Bearer tok") in calls
+
+
+def test_credits_modal_marks_me(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("k")
+        await settle(pilot)
+        assert isinstance(app.screen, CreditsModal)
+        table = app.screen.query_one("#credits")
+        assert table.row_count == 2
+        assert [str(c) for c in table.get_row_at(0)] == ["*", "akrm", "42"]
+
+    drive(app, steps)
+    assert ("GET", "/pools/p1/credits", "Bearer tok") in calls
+
+
+async def confirm(pilot, app, admin_token, name):
+    app.screen.query_one("#admin-token", Input).value = admin_token
+    box = app.screen.query_one("#confirm-name", Input)
+    box.focus()
+    box.value = name
+    await pilot.press("enter")
+    await settle(pilot)
+
+
+def test_rotate_token_needs_pool_name_and_admin_token(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("t")
+        await pilot.pause()
+        assert isinstance(app.screen, AdminModal)
+        await confirm(pilot, app, "", "lab")
+        assert "token is needed" in text(app.screen.query_one("#admin-error"))
+        await confirm(pilot, app, "pat", "nope")
+        assert "isn't this pool's name" in text(app.screen.query_one("#admin-error"))
+        assert ("POST", "/pools/p1/token", "Bearer pat") not in calls
+        await confirm(pilot, app, "pat", "lab")
+        assert "newjt2" in text(app.screen.query_one("#admin-result"))
+        await pilot.press("escape")
+        await settle(pilot)
+        assert not isinstance(app.screen, AdminModal)
+        assert app.invite_text == invite_line(SCHED, "newjt2")
+
+    drive(app, steps)
+    assert ("POST", "/pools/p1/token", "Bearer pat") in calls
+    assert profile.load()["pool_token"] == "newjt2"
+    assert app.pool_admin_token == "pat"
+
+
+def test_remove_node_deletes_the_highlighted_machine(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("x")
+        await pilot.pause()
+        assert isinstance(app.screen, AdminModal)
+        assert "box" in text(app.screen.query_one(".title"))
+        await confirm(pilot, app, "wrong", "lab")
+        assert "rejected" in text(app.screen.query_one("#admin-error"))
+        await confirm(pilot, app, "pat", "lab")
+        assert "removed box" in text(app.screen.query_one("#admin-result"))
+        await pilot.press("escape")
+        await settle(pilot)
+
+    drive(app, steps)
+    assert ("DELETE", "/pools/p1/nodes/n1", "Bearer wrong") in calls
+    assert ("DELETE", "/pools/p1/nodes/n1", "Bearer pat") in calls
+
+
+def test_redraw_keeps_the_cursor_where_it_was(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        jobs = main(app).query_one("#jobs")
+        await pilot.press("down")
+        assert jobs.cursor_row == 1
+        # The one-second tick and the two-second fetch both go through redraw.
+        app.redraw()
+        await pilot.pause()
+        assert jobs.cursor_row == 1
+        # Rows changing underneath still keeps the highlighted job.
+        app.job_rows = [OLDER_JOB, JOB]
+        app.redraw()
+        await pilot.pause()
+        assert jobs.cursor_row == 0
+        assert jobs.highlighted_key() == "j0"
+
+    drive(app, steps)
+
+
+def test_ctrl_c_copies_the_highlighted_id_or_the_output(cfg, calls, monkeypatch):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+    copied = []
+    monkeypatch.setattr(DashApp, "copy_to_clipboard", lambda self, t: copied.append(t))
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("down", "ctrl+c")
+        assert copied == ["j0"]
+        await pilot.press("up", "enter")
+        await settle(pilot)
+        assert isinstance(app.screen, JobModal)
+        await pilot.press("ctrl+c")
+        assert copied == ["j0", "box\n"]
+
+    drive(app, steps)

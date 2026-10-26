@@ -102,6 +102,13 @@ class NewPoolModal(ModalScreen[dict | None]):
         self.can_cancel = can_cancel
         self.created: dict | None = None
 
+    def copyable(self) -> str:
+        from relay.dash.app import invite_line
+
+        if not self.created:
+            return ""
+        return invite_line(self.app.scheduler, self.created["token"])
+
     def compose(self) -> ComposeResult:
         with Vertical(classes="modal"):
             yield Static("CREATE A POOL", classes="title")
@@ -179,6 +186,7 @@ class NewPoolModal(ModalScreen[dict | None]):
 
         self.created = p
         self.app.admin_token = admin_token
+        self.app.pool_admin_token = p.get("admin_token")
         self.query_one("#create-error", Label).update("")
         self.query_one("#create-result", Static).update(
             f"[b]created {name}[/b]  ({p['id']})\n\n"
