@@ -20,6 +20,10 @@ without a pull request link their commit instead.
   Before, the pool was made and the login saved, but the dashboard stayed
   logged out until it was restarted.
   ([#131](https://github.com/cachebag/relay/pull/131))
+- **The dashboard's jobs table scrolls on its own, newest first.** With
+  more jobs than fit on screen, the newest rows were below a clip and could
+  not be reached. The table now owns its height and the job just submitted
+  is the top row. ([#132](https://github.com/cachebag/relay/pull/132))
 
 ## [0.2.7] - 2026-10-26
 
