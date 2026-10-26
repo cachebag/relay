@@ -138,12 +138,13 @@ class DashApp(App[None]):
                 classes="empty",
             )
             yield Static("JOBS", classes="title")
-            yield JobsTable(id="jobs")
             yield Static(
                 "no jobs yet. Press s, type a command, enter.",
                 id="jobs-empty",
                 classes="empty",
             )
+            # Fills the rest of the screen and scrolls on its own, newest first.
+            yield JobsTable(id="jobs")
             yield Label("", id="error")
         with Horizontal(id="submit-bar"):
             yield Static("run", classes="key")
@@ -219,7 +220,10 @@ class DashApp(App[None]):
         self.query_one("#submit-bar").display = logged_in
         hostnames = {n["id"]: n["hostname"] for n in self.node_rows}
         self.query_one(NodesTable).show(self.node_rows)
-        self.query_one(JobsTable).show(self.job_rows, hostnames)
+        newest_first = sorted(
+            self.job_rows, key=lambda j: j.get("created_at", ""), reverse=True
+        )
+        self.query_one(JobsTable).show(newest_first, hostnames)
         self.query_one("#error", Label).update(self.error or "")
 
     # -- actions ----------------------------------------------------------

@@ -503,3 +503,32 @@ def test_pool_picker_switches_and_logout_falls_back(cfg, calls):
     drive(app, steps)
     assert ("GET", "/nodes", "Bearer tok2") in calls
     assert profile.logins() == [SAVED]
+
+
+def test_jobs_are_newest_first_and_all_reachable(cfg, calls, monkeypatch):
+    profile.save(SAVED)
+    many = [
+        {
+            **JOB,
+            "id": f"j{i:03d}",
+            "created_at": f"2026-01-01T00:{i // 60:02d}:{i % 60:02d}+00:00",
+        }
+        for i in range(100)
+    ]
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        app.job_rows = many
+        app.redraw()
+        await pilot.pause()
+        jobs = main(app).query_one("#jobs")
+        assert jobs.row_count == 100
+        assert jobs.highlighted_key() == "j099"
+        jobs.move_cursor(row=99)
+        await pilot.pause()
+        assert jobs.highlighted_key() == "j000"
+        # The table scrolls itself to keep the cursor in view.
+        assert jobs.scroll_y > 0
+
+    drive(app, steps)
