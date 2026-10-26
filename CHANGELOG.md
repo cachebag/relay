@@ -20,6 +20,14 @@ without a pull request link their commit instead.
 
 ### Fixed
 
+- **`relay scheduler start` returns as soon as relayd is up.** It used to
+  wait the full timeout on every start after the first, for an admin token
+  line that only prints once. With `--public` it now also makes the first
+  request itself, so the HTTPS certificate is in place before anyone uses
+  the address, and `status` re-reads the public address from the log, so a
+  restart under a new name is shown correctly. Ctrl+C during the wait leaves
+  relayd running and says so.
+  ([#134](https://github.com/cachebag/relay/pull/134))
 - **A trailing slash on the scheduler address no longer breaks the agent.**
   Chat apps add one when they turn the address into a link, and the agent
   then asked for `//nodes/heartbeat`, which the scheduler redirected and

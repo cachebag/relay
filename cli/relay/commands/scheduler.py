@@ -4,6 +4,8 @@ import getpass
 import os
 import re
 
+import httpx
+
 from relay import binaries, procs, profile
 
 NAME = "relayd"
@@ -54,6 +56,21 @@ def authkey() -> str:
     return key
 
 
+def warm_up(public_url: str) -> bool:
+    """A fresh Tailscale node has no HTTPS certificate until its first
+    request, which can take half a minute. Make that request here so the
+    first pool create or dashboard call doesn't time out."""
+    try:
+        httpx.get(f"{public_url}/healthz", timeout=60)
+        return True
+    except httpx.HTTPError:
+        return False
+
+
+def after(line: str | None, prefix: str) -> str:
+    return line.split(prefix, 1)[1].strip() if line else ""
+
+
 def run_start(args) -> None:
     pid = procs.running(NAME)
     if pid:
@@ -78,39 +95,52 @@ def run_start(args) -> None:
     address = f"http://localhost:{args.port}"
     profile.save_server(address=address)
 
+    # The admin token line only appears on relayd's very first start, so it
+    # is read from whatever arrived rather than waited for.
     want = ["relayd listening on"]
     if args.public:
         want.append("relayd public address:")
-    found = procs.wait_for(
-        NAME, want + ["server admin token:"], 60 if args.public else 15, start_at
-    )
+        print("starting relayd and joining the tailnet, up to a minute...")
+    try:
+        found = procs.wait_for(NAME, want, 60 if args.public else 15, start_at)
+    except KeyboardInterrupt:
+        raise SystemExit(
+            "stopped waiting; relayd keeps running in the background. "
+            "relay scheduler status shows where it got to."
+        )
 
     if procs.running(NAME) is None:
         raise SystemExit(
             "relayd stopped right away. Last lines of its log:\n" + procs.tail(NAME)
         )
 
-    token_line = found.get("server admin token:")
-    if token_line:
-        token = token_line.split("server admin token:", 1)[1].strip()
-        profile.save_server(admin_token=token)
-    public_line = found.get("relayd public address:")
-    public_url = (
-        public_line.split("relayd public address:", 1)[1].strip() if public_line else ""
+    token = after(
+        procs.wait_for(NAME, ["server admin token:"], 0, start_at).get(
+            "server admin token:"
+        ),
+        "server admin token:",
     )
+    if token:
+        profile.save_server(admin_token=token)
+    public_url = after(found.get("relayd public address:"), "relayd public address:")
     if public_url:
         profile.save_server(public_url=public_url)
+        ready = warm_up(public_url)
 
     print(f"relayd running (pid {procs.running(NAME)})")
     print(f"  local address:   {address}")
     if args.public:
-        if public_url:
+        if public_url and ready:
             print(f"  public address:  {public_url}")
+        elif public_url:
+            print(
+                f"  public address:  {public_url} (not answering yet; give it a minute)"
+            )
         else:
             print(
                 "  public address:  not up yet; check relay scheduler status in a minute"
             )
-    if token_line:
+    if token:
         print("  server admin token saved; relay pool create and the dashboard use it")
     elif profile.server().get("admin_token"):
         print("  server admin token: already saved")
@@ -143,13 +173,14 @@ def run_status(args) -> None:
         print(f"relayd running (pid {pid})")
     if srv.get("address"):
         print(f"  local address:   {srv['address']}")
-    if pid and srv.get("public_url"):
-        print(f"  public address:  {srv['public_url']}")
-    elif pid:
-        # Maybe --public came up after start returned; look once more.
-        m = re.search(r"relayd public address: (\S+)", procs.tail(NAME, 50))
-        if m:
-            profile.save_server(public_url=m.group(1))
-            print(f"  public address:  {m.group(1)}")
+    if pid:
+        # The log is the truth for the public address: a restart can come up
+        # under a different name than the one saved last time.
+        lines = re.findall(r"relayd public address: (\S+)", procs.tail(NAME, 200))
+        public_url = lines[-1] if lines else srv.get("public_url", "")
+        if public_url and public_url != srv.get("public_url"):
+            profile.save_server(public_url=public_url)
+        if public_url:
+            print(f"  public address:  {public_url}")
     print(f"  admin token:     {'saved' if srv.get('admin_token') else 'not saved'}")
     print(f"  log: {procs.log_path(NAME)}")

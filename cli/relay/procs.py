@@ -91,7 +91,7 @@ def wait_for(name: str, patterns: list[str], timeout: float, start_at: int = 0) 
     the process dies, or timeout. Returns {pattern: matching line}."""
     found: dict[str, str] = {}
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    while True:
         try:
             text = log_path(name).read_bytes()[start_at:].decode(errors="replace")
         except OSError:
@@ -100,7 +100,10 @@ def wait_for(name: str, patterns: list[str], timeout: float, start_at: int = 0) 
             for pat in patterns:
                 if pat not in found and pat in line:
                     found[pat] = line.strip()
+        # One pass always runs, so a timeout of 0 means "read what's there".
         if len(found) == len(patterns) or running(name) is None:
+            break
+        if time.monotonic() >= deadline:
             break
         time.sleep(0.2)
     return found
