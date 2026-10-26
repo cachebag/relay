@@ -16,8 +16,9 @@ from relay.commands import auth
 from relay.commands import pool as pool_cmd
 
 
-class JoinModal(ModalScreen[dict | None]):
-    """Paste a join token. Dismisses with the saved profile, or None on cancel."""
+class JoinModal(ModalScreen[dict | str | None]):
+    """Paste a join token. Dismisses with the saved profile, "new" to create
+    a pool instead, or None on cancel."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+n", "new_pool", "Create a pool instead", priority=True),
@@ -82,7 +83,10 @@ class JoinModal(ModalScreen[dict | None]):
         self.app.call_from_thread(self.dismiss, prof)
 
     def action_new_pool(self) -> None:
-        self.app.switch_screen(NewPoolModal(self.can_cancel))
+        # Hand off through the app so its callback stays attached. A
+        # switch_screen here would drop it, and the new pool's login would
+        # be saved but never shown.
+        self.dismiss("new")
 
     def action_cancel(self) -> None:
         if self.can_cancel:

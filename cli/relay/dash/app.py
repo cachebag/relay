@@ -172,10 +172,13 @@ class DashApp(App[None]):
         if prof.get("pool_token"):
             self.refresh_data()
 
-    def joined(self, prof: dict | None) -> None:
-        if prof:
+    def joined(self, prof: dict | str | None) -> None:
+        logged_in = bool(self.prof.get("pool_token"))
+        if prof == "new":
+            self.push_screen(NewPoolModal(can_cancel=logged_in), self.joined)
+        elif isinstance(prof, dict) and prof:
             self.use_profile(prof)
-        elif not self.prof.get("pool_token"):
+        elif not logged_in:
             self.exit()
 
     # -- data -------------------------------------------------------------
