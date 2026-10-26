@@ -47,5 +47,8 @@ func TestSQLiteJobsMigratesOwnership(t *testing.T) {
 		if got.PoolID != "" || got.Submitter != "" {
 			t.Fatalf("legacy job ownership: pool=%q submitter=%q, want empty", got.PoolID, got.Submitter)
 		}
+		if got.Requires != (Requires{}) {
+			t.Fatalf("legacy job requires = %+v, want empty", got.Requires)
+		}
 	}
 }

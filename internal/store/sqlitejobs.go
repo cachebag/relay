@@ -19,6 +19,7 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS jobs (
 		id         TEXT PRIMARY KEY,
 		command    TEXT NOT NULL,
+		requires   TEXT NOT NULL DEFAULT '{}',
 		status     TEXT NOT NULL,
 		node_id    TEXT NOT NULL,
 		pool_id    TEXT NOT NULL DEFAULT '',
@@ -55,6 +56,19 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 		}
 	}
 
+	// Job requirements are stored as JSON, same as command.
+	var hasRequires int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = 'requires'`).Scan(&hasRequires); err != nil {
+		return nil, err
+	}
+
+	// Adds the requires column if it is missing (legacy support).
+	if hasRequires == 0 {
+		if _, err := db.Exec(`ALTER TABLE jobs ADD COLUMN requires TEXT NOT NULL DEFAULT '{}'`); err != nil {
+			return nil, err
+		}
+	}
+
 	// Timestamps for the current attempt and the finish, added with credits
 	// charging. 0 means unset.
 	for _, column := range []string{"started_at", "finished_at"} {
@@ -70,6 +84,17 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 	}
 
 	return &SQLiteJobs{db: db}, nil
+}
+
+// Returns a Requires struct and any error encountered during unmarshalling.
+// Treats empty strings as no requirements.
+func convertRequires(s string) (Requires, error) {
+	var r Requires
+	if s == "" {
+		return r, nil
+	}
+	err := json.Unmarshal([]byte(s), &r)
+	return r, err
 }
 
 // unixOrZero stores an unset timestamp as 0.
@@ -102,11 +127,16 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 		return err
 	}
 
+	requires, err := json.Marshal(j.Requires)
+	if err != nil {
+		return err
+	}
 	result, err := s.db.ExecContext(
 		ctx,
 		`INSERT OR IGNORE INTO jobs (
 			id,
 			command,
+			requires,
 			status,
 			node_id,
 			pool_id,
@@ -119,9 +149,10 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 			started_at,
 			finished_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		j.ID,
 		string(command),
+		string(requires),
 		j.Status,
 		j.NodeID,
 		j.PoolID,
@@ -157,18 +188,19 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 // interface behavior used by the in-memory implementation.
 func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 	var j Job
-	var command string
+	var command, requires string
 	var createdAt, startedAt, finishedAt int64
 
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, command, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
+		`SELECT id, command, requires, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
 		 FROM jobs
 		 WHERE id = ?`,
 		id,
 	).Scan(
 		&j.ID,
 		&command,
+		&requires,
 		&j.Status,
 		&j.NodeID,
 		&j.PoolID,
@@ -193,6 +225,9 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 	if err := json.Unmarshal([]byte(command), &j.Command); err != nil {
 		return Job{}, err
 	}
+	if j.Requires, err = convertRequires(requires); err != nil {
+		return Job{}, err
+	}
 
 	// Timestamps are stored as Unix seconds in SQLite.
 	j.CreatedAt = time.Unix(createdAt, 0).UTC()
@@ -209,7 +244,7 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, command, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
+		`SELECT id, command, requires,status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
 		 FROM jobs
 		 ORDER BY created_at ASC, id ASC`,
 	)
@@ -222,12 +257,13 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 
 	for rows.Next() {
 		var j Job
-		var command string
+		var command, requires string
 		var createdAt, startedAt, finishedAt int64
 
 		if err := rows.Scan(
 			&j.ID,
 			&command,
+			&requires,
 			&j.Status,
 			&j.NodeID,
 			&j.PoolID,
@@ -245,6 +281,9 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 
 		// Rebuild the original []string command from its JSON representation.
 		if err := json.Unmarshal([]byte(command), &j.Command); err != nil {
+			return nil, err
+		}
+		if j.Requires, err = convertRequires(requires); err != nil {
 			return nil, err
 		}
 
@@ -272,11 +311,16 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 	if err != nil {
 		return err
 	}
+	requires, err := json.Marshal(j.Requires)
+	if err != nil {
+		return err
+	}
 
 	result, err := s.db.ExecContext(
 		ctx,
 		`UPDATE jobs
 		 SET command = ?,
+		     requires = ?,
 		     status = ?,
 		     node_id = ?,
 		     pool_id = ?,
@@ -290,6 +334,7 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		     finished_at = ?
 		 WHERE id = ?`,
 		string(command),
+		string(requires),
 		j.Status,
 		j.NodeID,
 		j.PoolID,
