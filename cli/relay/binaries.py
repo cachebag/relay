@@ -4,11 +4,13 @@ Every command that starts one of the binaries finds it the same way:
 `$RELAYD` or `$RELAY_AGENT` if set, then `<config dir>/bin/`, then PATH.
 """
 
+import json
 import os
 import platform
 import shutil
 import stat
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -70,36 +72,70 @@ def find(name: str) -> Path:
     raise MissingBinary(f"{name} not found; run relay install first")
 
 
+def latest_tag(client: httpx.Client) -> str:
+    """The tag the latest release redirect points at, e.g. v0.2.6."""
+    r = client.get(f"{REPO}/releases/latest", follow_redirects=False)
+    location = r.headers.get("location", "")
+    if "/tag/" in location:
+        return location.rsplit("/tag/", 1)[1].strip("/")
+    r.raise_for_status()
+    raise MissingBinary("couldn't find the latest release; is the repo public?")
+
+
+def installed_versions() -> dict:
+    try:
+        return json.loads((install_dir() / "versions.json").read_text())
+    except OSError, ValueError:
+        return {}
+
+
+def record_version(name: str, tag: str) -> None:
+    versions = installed_versions()
+    versions[name] = tag
+    (install_dir() / "versions.json").write_text(json.dumps(versions, indent=2))
+
+
 def download(
-    name: str, version: str | None = None, client: httpx.Client | None = None
-) -> tuple[Path, str]:
-    """Fetch one binary into the install dir. Returns (path, version tag)."""
+    name: str,
+    version: str | None = None,
+    client: httpx.Client | None = None,
+    progress: Callable[[int, int | None], None] | None = None,
+) -> tuple[Path, str, bool]:
+    """Fetch one binary into the install dir.
+
+    Returns (path, tag, downloaded). downloaded is False when that tag is
+    already installed. progress(bytes_so_far, total_or_None) is called as
+    chunks land."""
     os_name, arch = this_platform()
     if (os_name, arch) not in PUBLISHED:
         raise MissingBinary(
-            f"no release build for {os_name}/{arch}; build from source with go build ./cmd/{name}"
+            f"no release build for {os_name}/{arch}; "
+            f"build from source with go build ./cmd/{name}"
         )
     client = client or httpx.Client(timeout=120, follow_redirects=True)
-    asset = asset_name(name, os_name, arch)
     if version:
         tag = version if version.startswith("v") else "v" + version
-        url = f"{REPO}/releases/download/{tag}/{asset}"
     else:
-        url = f"{REPO}/releases/latest/download/{asset}"
-    r = client.get(url)
-    r.raise_for_status()
-    # After the redirects, the final URL names the tag that was served.
-    parts = str(r.url).split("/")
-    tag = (
-        parts[parts.index("download") + 1]
-        if "download" in parts
-        else version or "latest"
-    )
-
+        tag = latest_tag(client)
     dest = install_dir() / (name + (".exe" if os_name == "windows" else ""))
+    if dest.exists() and installed_versions().get(name) == tag:
+        return dest, tag, False
+
+    url = f"{REPO}/releases/download/{tag}/{asset_name(name, os_name, arch)}"
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".part")
-    tmp.write_bytes(r.content)
+    with client.stream("GET", url) as r:
+        r.raise_for_status()
+        length = r.headers.get("content-length")
+        total = int(length) if length else None
+        done = 0
+        with open(tmp, "wb") as f:
+            for chunk in r.iter_bytes():
+                f.write(chunk)
+                done += len(chunk)
+                if progress:
+                    progress(done, total)
     tmp.chmod(tmp.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     tmp.replace(dest)
-    return dest, tag
+    record_version(name, tag)
+    return dest, tag, True
