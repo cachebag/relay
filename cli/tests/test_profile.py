@@ -62,3 +62,20 @@ def test_delete_falls_back_to_the_next_login(cfg):
     assert profile.delete() == {}
     assert not cfg.exists()
     assert profile.delete() == {}
+
+
+def test_server_settings_survive_logging_out(cfg):
+    assert profile.server() == {}
+    profile.save_server(admin_token="sat", address="http://localhost:8080")
+    profile.save_server(public_url="https://relay.x.ts.net")
+    assert profile.server() == {
+        "admin_token": "sat",
+        "address": "http://localhost:8080",
+        "public_url": "https://relay.x.ts.net",
+    }
+    profile.save(LAB)
+    assert profile.load() == LAB
+    profile.delete()
+    assert profile.load() == {}
+    assert profile.server()["admin_token"] == "sat"
+    assert cfg.exists()
