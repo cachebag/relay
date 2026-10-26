@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from relay import binaries, profile
+from relay import binaries, pathsetup, profile
 from relay.commands import install
 
 _RealClient = httpx.Client
@@ -21,6 +21,9 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     monkeypatch.setenv("SHELL", "/bin/zsh")
     monkeypatch.setenv("PATH", "/usr/bin")
+    # Always take the shell-file branch; the registry branch has its own test
+    # with a fake winreg, and must never touch a real registry.
+    monkeypatch.setattr(pathsetup.sys, "platform", "darwin")
     return tmp_path / "relay"
 
 
