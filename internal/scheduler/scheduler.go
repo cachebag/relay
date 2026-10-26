@@ -26,6 +26,15 @@ func New(nodes store.Registry, jobs store.JobStore, credits *credit.Earner) *Sch
 	return &Scheduler{nodes: nodes, jobs: jobs, credits: credits, started: time.Now()}
 }
 
+// nodeFits reports whether a node satisfies a job's requirements. Only the
+// OS for now; the approved-job-types ticket extends it.
+func nodeFits(n store.Node, j store.Job) bool {
+	if j.Requires.OS != "" && n.OS != j.Requires.OS {
+		return false
+	}
+	return true
+}
+
 // Tick performs one round of scheduling.
 // It first recovers work from offline nodes, then assigns
 // queued jobs to online nodes belonging to the same pool.
@@ -103,9 +112,22 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 			continue
 		}
 
+		// Only keep nodes that satisfy the job's OS requirement.
+		filtered := make([]store.Node, 0, len(candidates))
+		for _, n := range candidates {
+			if nodeFits(n, j) {
+				filtered = append(filtered, n)
+			}
+		}
+
+		// Leave the job queued if no eligible nodes remain.
+		if len(filtered) == 0 {
+			continue
+		}
+
 		// Select the next online node within this pool.
 		i := nextByPool[j.PoolID]
-		node := candidates[i%len(candidates)]
+		node := filtered[i%len(filtered)]
 
 		// Assign the job and count this placement attempt.
 		j.Status = store.JobAssigned

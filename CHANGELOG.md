@@ -9,6 +9,65 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-25
+
+### Added
+
+- **`relayd --public`: a public HTTPS address through Tailscale.** With the
+  flag, `relayd` starts an embedded Tailscale node and serves the same API
+  over Funnel, so contributors anywhere can reach it with no port forwarding,
+  no domain and no certificate. Only the admin needs a (free) Tailscale
+  account; it exits `2` without `TS_AUTHKEY`. `--name` picks the hostname
+  (default `relay`). The plain `--port` listener stays up for the LAN, and
+  Tailscale state lives in `relay/tsnet` under the user config directory so
+  a restart keeps the same address. `relayd` prints
+  `relayd public address: https://…ts.net` once it is up. A step-by-step
+  guide with screenshots is in `docs/TAILSCALE.md`.
+  ([#114](https://github.com/cachebag/relay/pull/114))
+- **The dashboard does everything on one screen.** `relay` with no
+  subcommand (or `relay dash`) opens it. With no saved login it asks for a
+  join token, or creates a pool from the server admin token with Ctrl+N, and
+  the first pool no longer needs the CLI. The screen shows the pool, the
+  invite line to share (`c` copies it), and the nodes and jobs tables
+  refreshing every 2 s, with an ID column for nodes and hostnames for jobs.
+  `s` focuses a run box that submits a command. Enter on a job shows its
+  status, node, run time, exit code and output, updating while it runs.
+  `k` shows credits. `t` rotates the join token and `x` removes the
+  highlighted machine, both behind the pool admin token and typing the pool
+  name; after a rotate the dashboard switches itself to the new token.
+  Ctrl+C copies the highlighted ID, a job's output, or a new invite. One
+  theme throughout. The old home menu and `relay home` are gone.
+  ([#53](https://github.com/cachebag/relay/pull/53),
+  [#118](https://github.com/cachebag/relay/pull/118))
+- **Jobs can require an OS.** `relay submit --os linux|darwin|windows`
+  sends `"requires": {"os": …}` with the job; anything else is `400`. The
+  scheduler only places the job on an online node with that OS, leaves it
+  queued when there is none, and only advances the per-pool round-robin when
+  a job is actually placed. `relay jobs` gains a `REQUIRES` column and
+  `relay status` shows `queued (requires linux)`. Old databases get the
+  column on first open. ([#117](https://github.com/cachebag/relay/pull/117))
+- **Logged in to several pools at once.** `relay login` with another pool's
+  token adds it instead of replacing the saved login. `relay pools` lists
+  them, `relay use <name or id>` switches, and `relay logout` drops the
+  current pool and moves to the next. In the dashboard `p` opens a pool
+  picker. Old single-login files still load.
+  ([df4f292](https://github.com/cachebag/relay/commit/df4f292))
+
+### Changed
+
+- **README is a quick start; the details moved to guides.** `docs/ADMIN.md`,
+  `docs/CONTRIBUTE.md` and `docs/SUBMIT.md` cover each role, next to
+  `docs/TAILSCALE.md` and `docs/api.md`.
+  ([0a5130d](https://github.com/cachebag/relay/commit/0a5130d))
+
+### Fixed
+
+- **No duplicate job runs after a scheduler restart.** For the first 30 s
+  after `relayd` starts (the node timeout) the scheduler does not treat
+  silent nodes as lost, so a job that an agent finished while the scheduler
+  was down has its result accepted instead of being requeued and run again.
+  ([#116](https://github.com/cachebag/relay/pull/116))
+
 ## [0.2.1] - 2026-10-21
 
 ### Added
@@ -274,7 +333,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/cachebag/relay/compare/v0.2.1...v0.2.5
 [0.2.1]: https://github.com/cachebag/relay/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cachebag/relay/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/cachebag/relay/compare/v0.1.0...v0.1.1

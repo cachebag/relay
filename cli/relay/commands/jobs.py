@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import httpx
 
 from relay import profile
-from relay.commands.status import runtime
+from relay.commands.status import requires, runtime
 
 
 def register(sub) -> None:
@@ -54,7 +54,7 @@ def run(args) -> None:
     rows = fetch(args.scheduler, prof["pool_token"])
 
     print(
-        f"{'ID':<16} {'STATUS':<10} {'NODE':<16} "
+        f"{'ID':<16} {'STATUS':<10} {'NODE':<16} {'REQUIRES':<8} "
         f"{'ATTEMPTS':>8} {'AGE':>6} {'TIME':>7} "
         f"{'SUBMITTER':<16}  {'COMMAND'}"
     )
@@ -69,6 +69,7 @@ def run(args) -> None:
             f"{job['id']:<16} "
             f"{job['status']:<10} "
             f"{job.get('node_id') or '-':<16} "
+            f"{requires(job) or '-':<8} "
             f"{job.get('attempts', 0):>8} "
             f"{age(job['created_at']):>6} "
             f"{runtime(job) or '-':>7} "

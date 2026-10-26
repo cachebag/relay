@@ -18,9 +18,24 @@ const (
 	JobFailed   JobStatus = "failed"
 )
 
+// Stores a job's required operating system.
+type Requires struct {
+	OS string `json:"os,omitempty"`
+}
+
+// Confirms node meets relay operating system requirements.
+func (r Requires) Valid() bool {
+	switch r.OS {
+	case "", "linux", "darwin", "windows":
+		return true
+	}
+	return false
+}
+
 type Job struct {
 	ID        string    `json:"id"`
 	Command   []string  `json:"command"`
+	Requires  Requires  `json:"requires,omitempty"`
 	Status    JobStatus `json:"status"`
 	NodeID    string    `json:"node_id"`
 	PoolID    string    `json:"pool_id"`

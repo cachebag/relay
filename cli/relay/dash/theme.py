@@ -72,6 +72,17 @@ DataTable > .datatable--cursor { background: $primary 25%; }
 .empty { height: auto; margin: 0 1; color: $text-muted; }
 #error { height: auto; margin: 0 1; color: $error; }
 
+#body { height: 1fr; }
+#submit-bar { height: 3; margin: 0 1; }
+#submit-bar .key { width: auto; height: 3; content-align: left middle; color: $text-muted; padding-right: 1; }
+#submit { width: 1fr; border: tall $panel; background: $panel; }
+#submit:focus { border: tall $primary; }
+
+#job-modal { width: 110; }
+#job-output { height: auto; max-height: 24; margin-top: 1; background: $panel; padding: 0 1; }
+#job-output .stderr { color: $warning; }
+#credits, #pools { height: auto; max-height: 20; background: $surface; margin: 0; }
+
 ModalScreen { align: center middle; background: $background 60%; }
 .modal {
     width: 90;
