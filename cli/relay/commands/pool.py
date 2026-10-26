@@ -8,7 +8,8 @@ import httpx
 from relay import profile
 
 ADMIN_TOKEN_HINT = (
-    "a server admin token is required: pass --admin-token or set RELAY_ADMIN_TOKEN"
+    "a server admin token is required: pass --admin-token, set RELAY_ADMIN_TOKEN, "
+    "or start the scheduler with relay scheduler start, which saves it"
 )
 
 
@@ -67,7 +68,11 @@ def register(sub) -> None:
 
 def server_admin_token(flag: str | None) -> str:
     """The server admin token from the flag or the environment, or exit 1."""
-    token = flag or os.environ.get("RELAY_ADMIN_TOKEN")
+    token = (
+        flag
+        or os.environ.get("RELAY_ADMIN_TOKEN")
+        or profile.server().get("admin_token")
+    )
     if not token:
         print(ADMIN_TOKEN_HINT, file=sys.stderr)
         sys.exit(1)
