@@ -16,6 +16,7 @@ from relay.commands import (
     node,
     nodes,
     pool,
+    scheduler,
     status,
     submit,
 )
@@ -23,12 +24,22 @@ from relay.commands import (
 DEFAULT_SCHEDULER = "http://localhost:8080"
 
 
-def resolve(args: argparse.Namespace, env: dict, prof: dict) -> None:
-    """Fill in the scheduler: flag, then $RELAY_SCHEDULER, then the saved login."""
+def resolve(
+    args: argparse.Namespace, env: dict, prof: dict, server: dict | None = None
+) -> None:
+    """Fill in the scheduler: flag, then $RELAY_SCHEDULER, then the saved
+    login, then the scheduler this machine runs (its public address first)."""
 
+    server = server or {}
     explicit = args.scheduler or env.get("RELAY_SCHEDULER")
     args.scheduler_given = bool(explicit)
-    args.scheduler = explicit or prof.get("scheduler") or DEFAULT_SCHEDULER
+    args.scheduler = (
+        explicit
+        or prof.get("scheduler")
+        or server.get("public_url")
+        or server.get("address")
+        or DEFAULT_SCHEDULER
+    )
 
 
 def main() -> None:
@@ -61,11 +72,12 @@ def main() -> None:
     credits.register(sub)
     node.register(sub)
     install.register(sub)
+    scheduler.register(sub)
 
     args = parser.parse_args()
 
     try:
-        resolve(args, os.environ, profile.load())
+        resolve(args, os.environ, profile.load(), profile.server())
         if args.subcommand is None:
             dash.run(args)
             return
