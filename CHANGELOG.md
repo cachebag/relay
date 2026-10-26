@@ -9,6 +9,14 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A trailing slash on the scheduler address no longer breaks the agent.**
+  Chat apps add one when they turn the address into a link, and the agent
+  then asked for `//nodes/heartbeat`, which the scheduler redirected and
+  refused, shown as "can't reach scheduler" forever. `relay-agent` and
+  `relay-agent leave` strip it. ([#130](https://github.com/cachebag/relay/pull/130))
+
 ## [0.2.7] - 2026-10-26
 
 ### Added
