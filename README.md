@@ -48,11 +48,11 @@ relay login --scheduler http://<scheduler address>:8080 --pool-token <pool token
 relay submit --wait -- uname -n
 ```
 
-**Run a pool.** Start the scheduler and create a pool:
+**Run a pool.** Start the scheduler in the background and create a pool. The admin token relayd prints on first start is saved for you:
 
 ```sh
-./relayd
-relay pool create my-pool --admin-token <server admin token>
+relay scheduler start      # --public for an address that works from anywhere, see docs/TAILSCALE.md
+relay pool create my-pool
 ```
 
 ## Guides

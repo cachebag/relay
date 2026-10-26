@@ -9,6 +9,25 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Added
+
+- **`relay scheduler start`, `stop`, `status`.** Runs `relayd` in the
+  background, with its log and database in the relay config folder, and keeps
+  the server admin token it prints on first start, so `relay pool create` and
+  the dashboard no longer ask for it. With `--public`, the Tailscale auth key
+  is asked for once and saved, and the public address is kept too; with no
+  login saved, the CLI and dashboard default to it. `--port` and `--name` pass
+  through. A `relayd` that exits right away is reported with the end of its
+  log. ([#125](https://github.com/cachebag/relay/pull/125))
+
+### Changed
+
+- **`relay install` shows what it's doing.** A progress bar per binary with
+  size and speed, the real release tag instead of `latest`, a skip when that
+  version is already installed, and a paste-ready command at the end with the
+  path quoted, since it has a space on macOS.
+  ([#125](https://github.com/cachebag/relay/pull/125))
+
 ## [0.2.6] - 2026-10-26
 
 ### Added
