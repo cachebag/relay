@@ -9,6 +9,8 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-25
+
 ### Added
 
 - **`relayd --public`: a public HTTPS address through Tailscale.** With the
@@ -331,7 +333,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/cachebag/relay/compare/v0.2.1...v0.2.5
 [0.2.1]: https://github.com/cachebag/relay/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cachebag/relay/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/cachebag/relay/compare/v0.1.0...v0.1.1
