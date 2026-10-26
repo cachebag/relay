@@ -16,6 +16,10 @@ without a pull request link their commit instead.
   then asked for `//nodes/heartbeat`, which the scheduler redirected and
   refused, shown as "can't reach scheduler" forever. `relay-agent` and
   `relay-agent leave` strip it. ([#130](https://github.com/cachebag/relay/pull/130))
+- **A pool created from the dashboard's join box logs the dashboard in.**
+  Before, the pool was made and the login saved, but the dashboard stayed
+  logged out until it was restarted.
+  ([#131](https://github.com/cachebag/relay/pull/131))
 
 ## [0.2.7] - 2026-10-26
 
