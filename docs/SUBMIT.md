@@ -40,6 +40,8 @@ relay login --scheduler http://<scheduler>:8080 --pool-token <pool-token> --name
 
 Every command after that works on the pool you are logged in to. `relay whoami` shows the saved login and `relay logout` forgets it.
 
+You can be logged in to more than one pool. `relay login` with another pool's token adds it, `relay pools` lists them, and `relay use <name>` switches. `relay logout` drops the current pool and moves you to the next one. In the dashboard, `p` does the same.
+
 ## Run a job
 
 Submit a job and wait for it to finish:

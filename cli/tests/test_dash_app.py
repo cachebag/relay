@@ -10,7 +10,7 @@ from relay.dash import DashApp, invite_line, parse_invite
 from relay.dash.admin import AdminModal
 from relay.dash.credits import CreditsModal
 from relay.dash.job import JobModal
-from relay.dash.modals import JoinModal, NewPoolModal
+from relay.dash.modals import JoinModal, NewPoolModal, PoolPicker
 
 _RealClient = httpx.Client
 
@@ -452,3 +452,35 @@ def test_ctrl_c_copies_the_highlighted_id_or_the_output(cfg, calls, monkeypatch)
         assert copied == ["j0", "box\n"]
 
     drive(app, steps)
+
+
+HOME = {**SAVED, "pool_id": "p2", "pool_name": "home", "pool_token": "tok2"}
+
+
+def test_pool_picker_switches_and_logout_falls_back(cfg, calls):
+    profile.save(HOME)
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        assert app.invite_text == invite_line(SCHED, "tok")
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(app.screen, PoolPicker)
+        table = app.screen.query_one("#pools")
+        assert table.row_count == 2
+        await pilot.press("up", "enter")
+        await settle(pilot)
+        assert not isinstance(app.screen, PoolPicker)
+        assert app.prof["pool_name"] == "home"
+        assert app.invite_text == invite_line(SCHED, "tok2")
+        # Logging out of home lands in lab rather than the join box.
+        await pilot.press("l")
+        await settle(pilot)
+        assert not isinstance(app.screen, JoinModal)
+        assert app.prof["pool_name"] == "lab"
+
+    drive(app, steps)
+    assert ("GET", "/nodes", "Bearer tok2") in calls
+    assert profile.logins() == [SAVED]

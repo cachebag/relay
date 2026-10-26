@@ -30,17 +30,16 @@ POOL = {"id": "961dda5133b6", "name": "lab", "created_at": "2026-01-01T00:00:00Z
 
 def test_login_writes_profile(cfg):
     prof = auth.login("http://localhost:9090", "tok", "omar", client(200, POOL))
-    assert (
-        json.loads(cfg.read_text())
-        == prof
-        == {
-            "scheduler": "http://localhost:9090",
-            "pool_id": "961dda5133b6",
-            "pool_name": "lab",
-            "pool_token": "tok",
-            "name": "omar",
-        }
-    )
+    want = {
+        "scheduler": "http://localhost:9090",
+        "pool_id": "961dda5133b6",
+        "pool_name": "lab",
+        "pool_token": "tok",
+        "name": "omar",
+    }
+    assert prof == profile.load() == want
+    # The file holds a list of logins and which one is current.
+    assert json.loads(cfg.read_text()) == {"current": "961dda5133b6", "logins": [want]}
     if sys.platform != "win32":
         assert cfg.stat().st_mode & 0o777 == 0o600
 
@@ -87,6 +86,38 @@ def test_whoami_prints_profile(cfg, capsys):
     out = capsys.readouterr().out
     assert "omar" in out and "lab" in out and "http://localhost:9090" in out
     assert "tok" not in out.replace("http://", "")
+
+
+def test_pools_and_use(cfg, capsys):
+    auth.login("http://localhost:9090", "tok", "omar", client(200, POOL))
+    auth.login(
+        "http://other:9090",
+        "tok",
+        "omar",
+        client(200, {**POOL, "id": "p2", "name": "home"}),
+    )
+    auth.run_pools(argparse.Namespace())
+    out = capsys.readouterr().out
+    assert "  lab " in out and "* home " in out
+    auth.run_use(argparse.Namespace(pool="lab"))
+    assert "now using pool lab" in capsys.readouterr().out
+    assert profile.load()["pool_name"] == "lab"
+    with pytest.raises(SystemExit):
+        auth.run_use(argparse.Namespace(pool="nope"))
+    assert "no saved login for nope" in capsys.readouterr().err
+
+
+def test_logout_moves_to_the_next_pool(cfg, capsys):
+    auth.login("http://localhost:9090", "tok", "omar", client(200, POOL))
+    auth.login(
+        "http://other:9090",
+        "tok",
+        "omar",
+        client(200, {**POOL, "id": "p2", "name": "home"}),
+    )
+    auth.run_logout(argparse.Namespace())
+    assert "now using pool lab" in capsys.readouterr().out
+    assert profile.load()["pool_name"] == "lab"
 
 
 def ns(scheduler=None, subcommand="nodes", pool=None):

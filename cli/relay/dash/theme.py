@@ -81,7 +81,7 @@ DataTable > .datatable--cursor { background: $primary 25%; }
 #job-modal { width: 110; }
 #job-output { height: auto; max-height: 24; margin-top: 1; background: $panel; padding: 0 1; }
 #job-output .stderr { color: $warning; }
-#credits { height: auto; max-height: 20; background: $surface; margin: 0; }
+#credits, #pools { height: auto; max-height: 20; background: $surface; margin: 0; }
 
 ModalScreen { align: center middle; background: $background 60%; }
 .modal {

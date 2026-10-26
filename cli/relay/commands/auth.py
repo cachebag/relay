@@ -21,8 +21,15 @@ def register(sub) -> None:
     w = sub.add_parser("whoami", help="show the saved login")
     w.set_defaults(func=run_whoami)
 
-    o = sub.add_parser("logout", help="forget the saved login")
+    o = sub.add_parser("logout", help="forget the current login")
     o.set_defaults(func=run_logout)
+
+    ls = sub.add_parser("pools", help="list the pools you are logged in to")
+    ls.set_defaults(func=run_pools)
+
+    u = sub.add_parser("use", help="switch to another pool you are logged in to")
+    u.add_argument("pool", help="pool name or ID, see relay pools")
+    u.set_defaults(func=run_use)
 
 
 def fetch_pool(scheduler: str, token: str, client: httpx.Client | None = None) -> dict:
@@ -81,6 +88,10 @@ def run_login(args) -> None:
     )
 
 
+def describe(login: dict) -> str:
+    return f"{login.get('pool_name', '?')} ({login.get('pool_id', '?')}) at {login.get('scheduler', '?')}"
+
+
 def run_whoami(args) -> None:
     prof = profile.load()
     if not prof:
@@ -89,8 +100,41 @@ def run_whoami(args) -> None:
     print(f"name:      {prof['name']}")
     print(f"pool:      {prof['pool_name']} ({prof['pool_id']})")
     print(f"scheduler: {prof['scheduler']}")
+    others = [
+        login for login in profile.logins() if login is not prof and login != prof
+    ]
+    if others:
+        print(
+            f"also in:   {len(others)} other pool{'s' if len(others) > 1 else ''}, see relay pools"
+        )
+
+
+def run_pools(args) -> None:
+    logins = profile.logins()
+    if not logins:
+        print("not logged in, run relay login first")
+        sys.exit(1)
+    current = profile.load()
+    print(f"  {'NAME':<16} {'ID':<14} SCHEDULER")
+    for login in logins:
+        mark = "*" if login == current else " "
+        print(
+            f"{mark} {login.get('pool_name', '?'):<16} "
+            f"{login.get('pool_id', '?'):<14} {login.get('scheduler', '?')}"
+        )
+
+
+def run_use(args) -> None:
+    try:
+        login = profile.use(args.pool)
+    except KeyError:
+        print(f"no saved login for {args.pool}; run relay pools", file=sys.stderr)
+        sys.exit(1)
+    print(f"now using pool {describe(login)}")
 
 
 def run_logout(args) -> None:
-    profile.delete()
+    remaining = profile.delete()
     print("logged out")
+    if remaining:
+        print(f"now using pool {describe(remaining)}")

@@ -9,8 +9,9 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Input, Label, Static
+from textual.widgets import DataTable, Input, Label, Static
 
+from relay import profile
 from relay.commands import auth
 from relay.commands import pool as pool_cmd
 
@@ -225,3 +226,52 @@ class NewPoolModal(ModalScreen[dict | None]):
             self.dismiss(None)
         else:
             self.app.exit()
+
+
+class PoolPicker(ModalScreen[dict | str | None]):
+    """Switch between the pools you are logged in to. Dismisses with the
+    chosen login, "add" to join another, or None."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("a", "add", "Join another pool"),
+        Binding("escape", "dismiss", "Close", priority=True),
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal"):
+            yield Static("YOUR POOLS", classes="title")
+            yield Static(
+                "enter switches to the highlighted pool. "
+                "a joins another one with a new token.",
+                classes="hint",
+            )
+            yield DataTable(id="pools", cursor_type="row")
+            yield Static("enter switch   a join another   esc close", classes="keys")
+
+    def on_mount(self) -> None:
+        table = self.query_one(DataTable)
+        table.add_columns("", "NAME", "ID", "SCHEDULER")
+        current = self.app.prof.get("pool_id")
+        for i, login in enumerate(profile.logins()):
+            pool_id = login.get("pool_id", "")
+            table.add_row(
+                "*" if pool_id == current else "",
+                login.get("pool_name", "?"),
+                pool_id,
+                login.get("scheduler", "?"),
+                key=pool_id,
+            )
+            if pool_id == current:
+                table.move_cursor(row=i, animate=False)
+        table.focus()
+
+    @on(DataTable.RowSelected)
+    def on_pick(self, event: DataTable.RowSelected) -> None:
+        pool_id = str(event.row_key.value)
+        chosen = next(
+            (l for l in profile.logins() if l.get("pool_id") == pool_id), None
+        )
+        self.dismiss(chosen)
+
+    def action_add(self) -> None:
+        self.dismiss("add")

@@ -20,7 +20,7 @@ from relay.dash import theme
 from relay.dash.admin import AdminModal
 from relay.dash.credits import CreditsModal
 from relay.dash.job import JobModal
-from relay.dash.modals import JoinModal, NewPoolModal
+from relay.dash.modals import JoinModal, NewPoolModal, PoolPicker
 from relay.dash.tables import REFRESH_S, JobsTable, NodesTable, totals
 
 AGENT = "relay-agent"
@@ -99,6 +99,7 @@ class DashApp(App[None]):
         # the cursor, through the terminal's clipboard escape.
         Binding("ctrl+c", "copy_text", "Copy", show=False, priority=True),
         Binding("n", "new_pool", "New pool"),
+        Binding("p", "switch_pool", "Pools"),
         Binding("r", "refresh", "Refresh", show=False),
         Binding("l", "logout", "Log out"),
         Binding("q", "quit", "Quit"),
@@ -252,10 +253,31 @@ class DashApp(App[None]):
         self.push_screen(NewPoolModal(can_cancel=True), self.joined)
 
     def action_logout(self) -> None:
-        profile.delete()
+        left = self.prof.get("pool_name", "")
+        remaining = profile.delete()
         self.pool_admin_token = None
+        if remaining:
+            # Logged in elsewhere too, so land there instead of the join box.
+            self.use_profile(remaining)
+            self.notify(
+                f"logged out of {left}, now in {remaining.get('pool_name', '?')}"
+            )
+            return
         self.use_profile({})
         self.push_screen(JoinModal(can_cancel=False), self.joined)
+
+    def action_switch_pool(self) -> None:
+        if profile.logins():
+            self.push_screen(PoolPicker(), self.picked)
+
+    def picked(self, choice: dict | str | None) -> None:
+        if choice == "add":
+            self.push_screen(JoinModal(can_cancel=True), self.joined)
+        elif isinstance(choice, dict) and choice.get("pool_id") != self.prof.get(
+            "pool_id"
+        ):
+            self.pool_admin_token = None
+            self.use_profile(profile.use(choice["pool_id"]))
 
     # -- submit -----------------------------------------------------------
 
