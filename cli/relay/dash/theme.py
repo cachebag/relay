@@ -65,7 +65,7 @@ Screen { background: $background; }
 
 DataTable { background: $background; margin: 0 1; }
 #nodes { height: auto; max-height: 40%; }
-#jobs { height: auto; max-height: 100%; }
+#jobs { height: 1fr; }
 DataTable > .datatable--header { background: $background; color: $text-muted; text-style: bold; }
 DataTable > .datatable--cursor { background: $primary 25%; }
 
