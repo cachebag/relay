@@ -6,6 +6,8 @@ Release assets are named `relayd-<os>-<arch>` (`.exe` on Windows), where `<os>-<
 
 ## Run the scheduler
 
+With the CLI installed, `relay install` downloads `relayd` and `relay-agent` for this machine into `relay/bin` under your config folder and prints where. Or fetch `relayd` by hand:
+
 ```sh
 curl -LO https://github.com/cachebag/relay/releases/latest/download/relayd-linux-amd64
 chmod +x relayd-linux-amd64
