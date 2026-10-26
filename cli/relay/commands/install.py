@@ -32,10 +32,14 @@ def register(sub) -> None:
 
 
 def short(path: Path) -> str:
-    """A paste-ready path: ~ for the home folder, and when it has a space,
-    "$HOME/..." in double quotes so the shell still expands it."""
+    """A paste-ready path. On Windows the full path, quoted if it has a space.
+    Elsewhere ~ for the home folder, or "$HOME/..." in double quotes when
+    there is a space, so the shell still expands it."""
+    if sys.platform == "win32":
+        text = str(path)
+        return f'"{text}"' if " " in text else text
     try:
-        rest = str(path.relative_to(Path.home()))
+        rest = path.relative_to(Path.home()).as_posix()
     except ValueError:
         return shlex.quote(str(path)) if " " in str(path) else str(path)
     return f'"$HOME/{rest}"' if " " in rest else f"~/{rest}"

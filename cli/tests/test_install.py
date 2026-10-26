@@ -175,4 +175,8 @@ def test_install_hint_quotes_a_path_with_spaces(
     monkeypatch.setattr(install.Path, "home", classmethod(lambda cls: tmp_path))
     install.run(argparse.Namespace(version=None, agent_only=True))
     out = capsys.readouterr().out
-    assert '"$HOME/Application Support/relay/bin/relay-agent" --scheduler' in out
+    if sys.platform == "win32":
+        want = f'"{tmp_path / "Application Support" / "relay" / "bin" / "relay-agent"}" --scheduler'
+    else:
+        want = '"$HOME/Application Support/relay/bin/relay-agent" --scheduler'
+    assert want in out
