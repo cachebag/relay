@@ -121,7 +121,7 @@ def test_pool_create_sends_server_admin_token(monkeypatch, capsys):
     assert "pool id:    p9" in capsys.readouterr().out
 
 
-def test_pool_create_without_token_exits_1(monkeypatch, capsys):
+def test_pool_create_without_token_exits_1(cfg, monkeypatch, capsys):
     monkeypatch.delenv("RELAY_ADMIN_TOKEN", raising=False)
     calls = []
     route_all(monkeypatch, pool, lambda req: calls.append(req) or httpx.Response(201))
