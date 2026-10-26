@@ -12,6 +12,16 @@ Your machine earns 1 credit for every minute it's online. The credits go to
 the name given with `--owner` or `RELAY_OWNER`, or your username if neither is
 set. Run `relay credits` to see the balances in your pool.
 
+## With the CLI
+
+If you have the `relay` CLI (see [SUBMIT.md](SUBMIT.md)), it downloads the right agent for your machine:
+
+```sh
+relay install --agent-only
+```
+
+It goes into `relay/bin` under your config folder and the command prints the path. Then run it with the address and token from your admin, as below.
+
 ## Linux and macOS
 
 ```sh

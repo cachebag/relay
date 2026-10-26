@@ -11,6 +11,7 @@ from relay.commands import (
     contribute,
     credits,
     dash,
+    install,
     jobs,
     logs,
     node,
@@ -61,6 +62,7 @@ def main() -> None:
     contribute.register(sub)
     credits.register(sub)
     node.register(sub)
+    install.register(sub)
 
     args = parser.parse_args()
 

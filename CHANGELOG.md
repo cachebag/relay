@@ -9,6 +9,18 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-10-26
+
+### Added
+
+- **`relay install`.** Downloads `relayd` and `relay-agent` for this OS and
+  arch from the latest release (or `--version v0.2.5`) into `relay/bin` under
+  the config folder, sets the executable bit, and prints where they went.
+  `--agent-only` for contributors. Every command that starts a binary now
+  finds it the same way: `$RELAYD` or `$RELAY_AGENT`, then that folder, then
+  `PATH`. Platforms without a release build get a build-from-source hint.
+  ([#123](https://github.com/cachebag/relay/pull/123))
+
 ## [0.2.5] - 2026-10-25
 
 ### Added
@@ -333,7 +345,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/cachebag/relay/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/cachebag/relay/compare/v0.2.1...v0.2.5
 [0.2.1]: https://github.com/cachebag/relay/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/cachebag/relay/compare/v0.1.1...v0.2.0
