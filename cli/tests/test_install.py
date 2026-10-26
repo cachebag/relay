@@ -1,11 +1,12 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import httpx
 import pytest
 
-from relay import binaries, profile
+from relay import binaries, pathsetup, profile
 from relay.commands import install
 
 _RealClient = httpx.Client
@@ -16,6 +17,13 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(profile, "config_dir", lambda: tmp_path / "relay")
     monkeypatch.delenv("RELAYD", raising=False)
     monkeypatch.delenv("RELAY_AGENT", raising=False)
+    # PATH setup writes to the home folder; keep it inside tmp_path.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    # Always take the shell-file branch; the registry branch has its own test
+    # with a fake winreg, and must never touch a real registry.
+    monkeypatch.setattr(pathsetup.sys, "platform", "darwin")
     return tmp_path / "relay"
 
 
@@ -172,11 +180,24 @@ def test_install_hint_quotes_a_path_with_spaces(
     monkeypatch.setattr(
         profile, "config_dir", lambda: tmp_path / "Application Support" / "relay"
     )
-    monkeypatch.setattr(install.Path, "home", classmethod(lambda cls: tmp_path))
-    install.run(argparse.Namespace(version=None, agent_only=True))
+    install.run(argparse.Namespace(version=None, agent_only=True, no_path=True))
     out = capsys.readouterr().out
     if sys.platform == "win32":
         want = f'"{tmp_path / "Application Support" / "relay" / "bin" / "relay-agent"}" --scheduler'
     else:
         want = '"$HOME/Application Support/relay/bin/relay-agent" --scheduler'
     assert want in out
+
+
+def test_install_adds_bin_to_the_shell_rc(cfg, releases, monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("darwin", "arm64"))
+    install.run(argparse.Namespace(version=None, agent_only=True))
+    out = capsys.readouterr().out
+    assert "added to ~/.zshrc; restart your shell or run: source ~/.zshrc" in out
+    assert "\n  relay-agent --scheduler" in out
+    assert "or add" not in out
+    rc = (tmp_path / ".zshrc").read_text()
+    assert 'export PATH="$HOME/relay/bin:$PATH"' in rc
+    install.run(argparse.Namespace(version=None, agent_only=True))
+    assert (tmp_path / ".zshrc").read_text().count("relay/bin") == 1
+    assert "already in ~/.zshrc" in capsys.readouterr().out

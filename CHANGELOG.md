@@ -9,6 +9,15 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Added
+
+- **`relay install` puts the binaries on your PATH.** It appends one line to
+  your shell's startup file (`~/.zshrc`, `~/.bash_profile` or `~/.bashrc`,
+  fish's `config.fish`) or, on Windows, to the user PATH in the registry, and
+  says what to do next: restart the shell or `source` the file. Runs again
+  without duplicating anything. `--no-path` skips it.
+  ([#133](https://github.com/cachebag/relay/pull/133))
+
 ### Fixed
 
 - **A trailing slash on the scheduler address no longer breaks the agent.**
