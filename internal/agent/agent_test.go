@@ -514,3 +514,28 @@ func TestTickConnectedMessageAfterFailure(t *testing.T) {
 		)
 	}
 }
+
+// Verifies that a scheduler address pasted with a trailing slash, as chat
+// apps add when they turn it into a link, still heartbeats to the right path.
+func TestTrailingSlashOnSchedulerIsIgnored(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	a := newAgent(srv.URL+"///", "tok", store.Node{Hostname: "h"}, t.TempDir())
+	if a.schedulerURL != srv.URL {
+		t.Fatalf("schedulerURL = %q, want %q", a.schedulerURL, srv.URL)
+	}
+	a.Tick(context.Background())
+	if len(paths) == 0 || paths[0] != "/nodes/heartbeat" {
+		t.Errorf("first request went to %v, want /nodes/heartbeat", paths)
+	}
+	for _, p := range paths {
+		if strings.HasPrefix(p, "//") {
+			t.Errorf("request path %q has a double slash", p)
+		}
+	}
+}

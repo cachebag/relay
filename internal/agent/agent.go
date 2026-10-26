@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -67,6 +68,10 @@ func New(schedulerURL, poolToken string, n store.Node) *Agent {
 // newAgent is New with the cache directory chosen by the caller, so tests
 // can use a temp directory.
 func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Agent {
+	// Chat apps turn the address into a link and add a trailing slash. The
+	// paths below start with one, and "//nodes/heartbeat" is redirected by
+	// the scheduler to a GET, which it then refuses. Strip it here once.
+	schedulerURL = strings.TrimRight(schedulerURL, "/")
 	n.ID = loadOrCreateNodeID(cacheDir, n.ID)
 	a := &Agent{
 		schedulerURL: schedulerURL,

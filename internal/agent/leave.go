@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ErrNotInPool means the scheduler refused to remove the node because the
@@ -28,7 +29,7 @@ func Leave(
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodDelete,
-		schedulerURL+"/nodes/"+url.PathEscape(nodeID),
+		strings.TrimRight(schedulerURL, "/")+"/nodes/"+url.PathEscape(nodeID),
 		nil)
 	if err != nil {
 		return err
