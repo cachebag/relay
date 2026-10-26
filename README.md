@@ -20,7 +20,7 @@ points someone has, the higher priority their jobs get.
 
 Relay has three parts: `relayd` (the scheduler), `relay-agent` (runs on contributed machines), and the `relay` CLI (for admins and submitters). Binaries for Linux, macOS, and Windows are on the [releases page](https://github.com/cachebag/relay/releases/latest). The CLI needs [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
-**Contribute a machine.** Download the agent and run it with the address and pool token your admin gave you:
+**Contribute a machine.** Get the agent (`relay install --agent-only` with the CLI, or from the releases page) and run it with the address and pool token your admin gave you:
 
 ```sh
 ./relay-agent --scheduler http://<scheduler address>:8080 --pool-token <pool token>
