@@ -16,6 +16,14 @@ def cfg(tmp_path, monkeypatch):
     return tmp_path / "relay"
 
 
+@pytest.fixture(autouse=True)
+def no_warm_up(monkeypatch):
+    """Never hit the network from tests; record the warm-up calls instead."""
+    calls = []
+    monkeypatch.setattr(scheduler, "warm_up", lambda url: calls.append(url) or True)
+    return calls
+
+
 @pytest.fixture
 def fake_relayd(monkeypatch):
     """procs.start writes what relayd would print and pretends to be alive."""
@@ -36,7 +44,7 @@ def fake_relayd(monkeypatch):
         return 4242
 
     monkeypatch.setattr(procs, "start", start)
-    monkeypatch.setattr(procs, "running", lambda name: alive["pid"])
+    monkeypatch.setattr(procs, "running", lambda name: alive.get("pid"))
     monkeypatch.setattr(
         procs, "stop", lambda name, timeout=5.0: alive.pop("pid", None) is not None
     )
@@ -135,3 +143,77 @@ def test_resolve_falls_back_to_this_machines_scheduler():
         pick({"scheduler": "http://login"}, {"public_url": "https://r.ts.net"})
         == "http://login"
     )
+
+
+def test_second_start_does_not_wait_for_a_token_line(
+    cfg, fake_relayd, monkeypatch, capsys
+):
+    scheduler.run_start(ns())
+    scheduler.run_stop(ns())
+    capsys.readouterr()
+    slept = []
+    monkeypatch.setattr(procs.time, "sleep", lambda s: slept.append(s))
+    scheduler.run_start(ns())
+    out = capsys.readouterr().out
+    assert "relayd running" in out and "already saved" in out
+    assert slept == []
+
+
+def test_start_public_warms_the_certificate(cfg, fake_relayd, no_warm_up, monkeypatch):
+    monkeypatch.setenv("TS_AUTHKEY", "tskey-auth-x")
+    scheduler.run_start(ns(public=True))
+    assert no_warm_up == ["https://relay.tail1234.ts.net"]
+
+
+def test_start_without_public_line_returns_after_timeout(cfg, monkeypatch, capsys):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(procs.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(
+        procs.time, "sleep", lambda s: clock.__setitem__("t", clock["t"] + s)
+    )
+    monkeypatch.setenv("TS_AUTHKEY", "tskey-auth-x")
+
+    alive = {}
+
+    def start(name, argv, env=None):
+        with open(procs.log_path(name), "a") as f:
+            f.write("relayd listening on :8080\n")
+        alive["pid"] = 7
+        return 7
+
+    monkeypatch.setattr(procs, "start", start)
+    monkeypatch.setattr(procs, "running", lambda name: alive.get("pid"))
+    scheduler.run_start(ns(public=True))
+    out = capsys.readouterr().out
+    assert "starting relayd and joining the tailnet" in out
+    assert "not up yet" in out and "still starting" in out
+    assert clock["t"] >= 60
+
+
+def test_ctrl_c_during_the_wait_leaves_relayd_running(cfg, monkeypatch):
+    alive = {}
+    monkeypatch.setattr(
+        procs, "start", lambda name, argv, env=None: alive.setdefault("pid", 7)
+    )
+    monkeypatch.setattr(procs, "running", lambda name: alive.get("pid"))
+
+    def interrupted(*a, **k):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(procs, "wait_for", interrupted)
+    with pytest.raises(SystemExit) as exc:
+        scheduler.run_start(ns())
+    assert "keeps running" in str(exc.value)
+
+
+def test_status_reads_a_new_public_address_from_the_log(
+    cfg, fake_relayd, monkeypatch, capsys
+):
+    monkeypatch.setenv("TS_AUTHKEY", "tskey-auth-x")
+    profile.save_server(public_url="https://relay-1.tail1234.ts.net")
+    scheduler.run_start(ns(public=True))
+    capsys.readouterr()
+    scheduler.run_status(ns())
+    out = capsys.readouterr().out
+    assert "https://relay.tail1234.ts.net" in out and "relay-1" not in out
+    assert profile.server()["public_url"] == "https://relay.tail1234.ts.net"
