@@ -10,6 +10,7 @@ from relay.commands import (
     auth,
     credits,
     dash,
+    install,
     jobs,
     logs,
     node,
@@ -59,6 +60,7 @@ def main() -> None:
     auth.register(sub)
     credits.register(sub)
     node.register(sub)
+    install.register(sub)
 
     args = parser.parse_args()
 

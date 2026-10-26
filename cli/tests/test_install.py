@@ -1,0 +1,144 @@
+import argparse
+import os
+import sys
+
+import httpx
+import pytest
+
+from relay import binaries, profile
+from relay.commands import install
+
+_RealClient = httpx.Client
+
+
+@pytest.fixture
+def cfg(tmp_path, monkeypatch):
+    monkeypatch.setattr(profile, "config_dir", lambda: tmp_path / "relay")
+    monkeypatch.delenv("RELAYD", raising=False)
+    monkeypatch.delenv("RELAY_AGENT", raising=False)
+    return tmp_path / "relay"
+
+
+@pytest.fixture
+def releases(monkeypatch):
+    """Serve fake binaries from a fake GitHub, following the redirect latest -> v0.2.5."""
+    seen = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(str(req.url))
+        path = req.url.path
+        if path.endswith("/nope"):
+            return httpx.Response(404)
+        if "/releases/latest/download/" in path:
+            asset = path.rsplit("/", 1)[1]
+            return httpx.Response(
+                302,
+                headers={
+                    "location": f"{binaries.REPO}/releases/download/v0.2.5/{asset}"
+                },
+            )
+        if "/releases/download/v0.2.5/" in path:
+            return httpx.Response(200, content=b"#!/bin/sh\necho fake " + path.encode())
+        return httpx.Response(404)
+
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kw: _RealClient(
+            transport=httpx.MockTransport(handler), follow_redirects=True
+        ),
+    )
+    return seen
+
+
+def test_asset_names():
+    assert binaries.asset_name("relayd", "darwin", "arm64") == "relayd-darwin-arm64"
+    assert (
+        binaries.asset_name("relay-agent", "linux", "amd64")
+        == "relay-agent-linux-amd64"
+    )
+    assert (
+        binaries.asset_name("relay-agent", "windows", "amd64")
+        == "relay-agent-windows-amd64.exe"
+    )
+
+
+def test_this_platform_maps_machine_names(monkeypatch):
+    monkeypatch.setattr(binaries.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(binaries.platform, "machine", lambda: "arm64")
+    assert binaries.this_platform() == ("darwin", "arm64")
+    monkeypatch.setattr(binaries.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(binaries.platform, "machine", lambda: "x86_64")
+    assert binaries.this_platform() == ("linux", "amd64")
+    monkeypatch.setattr(binaries.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(binaries.platform, "machine", lambda: "AMD64")
+    assert binaries.this_platform() == ("windows", "amd64")
+
+
+def test_install_downloads_both_into_config_bin(cfg, releases, monkeypatch, capsys):
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("linux", "amd64"))
+    install.run(argparse.Namespace(version=None, agent_only=False))
+    out = capsys.readouterr().out
+    for name in ("relayd", "relay-agent"):
+        path = cfg / "bin" / name
+        assert path.exists()
+        assert b"fake" in path.read_bytes()
+        if sys.platform != "win32":
+            assert os.access(path, os.X_OK)
+        assert f"{name} v0.2.5 -> {path}" in out
+    assert any("latest/download/relayd-linux-amd64" in u for u in releases)
+
+
+def test_install_agent_only_and_pinned_version(cfg, releases, monkeypatch):
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("darwin", "arm64"))
+    install.run(argparse.Namespace(version="0.2.5", agent_only=True))
+    assert (cfg / "bin" / "relay-agent").exists()
+    assert not (cfg / "bin" / "relayd").exists()
+    assert releases == [
+        f"{binaries.REPO}/releases/download/v0.2.5/relay-agent-darwin-arm64"
+    ]
+
+
+def test_install_unknown_version_exits_1(cfg, releases, monkeypatch, capsys):
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("linux", "amd64"))
+    with pytest.raises(SystemExit) as exc:
+        install.run(argparse.Namespace(version="v9.9.9", agent_only=False))
+    assert exc.value.code == 1
+    assert "no release v9.9.9" in capsys.readouterr().err
+
+
+def test_install_refuses_unpublished_platform(cfg, releases, monkeypatch, capsys):
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("linux", "arm64"))
+    with pytest.raises(SystemExit):
+        install.run(argparse.Namespace(version=None, agent_only=False))
+    assert "no release build for linux/arm64" in capsys.readouterr().err
+    assert releases == []
+
+
+def test_find_prefers_env_then_config_dir_then_path(cfg, monkeypatch, tmp_path):
+    with pytest.raises(binaries.MissingBinary) as exc:
+        binaries.find("relay-agent")
+    assert "run relay install first" in str(exc.value)
+
+    on_path = tmp_path / "pathdir" / "relay-agent"
+    on_path.parent.mkdir()
+    on_path.write_text("#!/bin/sh\n")
+    on_path.chmod(0o755)
+    monkeypatch.setenv("PATH", str(on_path.parent))
+    assert binaries.find("relay-agent") == on_path
+
+    local = cfg / "bin" / "relay-agent"
+    local.parent.mkdir(parents=True)
+    local.write_text("#!/bin/sh\n")
+    assert binaries.find("relay-agent") == local
+
+    monkeypatch.setenv("RELAY_AGENT", "/opt/custom/relay-agent")
+    assert binaries.find("relay-agent") == binaries.Path("/opt/custom/relay-agent")
+
+
+def test_install_latest_missing_says_so(cfg, releases, monkeypatch, capsys):
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("darwin", "amd64"))
+    monkeypatch.setattr(binaries, "asset_name", lambda n, o, a: "nope")
+    with pytest.raises(SystemExit):
+        install.run(argparse.Namespace(version=None, agent_only=True))
+    assert "not public" in capsys.readouterr().err
