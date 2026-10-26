@@ -120,14 +120,16 @@ def test_find_prefers_env_then_config_dir_then_path(cfg, monkeypatch, tmp_path):
         binaries.find("relay-agent")
     assert "run relay install first" in str(exc.value)
 
-    on_path = tmp_path / "pathdir" / "relay-agent"
+    # Windows only finds executables with an extension from PATHEXT.
+    exe = "relay-agent.exe" if sys.platform == "win32" else "relay-agent"
+    on_path = tmp_path / "pathdir" / exe
     on_path.parent.mkdir()
     on_path.write_text("#!/bin/sh\n")
     on_path.chmod(0o755)
     monkeypatch.setenv("PATH", str(on_path.parent))
     assert binaries.find("relay-agent") == on_path
 
-    local = cfg / "bin" / "relay-agent"
+    local = cfg / "bin" / exe
     local.parent.mkdir(parents=True)
     local.write_text("#!/bin/sh\n")
     assert binaries.find("relay-agent") == local
