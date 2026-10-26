@@ -54,7 +54,7 @@ def run(args) -> None:
     rows = fetch(args.scheduler, prof["pool_token"])
 
     print(
-        f"{'ID':<16} {'STATUS':<10} {'NODE':<16} {'REQUIRES':<8}"
+        f"{'ID':<16} {'STATUS':<10} {'NODE':<16} {'REQUIRES':<8} "
         f"{'ATTEMPTS':>8} {'AGE':>6} {'TIME':>7} "
         f"{'SUBMITTER':<16}  {'COMMAND'}"
     )
