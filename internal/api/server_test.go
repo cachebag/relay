@@ -666,6 +666,26 @@ func TestJobCreateRequiredOS(t *testing.T) {
 	}
 }
 
+// TestJobCreateInvalidOS checks that an OS other than linux, darwin or
+// windows is refused and nothing is stored.
+func TestJobCreateInvalidOS(t *testing.T) {
+	pools := store.NewMemPools()
+	createTestPool(t, pools)
+	jobs := store.NewMemJobs()
+	handler := NewHandler(store.NewMem(), pools, jobs, store.NewMemCredits(), testServer())
+	rec := submitTestJob(handler, []string{"echo", "hello"}, "omar", "plan9")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	list, err := jobs.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 0 {
+		t.Errorf("expected no jobs stored, got %d", len(list))
+	}
+}
+
 // TestJobGet checks that a submitted job can be retrieved by its ID.
 func TestJobGet(t *testing.T) {
 	pools := store.NewMemPools()
