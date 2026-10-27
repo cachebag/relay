@@ -68,6 +68,24 @@ def _write(data: dict) -> None:
         p.chmod(0o600)
 
 
+def server() -> dict:
+    """Settings for the scheduler this machine runs, if any: admin_token,
+    address, public_url, ts_authkey. Empty if relay scheduler start never ran."""
+    data = _read()
+    srv = data.get("server")
+    return srv if isinstance(srv, dict) else {}
+
+
+def save_server(**fields: str) -> dict:
+    """Merge fields into the server settings and return them."""
+    data = _read()
+    srv = data.get("server") if isinstance(data.get("server"), dict) else {}
+    srv.update({k: v for k, v in fields.items() if v is not None})
+    data["server"] = srv
+    _write(data)
+    return srv
+
+
 def logins() -> list[dict]:
     """Every saved login, in the order they were added."""
     return [login for login in _read()["logins"] if isinstance(login, dict)]
@@ -109,7 +127,11 @@ def delete() -> dict:
     current = load()
     remaining = [login for login in data["logins"] if _key(login) != _key(current)]
     if not remaining:
-        path().unlink(missing_ok=True)
+        if data.get("server"):
+            data["logins"], data["current"] = [], None
+            _write(data)
+        else:
+            path().unlink(missing_ok=True)
         return {}
     data["logins"] = remaining
     data["current"] = remaining[0].get("pool_id")

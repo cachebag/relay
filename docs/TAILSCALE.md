@@ -30,29 +30,26 @@ Copy the key. It starts with `tskey-auth-` and is shown only once. Treat it like
 
 ## 4. Run relayd
 
-Set the key and start the scheduler.
-
-macOS and Linux:
+With the CLI (`relay install` first, if you haven't):
 
 ```sh
-export TS_AUTHKEY=tskey-auth-...
-./relayd --public
+relay scheduler start --public
 ```
 
-Windows PowerShell:
-
-```powershell
-$env:TS_AUTHKEY="tskey-auth-..."
-.\relayd.exe --public
-```
-
-The first start prints the server admin token (save it), a few Tailscale lines, then the one you need:
+It asks for the auth key once and keeps it, starts `relayd` in the background, saves the server admin token so `relay pool create` and the dashboard never ask for it, and prints the public address:
 
 ```text
-relayd public address: https://relay.taild0efc0.ts.net
+relayd running (pid 12345)
+  local address:   http://localhost:8080
+  public address:  https://relay.taild0efc0.ts.net
+  server admin token saved; relay pool create and the dashboard use it
 ```
 
-If the first run instead prints a link about enabling Funnel, open it, click **Enable**, and run `relayd --public` again. That's a one-time switch for your tailnet.
+`relay scheduler status` shows the same later, and `relay scheduler stop` stops it. The log is `relayd.log` in your relay config folder.
+
+Running `relayd` by hand works too, with the key in the environment: `TS_AUTHKEY=tskey-auth-... ./relayd --public` (PowerShell: `$env:TS_AUTHKEY="..."; .\relayd.exe --public`). It prints the server admin token on first start, then the public address line.
+
+If the log instead shows a link about enabling Funnel, open it, click **Enable**, and run `relay scheduler stop` then `start --public` again. That's a one-time switch for your tailnet.
 
 Back in the admin console, **Machines** now lists a node named `relay` with a Funnel badge. That's your scheduler. Leave it there; it's what keeps the address the same between runs.
 

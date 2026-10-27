@@ -1,11 +1,12 @@
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import httpx
 import pytest
 
-from relay import binaries, profile
+from relay import binaries, pathsetup, profile
 from relay.commands import install
 
 _RealClient = httpx.Client
@@ -16,29 +17,36 @@ def cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(profile, "config_dir", lambda: tmp_path / "relay")
     monkeypatch.delenv("RELAYD", raising=False)
     monkeypatch.delenv("RELAY_AGENT", raising=False)
+    # PATH setup writes to the home folder; keep it inside tmp_path.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    # Always take the shell-file branch; the registry branch has its own test
+    # with a fake winreg, and must never touch a real registry.
+    monkeypatch.setattr(pathsetup.sys, "platform", "darwin")
     return tmp_path / "relay"
 
 
 @pytest.fixture
 def releases(monkeypatch):
-    """Serve fake binaries from a fake GitHub, following the redirect latest -> v0.2.5."""
+    """A fake GitHub: /releases/latest redirects to the v0.2.6 tag page, and
+    assets under /releases/download/<tag>/ stream a small fake binary."""
     seen = []
 
     def handler(req: httpx.Request) -> httpx.Response:
         seen.append(str(req.url))
         path = req.url.path
+        if path.endswith("/releases/latest"):
+            return httpx.Response(
+                302, headers={"location": f"{binaries.REPO}/releases/tag/v0.2.6"}
+            )
         if path.endswith("/nope"):
             return httpx.Response(404)
-        if "/releases/latest/download/" in path:
-            asset = path.rsplit("/", 1)[1]
+        if "/releases/download/v0.2.6/" in path or "/releases/download/v0.2.1/" in path:
+            body = b"#!/bin/sh\necho fake " + path.encode()
             return httpx.Response(
-                302,
-                headers={
-                    "location": f"{binaries.REPO}/releases/download/v0.2.5/{asset}"
-                },
+                200, content=body, headers={"content-length": str(len(body))}
             )
-        if "/releases/download/v0.2.5/" in path:
-            return httpx.Response(200, content=b"#!/bin/sh\necho fake " + path.encode())
         return httpx.Response(404)
 
     monkeypatch.setattr(
@@ -85,17 +93,24 @@ def test_install_downloads_both_into_config_bin(cfg, releases, monkeypatch, caps
         assert b"fake" in path.read_bytes()
         if sys.platform != "win32":
             assert os.access(path, os.X_OK)
-        assert f"{name} v0.2.5 -> {path}" in out
-    assert any("latest/download/relayd-linux-amd64" in u for u in releases)
+        assert "v0.2.6" in out
+    assert "contribute this machine" in out and "run a scheduler" in out
+    assert any(
+        u.endswith("/releases/download/v0.2.6/relayd-linux-amd64") for u in releases
+    )
+    assert binaries.installed_versions() == {
+        "relayd": "v0.2.6",
+        "relay-agent": "v0.2.6",
+    }
 
 
 def test_install_agent_only_and_pinned_version(cfg, releases, monkeypatch):
     monkeypatch.setattr(binaries, "this_platform", lambda: ("darwin", "arm64"))
-    install.run(argparse.Namespace(version="0.2.5", agent_only=True))
+    install.run(argparse.Namespace(version="0.2.1", agent_only=True))
     assert (cfg / "bin" / "relay-agent").exists()
     assert not (cfg / "bin" / "relayd").exists()
     assert releases == [
-        f"{binaries.REPO}/releases/download/v0.2.5/relay-agent-darwin-arm64"
+        f"{binaries.REPO}/releases/download/v0.2.1/relay-agent-darwin-arm64"
     ]
 
 
@@ -144,3 +159,45 @@ def test_install_latest_missing_says_so(cfg, releases, monkeypatch, capsys):
     with pytest.raises(SystemExit):
         install.run(argparse.Namespace(version=None, agent_only=True))
     assert "not public" in capsys.readouterr().err
+
+
+def test_install_skips_a_binary_already_at_that_version(
+    cfg, releases, monkeypatch, capsys
+):
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("linux", "amd64"))
+    install.run(argparse.Namespace(version=None, agent_only=True))
+    downloads = [u for u in releases if "/download/" in u]
+    assert len(downloads) == 1
+    install.run(argparse.Namespace(version=None, agent_only=True))
+    assert [u for u in releases if "/download/" in u] == downloads
+    assert "already installed" in capsys.readouterr().out
+
+
+def test_install_hint_quotes_a_path_with_spaces(
+    cfg, releases, monkeypatch, capsys, tmp_path
+):
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("darwin", "arm64"))
+    monkeypatch.setattr(
+        profile, "config_dir", lambda: tmp_path / "Application Support" / "relay"
+    )
+    install.run(argparse.Namespace(version=None, agent_only=True, no_path=True))
+    out = capsys.readouterr().out
+    if sys.platform == "win32":
+        want = f'"{tmp_path / "Application Support" / "relay" / "bin" / "relay-agent"}" --scheduler'
+    else:
+        want = '"$HOME/Application Support/relay/bin/relay-agent" --scheduler'
+    assert want in out
+
+
+def test_install_adds_bin_to_the_shell_rc(cfg, releases, monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("darwin", "arm64"))
+    install.run(argparse.Namespace(version=None, agent_only=True))
+    out = capsys.readouterr().out
+    assert "added to ~/.zshrc; restart your shell or run: source ~/.zshrc" in out
+    assert "\n  relay-agent --scheduler" in out
+    assert "or add" not in out
+    rc = (tmp_path / ".zshrc").read_text()
+    assert 'export PATH="$HOME/relay/bin:$PATH"' in rc
+    install.run(argparse.Namespace(version=None, agent_only=True))
+    assert (tmp_path / ".zshrc").read_text().count("relay/bin") == 1
+    assert "already in ~/.zshrc" in capsys.readouterr().out

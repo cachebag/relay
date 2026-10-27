@@ -9,6 +9,60 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Added
+
+- **`relay install` puts the binaries on your PATH.** It appends one line to
+  your shell's startup file (`~/.zshrc`, `~/.bash_profile` or `~/.bashrc`,
+  fish's `config.fish`) or, on Windows, to the user PATH in the registry, and
+  says what to do next: restart the shell or `source` the file. Runs again
+  without duplicating anything. `--no-path` skips it.
+  ([#133](https://github.com/cachebag/relay/pull/133))
+
+### Fixed
+
+- **`relay scheduler start` returns as soon as relayd is up.** It used to
+  wait the full timeout on every start after the first, for an admin token
+  line that only prints once. With `--public` it now also makes the first
+  request itself, so the HTTPS certificate is in place before anyone uses
+  the address, and `status` re-reads the public address from the log, so a
+  restart under a new name is shown correctly. Ctrl+C during the wait leaves
+  relayd running and says so.
+  ([#134](https://github.com/cachebag/relay/pull/134))
+- **A trailing slash on the scheduler address no longer breaks the agent.**
+  Chat apps add one when they turn the address into a link, and the agent
+  then asked for `//nodes/heartbeat`, which the scheduler redirected and
+  refused, shown as "can't reach scheduler" forever. `relay-agent` and
+  `relay-agent leave` strip it. ([#130](https://github.com/cachebag/relay/pull/130))
+- **A pool created from the dashboard's join box logs the dashboard in.**
+  Before, the pool was made and the login saved, but the dashboard stayed
+  logged out until it was restarted.
+  ([#131](https://github.com/cachebag/relay/pull/131))
+- **The dashboard's jobs table scrolls on its own, newest first.** With
+  more jobs than fit on screen, the newest rows were below a clip and could
+  not be reached. The table now owns its height and the job just submitted
+  is the top row. ([#132](https://github.com/cachebag/relay/pull/132))
+
+## [0.2.7] - 2026-10-26
+
+### Added
+
+- **`relay scheduler start`, `stop`, `status`.** Runs `relayd` in the
+  background, with its log and database in the relay config folder, and keeps
+  the server admin token it prints on first start, so `relay pool create` and
+  the dashboard no longer ask for it. With `--public`, the Tailscale auth key
+  is asked for once and saved, and the public address is kept too; with no
+  login saved, the CLI and dashboard default to it. `--port` and `--name` pass
+  through. A `relayd` that exits right away is reported with the end of its
+  log. ([#125](https://github.com/cachebag/relay/pull/125))
+
+### Changed
+
+- **`relay install` shows what it's doing.** A progress bar per binary with
+  size and speed, the real release tag instead of `latest`, a skip when that
+  version is already installed, and a paste-ready command at the end with the
+  path quoted, since it has a space on macOS.
+  ([#125](https://github.com/cachebag/relay/pull/125))
+
 ## [0.2.6] - 2026-10-26
 
 ### Added
@@ -345,7 +399,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/cachebag/relay/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/cachebag/relay/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/cachebag/relay/compare/v0.2.1...v0.2.5
 [0.2.1]: https://github.com/cachebag/relay/compare/v0.2.0...v0.2.1

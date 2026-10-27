@@ -6,7 +6,16 @@ Release assets are named `relayd-<os>-<arch>` (`.exe` on Windows), where `<os>-<
 
 ## Run the scheduler
 
-With the CLI installed, `relay install` downloads `relayd` and `relay-agent` for this machine into `relay/bin` under your config folder and prints where. Or fetch `relayd` by hand:
+With the CLI installed:
+
+```sh
+relay install              # downloads relayd and relay-agent for this machine
+relay scheduler start      # runs relayd in the background on :8080
+```
+
+`start` keeps the server admin token that `relayd` prints on first start, so `relay pool create` and the dashboard use it without being asked. `relay scheduler status` shows the address and whether it's running, `relay scheduler stop` stops it, and the log is `relayd.log` in your relay config folder. Add `--public` for an address that works from any network; see [TAILSCALE.md](TAILSCALE.md).
+
+Or run `relayd` by hand:
 
 ```sh
 curl -LO https://github.com/cachebag/relay/releases/latest/download/relayd-linux-amd64
@@ -14,7 +23,7 @@ chmod +x relayd-linux-amd64
 ./relayd-linux-amd64                  # listens on :8080; leave it running
 ```
 
-The first time it starts, `relayd` prints a server admin token. Save it. It is the only thing that can create pools on this scheduler, so strangers can't make pools on your server once it is reachable from the internet. If you lose it, `./relayd-linux-amd64 --new-admin-token` prints a new one and exits.
+The first time it starts, `relayd` prints a server admin token. Save it. It is the only thing that can create pools on this scheduler, so strangers can't make pools on your server once it is reachable from the internet. If you lose it, `./relayd-linux-amd64 --new-admin-token` prints a new one and exits. `relayd` keeps its database, `relay.db`, in the folder you start it from; `relay scheduler start` always uses the config folder.
 
 ## Create a pool
 

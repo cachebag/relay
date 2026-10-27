@@ -137,3 +137,20 @@ func TestClearLocalData(t *testing.T) {
 		}
 	})
 }
+
+// Verifies that leave strips a trailing slash from the scheduler address too.
+func TestLeaveTrailingSlash(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	if err := Leave(context.Background(), srv.Client(), srv.URL+"/", "n1", "tok"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/nodes/n1" {
+		t.Errorf("leave went to %q, want /nodes/n1", gotPath)
+	}
+}
