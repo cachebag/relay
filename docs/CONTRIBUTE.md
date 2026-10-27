@@ -20,7 +20,23 @@ If you have the `relay` CLI (see [SUBMIT.md](SUBMIT.md)), it downloads the right
 relay install --agent-only
 ```
 
-It goes into `relay/bin` under your config folder and the command prints the path. Then run it with the address and token from your admin, as below.
+It goes into `relay/bin` under your config folder and puts that folder on your PATH. Then log in once with the address and token from your admin, and start contributing:
+
+```sh
+relay login --scheduler http://<scheduler address>:8080 --pool-token <pool token> --name <your name>
+relay contribute
+```
+
+`relay contribute` runs the agent in the background for the pool you are logged in to, with your saved token and name. The terminal is free again and the agent keeps going. If it dies in its first ten seconds, the command says so and shows the last line of its log.
+
+```sh
+relay contribute status   # which pool, and the agent's process ID
+relay contribute stop     # stops the agent; its current job goes back to the queue
+```
+
+In the dashboard, `a` does the same start and stop, and the top bar shows `this machine: contributing` while it runs. The agent's output is in `relay-agent.log` in your relay config folder. `stop` only knows about agents started this way; one you ran by hand in a terminal is stopped with Ctrl+C there.
+
+To run the agent by hand instead, use the commands below.
 
 ## Linux and macOS
 
