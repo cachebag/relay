@@ -1,4 +1,3 @@
-
 import argparse
 import asyncio
 import json
@@ -57,13 +56,19 @@ def test_start_launches_agent_with_saved_pool(cfg, monkeypatch):
         seen["options"] = options
         return FakeProcess()
 
-    monkeypatch.setattr(contribution, "find_agent", lambda: "relay-agent-test")
+    # The CLI uses the same binary resolver as `relay install`.
+    def fake_find(name):
+        seen["binary_name"] = name
+        return "relay-agent-test"
+
+    monkeypatch.setattr(contribution.binaries, "find", fake_find)
     monkeypatch.setattr(contribution.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(contribution, "STARTUP_SECONDS", 0)
 
     pid, log_path = contribution.start(SAVED, SCHED)
 
     assert pid == 4321
+    assert seen["binary_name"] == "relay-agent"
     assert seen["argv"] == [
         "relay-agent-test",
         "--scheduler",
@@ -78,15 +83,10 @@ def test_start_launches_agent_with_saved_pool(cfg, monkeypatch):
     assert Path(seen["options"]["stdout"].name) == log_path
     assert log_path == cfg / "relay-agent.log"
     assert (cfg / "relay-agent.pid").read_text(encoding="utf-8") == "4321\n"
-    assert json.loads(
-        (cfg / "relay-agent.state.json").read_text()
-    )["pool_id"] == "p1"
+    assert json.loads((cfg / "relay-agent.state.json").read_text())["pool_id"] == "p1"
 
     if sys.platform == "win32":
-        assert (
-            seen["options"]["creationflags"]
-            == subprocess.CREATE_NEW_PROCESS_GROUP
-        )
+        assert seen["options"]["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         assert seen["options"]["start_new_session"] is True
 
@@ -104,13 +104,12 @@ def test_start_reports_last_log_line_when_agent_exits(cfg, monkeypatch):
         options["stdout"].flush()
         return ExitedProcess()
 
-    monkeypatch.setattr(contribution, "find_agent", lambda: "relay-agent-test")
+    monkeypatch.setattr(
+        contribution.binaries, "find", lambda name: "relay-agent-test"
+    )
     monkeypatch.setattr(contribution.subprocess, "Popen", fake_popen)
 
-    with pytest.raises(
-        contribution.ContributionError,
-        match="invalid pool token",
-    ):
+    with pytest.raises(contribution.ContributionError, match="invalid pool token"):
         contribution.start(SAVED, SCHED)
 
     # Do not leave a PID pointing at a process that already exited.
@@ -120,13 +119,12 @@ def test_start_reports_last_log_line_when_agent_exits(cfg, monkeypatch):
 
 def test_start_rejects_an_existing_agent(cfg, monkeypatch):
     tracked_agent(cfg)
-    monkeypatch.setattr(contribution, "find_agent", lambda: "relay-agent-test")
+    monkeypatch.setattr(
+        contribution.binaries, "find", lambda name: "relay-agent-test"
+    )
     monkeypatch.setattr(contribution, "_pid_alive", lambda pid: True)
 
-    with pytest.raises(
-        contribution.ContributionError,
-        match="already contributing",
-    ):
+    with pytest.raises(contribution.ContributionError, match="already contributing"):
         contribution.start(SAVED, SCHED)
 
 
@@ -158,21 +156,14 @@ def test_stop_signals_the_tracked_process(cfg, monkeypatch):
         signals.append((pid, sig))
 
     # Before the signal the process is alive; afterward it has exited.
-    monkeypatch.setattr(
-        contribution,
-        "_pid_alive",
-        lambda pid: not signals,
-    )
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: not signals)
     monkeypatch.setattr(contribution.os, "kill", fake_kill)
 
     stopped = contribution.stop()
 
     expected_signal = (
-        signal.CTRL_BREAK_EVENT
-        if sys.platform == "win32"
-        else signal.SIGTERM
+        signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGTERM
     )
-
     assert signals == [(4321, expected_signal)]
     assert stopped["pool_name"] == "lab"
     assert not (cfg / "relay-agent.pid").exists()
@@ -204,12 +195,7 @@ def test_cli_contribute_uses_saved_login(cfg, monkeypatch, capsys):
 
 
 def test_cli_contribute_status_and_stop(cfg, monkeypatch, capsys):
-    state = {
-        "pid": 4321,
-        "pool_name": "lab",
-        "pool_id": "p1",
-    }
-
+    state = {"pid": 4321, "pool_name": "lab", "pool_id": "p1"}
     monkeypatch.setattr(contribution, "status", lambda: state)
     monkeypatch.setattr(contribution, "stop", lambda: state)
 
@@ -222,26 +208,14 @@ def test_cli_contribute_status_and_stop(cfg, monkeypatch, capsys):
 
 def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
     profile.save(SAVED)
-
-    # Prevent dashboard refreshes from contacting a real scheduler.
-    monkeypatch.setattr(
-        nodes_cmd,
-        "fetch",
-        lambda scheduler, token: [],
-    )
-    monkeypatch.setattr(
-        jobs_cmd,
-        "fetch",
-        lambda scheduler, token: [],
-    )
+    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token: [])
+    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token: [])
 
     state = {"running": False}
     calls = []
 
     def fake_status():
-        if state["running"]:
-            return {"pid": 4321, "pool_name": "lab"}
-        return None
+        return {"pid": 4321, "pool_name": "lab"} if state["running"] else None
 
     def fake_start(prof, scheduler):
         calls.append(("start", prof["pool_token"], scheduler))
@@ -263,7 +237,6 @@ def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
         async with app.run_test(size=(150, 40)) as pilot:
             await app.workers.wait_for_complete()
             await pilot.pause()
-
             indicator = app.query_one("#contribution", Static)
             assert "not contributing" in str(indicator.render())
 
@@ -271,61 +244,35 @@ def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
             await pilot.press("a")
             await app.workers.wait_for_complete()
             await pilot.pause()
-
-            assert "this machine: contributing" in str(
-                indicator.render()
-            )
+            assert "this machine: contributing" in str(indicator.render())
             assert indicator.has_class("running")
 
             # Pressing A a second time uses contribution.stop().
             await pilot.press("a")
             await app.workers.wait_for_complete()
             await pilot.pause()
-
             assert "not contributing" in str(indicator.render())
             assert not indicator.has_class("running")
 
     asyncio.run(run())
-
-    assert calls == [
-        ("start", "tok", SCHED),
-        ("stop",),
-    ]
+    assert calls == [("start", "tok", SCHED), ("stop",)]
 
 
 def test_dashboard_ignores_toggle_while_busy(cfg, monkeypatch):
     profile.save(SAVED)
-
-    monkeypatch.setattr(
-        nodes_cmd,
-        "fetch",
-        lambda scheduler, token: [],
-    )
-    monkeypatch.setattr(
-        jobs_cmd,
-        "fetch",
-        lambda scheduler, token: [],
-    )
-
+    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token: [])
+    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token: [])
     calls = []
     monkeypatch.setattr(contribution, "status", lambda: None)
-    monkeypatch.setattr(
-        contribution,
-        "start",
-        lambda *args: calls.append("start"),
-    )
+    monkeypatch.setattr(contribution, "start", lambda *args: calls.append("start"))
 
     app = DashApp(SCHED)
 
     async def run():
         async with app.run_test(size=(150, 40)):
             await app.workers.wait_for_complete()
-
-            # Simulate a start/stop operation already in progress.
             app._contribution_busy = True
             app.action_toggle_contribution()
 
     asyncio.run(run())
-
-    # The second action must not launch another agent.
     assert calls == []

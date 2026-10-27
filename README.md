@@ -33,37 +33,19 @@ relay install
 
 `relayd` and `relay-agent` are meant to run as background processes on your machine. You can pass `--agent-only` if you only plan on contributing to a pool. Running the scheduler is meant for those who plan to adminstrate / create their own pool and invite others.
 
-`relay install` prints where the binaries went (`~/.config/relay/bin` on Linux, `~/Library/Application Support/relay/bin` on macOS, `%AppData%\relay\bin` on Windows). The examples below assume that folder is on your `PATH`; otherwise use the full path.
+`relay install` prints where the binaries went (`~/.config/relay/bin` on Linux, `~/Library/Application Support/relay/bin` on macOS, `%AppData%\relay\bin` on Windows). `relay contribute` finds the installed agent there even before your shell's `PATH` is refreshed.
 
 **Contribute a machine.** Log in once using the scheduler address and pool token
-your admin gave you, then start contributing with the CLI:
+your admin gave you:
 
 ```sh
 relay login --scheduler http://<scheduler address>:8080 --pool-token <pool token> --name <your name>
 relay contribute
 ```
 
-`relay contribute` starts `relay-agent` in the background for your currently
-selected pool, using your saved token and name. The agent binary must be on
-your `PATH` (for example, after `relay install`). You do not need to leave the
-terminal open.
-
-Check or stop your local agent at any time:
-
-```sh
-relay contribute status
-relay contribute stop
-```
-
-`status` shows whether the agent is running and which pool it belongs to.
-The agent writes output to `relay-agent.log` in Relay's user config directory,
-alongside `relay-agent.pid` and `relay-agent.state.json`. If it exits during
-the first ten seconds, the CLI reports the last log line as an error.
-
-You can also run `relay dash` and press **a** to start or stop contributing.
-The dashboard's top bar shows **this machine: contributing** while the local
-agent runs. The CLI stop command only manages agents launched through
-`relay contribute`, not agents started manually in another terminal.
+Use `relay contribute status` or `relay contribute stop` to manage the agent,
+or press **a** in `relay dash`. See [the contribution guide](docs/CONTRIBUTE.md)
+for details.
 
 Alternatively, run the agent directly in the foreground:
 
