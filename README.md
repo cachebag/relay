@@ -35,7 +35,37 @@ relay install
 
 `relay install` prints where the binaries went (`~/.config/relay/bin` on Linux, `~/Library/Application Support/relay/bin` on macOS, `%AppData%\relay\bin` on Windows). The examples below assume that folder is on your `PATH`; otherwise use the full path.
 
-**Contribute a machine.** Run the agent with the address and pool token your admin gave you:
+**Contribute a machine.** Log in once using the scheduler address and pool token
+your admin gave you, then start contributing with the CLI:
+
+```sh
+relay login --scheduler http://<scheduler address>:8080 --pool-token <pool token> --name <your name>
+relay contribute
+```
+
+`relay contribute` starts `relay-agent` in the background for your currently
+selected pool, using your saved token and name. The agent binary must be on
+your `PATH` (for example, after `relay install`). You do not need to leave the
+terminal open.
+
+Check or stop your local agent at any time:
+
+```sh
+relay contribute status
+relay contribute stop
+```
+
+`status` shows whether the agent is running and which pool it belongs to.
+The agent writes output to `relay-agent.log` in Relay's user config directory,
+alongside `relay-agent.pid` and `relay-agent.state.json`. If it exits during
+the first ten seconds, the CLI reports the last log line as an error.
+
+You can also run `relay dash` and press **a** to start or stop contributing.
+The dashboard's top bar shows **this machine: contributing** while the local
+agent runs. The CLI stop command only manages agents launched through
+`relay contribute`, not agents started manually in another terminal.
+
+Alternatively, run the agent directly in the foreground:
 
 ```sh
 relay-agent --scheduler http://<scheduler address>:8080 --pool-token <pool token>

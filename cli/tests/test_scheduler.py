@@ -1,6 +1,7 @@
 import argparse
 
 import pytest
+
 from relay import procs, profile
 from relay.commands import pool, scheduler
 

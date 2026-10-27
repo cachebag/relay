@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+
 from relay import profile
 from relay.commands import submit as submit_command
 from relay.commands.submit import submit

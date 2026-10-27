@@ -1,6 +1,7 @@
 import argparse
 
 import httpx
+
 from relay.commands import status
 from relay.commands.status import fetch
 

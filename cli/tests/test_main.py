@@ -3,6 +3,7 @@ import sys
 
 import httpx
 import pytest
+
 import relay.__main__ as relay_main
 
 
