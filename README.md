@@ -33,9 +33,21 @@ relay install
 
 `relayd` and `relay-agent` are meant to run as background processes on your machine. You can pass `--agent-only` if you only plan on contributing to a pool. Running the scheduler is meant for those who plan to adminstrate / create their own pool and invite others.
 
-`relay install` prints where the binaries went (`~/.config/relay/bin` on Linux, `~/Library/Application Support/relay/bin` on macOS, `%AppData%\relay\bin` on Windows). The examples below assume that folder is on your `PATH`; otherwise use the full path.
+`relay install` prints where the binaries went (`~/.config/relay/bin` on Linux, `~/Library/Application Support/relay/bin` on macOS, `%AppData%\relay\bin` on Windows). `relay contribute` finds the installed agent there even before your shell's `PATH` is refreshed.
 
-**Contribute a machine.** Run the agent with the address and pool token your admin gave you:
+**Contribute a machine.** Log in once using the scheduler address and pool token
+your admin gave you:
+
+```sh
+relay login --scheduler http://<scheduler address>:8080 --pool-token <pool token> --name <your name>
+relay contribute
+```
+
+Use `relay contribute status` or `relay contribute stop` to manage the agent,
+or press **a** in `relay dash`. See [the contribution guide](docs/CONTRIBUTE.md)
+for details.
+
+Alternatively, run the agent directly in the foreground:
 
 ```sh
 relay-agent --scheduler http://<scheduler address>:8080 --pool-token <pool token>

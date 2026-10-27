@@ -8,6 +8,7 @@ import httpx
 from relay import profile
 from relay.commands import (
     auth,
+    contribute,
     credits,
     dash,
     install,
@@ -69,6 +70,7 @@ def main() -> None:
     pool.register(sub)
     dash.register(sub)
     auth.register(sub)
+    contribute.register(sub)
     credits.register(sub)
     node.register(sub)
     install.register(sub)

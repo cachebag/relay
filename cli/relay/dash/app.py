@@ -10,7 +10,8 @@ from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Input, Label, Static
 
-from relay import profile
+# Share agent lifecycle logic with the `relay contribute` CLI command.
+from relay import contribution, profile
 from relay.commands import jobs as jobs_cmd
 from relay.commands import node as node_cmd
 from relay.commands import nodes as nodes_cmd
@@ -89,6 +90,8 @@ class DashApp(App[None]):
     ENABLE_COMMAND_PALETTE = False
 
     BINDINGS: ClassVar[list[BindingType]] = [
+        # A starts or stops the agent on this machine.
+        Binding("a", "toggle_contribution", "Contribute"),
         Binding("s", "submit", "Submit"),
         Binding("k", "credits", "Credits"),
         Binding("t", "rotate_token", "Rotate token"),
@@ -117,6 +120,9 @@ class DashApp(App[None]):
         self.job_rows: list[dict] = []
         self.error: str | None = None
         self.invite_text = ""
+        # Prevent overlapping start/stop requests while the worker is active.
+        self._contribution_busy = False
+        self._contribution_action = ""
         self.register_theme(theme.RELAY)
         self.theme = "relay"
 
@@ -125,6 +131,8 @@ class DashApp(App[None]):
             yield Static("relay", classes="wordmark")
             yield Static("", id="where", classes="where")
             yield Static("", id="totals", classes="totals")
+            # Local agent state is separate from the scheduler's node totals.
+            yield Static("", id="contribution", classes="contribution")
         with Horizontal(id="invite-bar"):
             yield Static("", id="invite-key", classes="key")
             yield Static("", id="invite-line", classes="invite")
@@ -143,7 +151,7 @@ class DashApp(App[None]):
                 id="jobs-empty",
                 classes="empty",
             )
-            # Fills the rest of the screen and scrolls on its own, newest first.
+            # Let the jobs table use the remaining space and scroll internally.
             yield JobsTable(id="jobs")
             yield Label("", id="error")
         with Horizontal(id="submit-bar"):
@@ -175,6 +183,7 @@ class DashApp(App[None]):
 
     def joined(self, prof: dict | str | None) -> None:
         logged_in = bool(self.prof.get("pool_token"))
+        # The join dialog returns "new" when a user chooses to create a pool.
         if prof == "new":
             self.push_screen(NewPoolModal(can_cancel=logged_in), self.joined)
         elif isinstance(prof, dict) and prof:
@@ -212,6 +221,7 @@ class DashApp(App[None]):
         self.query_one("#totals", Static).update(
             totals(self.node_rows) if logged_in else ""
         )
+        self.redraw_contribution()
         self.invite_text = invite
         self.query_one("#invite-key", Static).update("invite" if logged_in else "")
         self.query_one("#invite-line", Static).update(invite)
@@ -220,15 +230,91 @@ class DashApp(App[None]):
         self.query_one("#submit-bar").display = logged_in
         hostnames = {n["id"]: n["hostname"] for n in self.node_rows}
         self.query_one(NodesTable).show(self.node_rows)
+        # Show the newest jobs first while retaining all rows for scrolling.
         newest_first = sorted(
-            self.job_rows, key=lambda j: j.get("created_at", ""), reverse=True
+            self.job_rows, key=lambda job: job.get("created_at", ""), reverse=True
         )
         self.query_one(JobsTable).show(newest_first, hostnames)
         self.query_one("#error", Label).update(self.error or "")
 
+    def redraw_contribution(self) -> None:
+        """Update the dashboard indicator from the locally tracked agent."""
+        indicator = self.query_one("#contribution", Static)
+
+        if self._contribution_busy:
+            # Starting the agent can take several seconds.
+            indicator.update(f"this machine: {self._contribution_action}...")
+            indicator.set_class(False, "running")
+            return
+
+        try:
+            running = contribution.status()
+        except contribution.ContributionError, OSError:
+            indicator.update("this machine: status unavailable")
+            indicator.set_class(False, "running")
+            return
+
+        label = (
+            "this machine: contributing"
+            if running is not None
+            else "this machine: not contributing"
+        )
+        indicator.update(label)
+        indicator.set_class(running is not None, "running")
+
     # -- actions ----------------------------------------------------------
 
     def action_refresh(self) -> None:
+        self.refresh_data()
+
+    def action_toggle_contribution(self) -> None:
+        """Toggle the local agent without blocking the dashboard UI."""
+        if self._contribution_busy:
+            return
+
+        try:
+            running = contribution.status()
+        except (contribution.ContributionError, OSError) as exc:
+            self.notify(str(exc), severity="error")
+            return
+
+        if running is None and not self.prof.get("pool_token"):
+            self.notify("not logged in, run relay login first", severity="warning")
+            return
+
+        # Capture credentials now in case the user switches pools later.
+        self._contribution_busy = True
+        self._contribution_action = "stopping" if running else "starting"
+        self.redraw_contribution()
+        self.toggle_contribution(running is not None, self.prof.copy(), self.scheduler)
+
+    # Keep agent operations in their own worker group so periodic dashboard
+    # refreshes cannot cancel a pending startup or shutdown.
+    @work(exclusive=True, thread=True, group="contribution")
+    def toggle_contribution(
+        self, was_running: bool, prof: dict, scheduler: str
+    ) -> None:
+        """Start or stop through the same functions used by the CLI."""
+        try:
+            if was_running:
+                contribution.stop()
+                message = "stopped contributing"
+            else:
+                contribution.start(prof, scheduler)
+                message = f"contributing to {prof.get('pool_name', 'your pool')}"
+        except (contribution.ContributionError, OSError) as exc:
+            # Textual widgets must be updated on the main UI thread.
+            self.call_from_thread(self.finish_contribution, str(exc), True)
+            return
+
+        self.call_from_thread(self.finish_contribution, message, False)
+
+    def finish_contribution(self, message: str, failed: bool) -> None:
+        """Re-enable the toggle and refresh the UI when the worker finishes."""
+        self._contribution_busy = False
+        self._contribution_action = ""
+        self.redraw_contribution()
+        self.notify(message, severity="error" if failed else "information")
         self.refresh_data()
 
     def action_copy_invite(self) -> None:
