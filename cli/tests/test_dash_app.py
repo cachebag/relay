@@ -3,14 +3,13 @@ import json
 
 import httpx
 import pytest
-from textual.widgets import Input
-
 from relay import profile
 from relay.dash import DashApp, invite_line, parse_invite
 from relay.dash.admin import AdminModal
 from relay.dash.credits import CreditsModal
 from relay.dash.job import JobModal
 from relay.dash.modals import JoinModal, NewPoolModal, PoolPicker
+from textual.widgets import Input
 
 _RealClient = httpx.Client
 

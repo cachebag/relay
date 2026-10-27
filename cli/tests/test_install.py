@@ -5,7 +5,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-
 from relay import binaries, pathsetup, profile
 from relay.commands import install
 

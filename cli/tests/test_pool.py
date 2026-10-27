@@ -3,7 +3,6 @@ import json
 
 import httpx
 import pytest
-
 from relay.commands import pool
 from relay.commands.pool import create
 

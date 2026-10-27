@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import httpx
-
 import relay.commands.nodes as nodes_command
 from relay.commands.nodes import fetch, seconds_ago, status
 

@@ -2,7 +2,6 @@ import argparse
 from datetime import UTC, datetime
 
 import httpx
-
 from relay.commands import jobs
 
 

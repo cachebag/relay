@@ -1,7 +1,6 @@
 import json
 
 import pytest
-
 from relay import profile
 
 LAB = {

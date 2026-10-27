@@ -50,6 +50,9 @@ Screen { background: $background; }
 #topbar .wordmark { color: $accent; text-style: bold; width: auto; }
 #topbar .where { color: $text; width: 1fr; padding: 0 1; }
 #topbar .totals { color: $text-muted; width: auto; }
+/* Local contribution status is green while the tracked agent is running. */
+#topbar .contribution { color: $text-muted; width: auto; padding-left: 1; }
+#topbar .contribution.running { color: $success; text-style: bold; }
 
 #invite-bar { height: 1; padding: 0 1; }
 #invite-bar .key { color: $text-muted; width: auto; padding-right: 1; }
