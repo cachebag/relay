@@ -69,10 +69,7 @@ def run_stop(args) -> None:
     if stopped is None:
         print("not contributing")
     else:
-        print(
-            f"stopped contributing to {_pool_label(stopped)} "
-            f"(PID {stopped['pid']})"
-        )
+        print(f"stopped contributing to {_pool_label(stopped)} (PID {stopped['pid']})")
 
 
 def run_status(args) -> None:
@@ -86,7 +83,4 @@ def run_status(args) -> None:
     if running is None:
         print("not contributing")
     else:
-        print(
-            f"contributing to {_pool_label(running)} "
-            f"(PID {running['pid']})"
-        )
+        print(f"contributing to {_pool_label(running)} (PID {running['pid']})")

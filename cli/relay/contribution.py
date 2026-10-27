@@ -85,7 +85,7 @@ def status() -> dict | None:
 
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         state = {}
     if not isinstance(state, dict) or state.get("pid") != pid:
         state = {}
@@ -106,9 +106,7 @@ def stop() -> dict | None:
     pid = running["pid"]
     # SIGTERM would force-kill a Windows process. Ctrl+Break reaches the
     # os.Interrupt handler already registered by the Go agent instead.
-    stop_signal = (
-        signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGTERM
-    )
+    stop_signal = signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGTERM
     try:
         os.kill(pid, stop_signal)
     except OSError as exc:

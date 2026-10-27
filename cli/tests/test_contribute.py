@@ -104,9 +104,7 @@ def test_start_reports_last_log_line_when_agent_exits(cfg, monkeypatch):
         options["stdout"].flush()
         return ExitedProcess()
 
-    monkeypatch.setattr(
-        contribution.binaries, "find", lambda name: "relay-agent-test"
-    )
+    monkeypatch.setattr(contribution.binaries, "find", lambda name: "relay-agent-test")
     monkeypatch.setattr(contribution.subprocess, "Popen", fake_popen)
 
     with pytest.raises(contribution.ContributionError, match="invalid pool token"):
@@ -119,9 +117,7 @@ def test_start_reports_last_log_line_when_agent_exits(cfg, monkeypatch):
 
 def test_start_rejects_an_existing_agent(cfg, monkeypatch):
     tracked_agent(cfg)
-    monkeypatch.setattr(
-        contribution.binaries, "find", lambda name: "relay-agent-test"
-    )
+    monkeypatch.setattr(contribution.binaries, "find", lambda name: "relay-agent-test")
     monkeypatch.setattr(contribution, "_pid_alive", lambda pid: True)
 
     with pytest.raises(contribution.ContributionError, match="already contributing"):

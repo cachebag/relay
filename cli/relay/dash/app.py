@@ -249,7 +249,7 @@ class DashApp(App[None]):
 
         try:
             running = contribution.status()
-        except (contribution.ContributionError, OSError):
+        except contribution.ContributionError, OSError:
             indicator.update("this machine: status unavailable")
             indicator.set_class(False, "running")
             return
