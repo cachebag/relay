@@ -6,7 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	_ "io"
 	"net/http"
+	"strings"
+	_ "strings"
 
 	"github.com/cachebag/relay/internal/store"
 )
@@ -15,6 +19,7 @@ import (
 // This allows callers to distinguish an invalid token from other
 // heartbeat errors, such as connection failures.
 var ErrBadToken = errors.New("pool token rejected")
+var ErrTokenRotated = errors.New(store.RotatedTokenMsg)
 
 // ErrPoolConflict is returned when the node ID already belongs to another pool.
 var ErrPoolConflict = errors.New(
@@ -25,6 +30,7 @@ var ErrPoolConflict = errors.New(
 // admin removed this machine from the pool. Unlike a connection failure,
 // retrying will never succeed, so the agent stops.
 var ErrRemoved = errors.New("removed from pool by admin")
+var ErrTokenRotated = errors.New(store.RotatedTokenMsg)
 
 // heartbeat contains the node information and pool token
 // that are sent to the scheduler with each heartbeat.
@@ -93,6 +99,10 @@ func Send(
 	// A 403 Forbidden response means the scheduler rejected
 	// the pool token provided by the agent.
 	if resp.StatusCode == http.StatusForbidden {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if strings.Contains(string(msg), store.RotatedTokenMsg) {
+			return fmt.Errorf("%w: %w", ErrBadToken, ErrTokenRotated)
+		}
 		return fmt.Errorf(
 			"%w: scheduler returned %d",
 			ErrBadToken,
