@@ -241,7 +241,7 @@ def test_rotate_invite_uses_public_url(monkeypatch, capsys, scheduler, _invite, 
 
 @pytest.mark.parametrize("scheduler, expected_invite, needs_hint", INVITE_CASES)
 def test_create_invite_empty_public_url_unchanged(
-        monkeypatch, capsys, scheduler, expected_invite, needs_hint
+    monkeypatch, capsys, scheduler, expected_invite, needs_hint
 ):
     def handler(req):
         return httpx.Response(
@@ -267,7 +267,7 @@ def test_create_invite_empty_public_url_unchanged(
 
 @pytest.mark.parametrize("scheduler, expected_invite, needs_hint", INVITE_CASES)
 def test_rotate_invite_empty_public_url_unchanged(
-        monkeypatch, capsys, scheduler, expected_invite, needs_hint
+    monkeypatch, capsys, scheduler, expected_invite, needs_hint
 ):
     def handler(req):
         return httpx.Response(200, json={"token": "newtok", "public_url": ""})

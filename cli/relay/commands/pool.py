@@ -158,12 +158,11 @@ def rotate_token(
     return r.json()["token"]
 
 
-
 def rotate(
-        scheduler: str,
-        pool_id: str,
-        admin_token: str,
-        client: httpx.Client | None = None,
+    scheduler: str,
+    pool_id: str,
+    admin_token: str,
+    client: httpx.Client | None = None,
 ) -> dict:
     """Rotate the join token and return the whole response.
 
