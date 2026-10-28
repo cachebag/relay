@@ -188,3 +188,109 @@ def test_rotate_invite_handles_scheduler_addresses(
     assert f"relay-agent --scheduler {expected_invite} --pool-token newtok" in out
     assert ("replace <your address>" in out) is needs_hint
     assert ("Tailscale name" in out) is needs_hint
+
+
+
+# #113: with relayd --public, the API returns public_url and the invite uses
+# it as-is, with no "<your address>" hint, whatever --scheduler the admin used.
+PUBLIC_URL = "https://relay.tail1234.ts.net"
+
+
+@pytest.mark.parametrize("scheduler, _invite, _hint", INVITE_CASES)
+def test_create_invite_uses_public_url(monkeypatch, capsys, scheduler, _invite, _hint):
+    def handler(req):
+        return httpx.Response(
+            201,
+            json={
+                "id": "p1",
+                "name": "lab",
+                "token": "jt",
+                "admin_token": "at",
+                "public_url": PUBLIC_URL,
+            },
+        )
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    pool.run_create(
+        argparse.Namespace(scheduler=scheduler, name="lab", admin_token="sat")
+    )
+
+    out = capsys.readouterr().out
+    assert f"relay-agent --scheduler {PUBLIC_URL} --pool-token jt" in out
+    assert "<your address>" not in out
+    assert "Tailscale name" not in out
+
+
+@pytest.mark.parametrize("scheduler, _invite, _hint", INVITE_CASES)
+def test_rotate_invite_uses_public_url(monkeypatch, capsys, scheduler, _invite, _hint):
+    def handler(req):
+        return httpx.Response(200, json={"token": "newtok", "public_url": PUBLIC_URL})
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    monkeypatch.setattr(
+        pool.profile, "load", lambda: {"pool_id": "p1", "pool_name": "lab"}
+    )
+    pool.run_rotate_token(
+        argparse.Namespace(scheduler=scheduler, pool="p1", admin_token="at", yes=True)
+    )
+
+    out = capsys.readouterr().out
+    assert f"relay-agent --scheduler {PUBLIC_URL} --pool-token newtok" in out
+    assert "<your address>" not in out
+    assert "Tailscale name" not in out
+
+
+@pytest.mark.parametrize("scheduler, expected_invite, needs_hint", INVITE_CASES)
+def test_create_invite_empty_public_url_unchanged(
+        monkeypatch, capsys, scheduler, expected_invite, needs_hint
+):
+    def handler(req):
+        return httpx.Response(
+            201,
+            json={
+                "id": "p1",
+                "name": "lab",
+                "token": "jt",
+                "admin_token": "at",
+                "public_url": "",
+            },
+        )
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    pool.run_create(
+        argparse.Namespace(scheduler=scheduler, name="lab", admin_token="sat")
+    )
+
+    out = capsys.readouterr().out
+    assert f"relay-agent --scheduler {expected_invite} --pool-token jt" in out
+    assert ("replace <your address>" in out) is needs_hint
+
+
+@pytest.mark.parametrize("scheduler, expected_invite, needs_hint", INVITE_CASES)
+def test_rotate_invite_empty_public_url_unchanged(
+        monkeypatch, capsys, scheduler, expected_invite, needs_hint
+):
+    def handler(req):
+        return httpx.Response(200, json={"token": "newtok", "public_url": ""})
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    monkeypatch.setattr(
+        pool.profile, "load", lambda: {"pool_id": "p1", "pool_name": "lab"}
+    )
+    pool.run_rotate_token(
+        argparse.Namespace(scheduler=scheduler, pool="p1", admin_token="at", yes=True)
+    )
+
+    out = capsys.readouterr().out
+    assert f"relay-agent --scheduler {expected_invite} --pool-token newtok" in out
+    assert ("replace <your address>" in out) is needs_hint
+
+
+def test_rotate_returns_public_url():
+    def handler(req):
+        assert str(req.url) == "http://test/pools/pool1/token"
+        assert req.headers.get("Authorization") == "Bearer admintok"
+        return httpx.Response(200, json={"token": "newtok", "public_url": PUBLIC_URL})
+
+    body = pool.rotate("http://test", "pool1", "admintok", client=mock_client(handler))
+    assert body == {"token": "newtok", "public_url": PUBLIC_URL}
