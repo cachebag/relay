@@ -39,6 +39,15 @@ def _pid_alive(pid: int) -> bool:
             return kernel.WaitForSingleObject(handle, 0) == 0x102  # WAIT_TIMEOUT
         finally:
             kernel.CloseHandle(handle)
+    # If the agent is our own child, collect it once it has exited. Otherwise
+    # it lingers as a zombie, which os.kill(pid, 0) still reports as alive,
+    # and the dashboard would think a stopped agent is running forever.
+    try:
+        reaped, _ = os.waitpid(pid, os.WNOHANG)
+        if reaped == pid:
+            return False
+    except ChildProcessError:
+        pass  # not our child, for example started by an earlier CLI run
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
