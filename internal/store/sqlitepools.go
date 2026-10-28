@@ -35,7 +35,17 @@ func NewSQLitePools(db *sql.DB) (*SQLitePools, error) {
 			return nil, err
 		}
 	}
-
+	var hasPrev int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('pools') WHERE name = 'prev_token_hash'`,
+	).Scan(&hasPrev); err != nil {
+		return nil, err
+	}
+	if hasPrev == 0 {
+		if _, err := db.Exec(`ALTER TABLE pools ADD COLUMN prev_token_hash TEXT NOT NULL DEFAULT ''`); err != nil {
+			return nil, err
+		}
+	}
 	return &SQLitePools{db: db}, nil
 }
 
@@ -163,6 +173,16 @@ func (s *SQLitePools) List(ctx context.Context) ([]Pool, error) {
 }
 
 func (s *SQLitePools) SetToken(ctx context.Context, id, token string) error {
+	var oldToken string
+	switch oldErr := s.db.QueryRowContext(ctx, `SELECT token FROM pools WHERE id = ?`, id).Scan(&oldToken); {
+	case errors.Is(oldErr, sql.ErrNoRows):
+	case oldErr != nil:
+		return oldErr
+	default:
+		if _, err := s.db.ExecContext(ctx, `UPDATE pools SET prev_token_hash = ? WHERE id = ?`, HashToken(oldToken), id); err != nil {
+			return err
+		}
+	}
 	result, err := s.db.ExecContext(ctx, `UPDATE pools SET token = ? WHERE id = ?`, token, id)
 	if err != nil {
 		return err
@@ -199,4 +219,13 @@ func (s *SQLitePools) AdminTokenHash(ctx context.Context, id string) (string, er
 		return "", ErrNotFound
 	}
 	return hash, err
+}
+
+func (s *SQLitePools) WasRotated(ctx context.Context, token string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pools WHERE prev_token_hash = ? AND token != ?`,
+		HashToken(token), token,
+	).Scan(&n)
+	return n > 0, err
 }
