@@ -11,6 +11,11 @@ without a pull request link their commit instead.
 
 ### Fixed
 
+- **Stopping the agent from the dashboard no longer reports it still running.**
+  An agent started with `a` exited on stop but stayed a zombie because the
+  dashboard never collected it, so the stop was reported as failed and the
+  next `a` refused to start. Exited children are now collected.
+  ([#138](https://github.com/cachebag/relay/pull/138))
 - **Jobs go to the least-loaded machine.** The scheduler's round-robin
   position reset every 2 seconds, so jobs submitted one at a time all landed
   on the first node in the list and queued behind each other while the rest
