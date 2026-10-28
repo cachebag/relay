@@ -9,6 +9,8 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-10-28
+
 ### Fixed
 
 - **Stopping the agent from the dashboard no longer reports it still running.**
@@ -431,7 +433,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.8...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.9...HEAD
+[0.2.9]: https://github.com/cachebag/relay/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/cachebag/relay/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/cachebag/relay/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/cachebag/relay/compare/v0.2.5...v0.2.6
