@@ -78,11 +78,16 @@ Example body:
 
 ```json
 {
-  "name": "test-pool"
+  "id": "pool-id",
+  "name": "test-pool",
+  "token": "generated-pool-token",
+  "created_at": "2026-09-19T12:00:00Z",
+  "admin_token": "generated-admin-token",
+  "public_url": "https://relay.tail1234.ts.net"
 }
 ```
 
-The `name` field is required.
+`public_url` is relayd's public address when it runs with `--public`, and `""` otherwise. `relay pool create` puts it in the contributor invite, so the admin doesn't have to replace a localhost address by hand.
 
 #### Success Response
 
@@ -270,9 +275,12 @@ Example response:
 
 ```json
 {
-  "token": "new-generated-pool-token"
+  "token": "new-generated-pool-token",
+  "public_url": "https://relay.tail1234.ts.net"
 }
 ```
+
+`public_url` works the same as in `POST /pools`: relayd's public address with `--public`, `""` otherwise. `relay pool rotate-token` uses it in the invite it prints.
 
 #### Error Responses
 

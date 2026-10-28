@@ -49,6 +49,11 @@ the admin's scheduler. Relay keeps the original port in the invitation. If you
 already connect using a non-local scheduler address, the command displays that
 address unchanged without the replacement hint.
 
+If `relayd` runs with `--public`, the invitation uses its public
+`https://….ts.net` address instead, even when you create the pool through
+`localhost`, so there is nothing to replace. See
+[Run relayd on the internet](#run-relayd-on-the-internet).
+
 Every other command works on the pool you are logged in to (`relay login`), and sends its join token with each request. Nobody without a pool's join token can see its machines, jobs, or output.
 
 ## Rotate the join token
