@@ -190,7 +190,6 @@ def test_rotate_invite_handles_scheduler_addresses(
     assert ("Tailscale name" in out) is needs_hint
 
 
-
 # #113: with relayd --public, the API returns public_url and the invite uses
 # it as-is, with no "<your address>" hint, whatever --scheduler the admin used.
 PUBLIC_URL = "https://relay.tail1234.ts.net"

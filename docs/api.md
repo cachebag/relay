@@ -78,16 +78,11 @@ Example body:
 
 ```json
 {
-  "id": "pool-id",
-  "name": "test-pool",
-  "token": "generated-pool-token",
-  "created_at": "2026-09-19T12:00:00Z",
-  "admin_token": "generated-admin-token",
-  "public_url": "https://relay.tail1234.ts.net"
+  "name": "test-pool"
 }
 ```
 
-`public_url` is relayd's public address when it runs with `--public`, and `""` otherwise. `relay pool create` puts it in the contributor invite, so the admin doesn't have to replace a localhost address by hand.
+The `name` field is required.
 
 #### Success Response
 
@@ -105,9 +100,12 @@ Example response:
   "name": "test-pool",
   "token": "generated-pool-token",
   "created_at": "2026-09-19T12:00:00Z",
-  "admin_token": "generated-admin-token"
+  "admin_token": "generated-admin-token",
+  "public_url": "https://relay.tail1234.ts.net"
 }
 ```
+
+`public_url` is relayd's public address when it runs with `--public`, and `""` otherwise. `relay pool create` puts it in the contributor invite, so the admin doesn't have to replace a localhost address by hand.
 
 The pool join token and admin token are returned when the pool is created.
 

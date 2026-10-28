@@ -24,8 +24,9 @@ type nodeView struct {
 }
 
 // NewHandler creates and returns the HTTP handler for the relay API.
-func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, credits store.CreditStore, server store.ServerStore) http.Handler {
+func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, credits store.CreditStore, server store.ServerStore, opts ...Option) http.Handler {
 	mux := http.NewServeMux()
+	cfg := newHandlerConfig(opts)
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
@@ -76,7 +77,8 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		json.NewEncoder(w).Encode(struct {
 			store.Pool
 			AdminToken string `json:"admin_token"`
-		}{Pool: p, AdminToken: adminToken})
+			PublicURL  string `json:"public_url"`
+		}{Pool: p, AdminToken: adminToken, PublicURL: cfg.publicURL()})
 	})
 
 	// Lists all pools. Server admin only, like creating one.
@@ -639,8 +641,9 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(struct {
-			Token string `json:"token"`
-		}{Token: newToken})
+			Token     string `json:"token"`
+			PublicURL string `json:"public_url"`
+		}{Token: newToken, PublicURL: cfg.publicURL()})
 	})
 
 	// Returns every account's credit balance in the pool, highest first.

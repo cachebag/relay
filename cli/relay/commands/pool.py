@@ -45,6 +45,7 @@ def print_agent_invite(scheduler: str, token: str, public_url: str = "") -> None
         return
 
     invite_url, needs_address = invite_scheduler_url(scheduler)
+    print(f"relay-agent --scheduler {invite_url} --pool-token {token}")
     if needs_address:
         print(
             "replace <your address> with an address contributors can reach, "
@@ -155,6 +156,8 @@ def rotate_token(
     )
     r.raise_for_status()
     return r.json()["token"]
+
+
 
 def rotate(
         scheduler: str,
