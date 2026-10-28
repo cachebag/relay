@@ -9,6 +9,16 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Jobs go to the least-loaded machine.** The scheduler's round-robin
+  position reset every 2 seconds, so jobs submitted one at a time all landed
+  on the first node in the list and queued behind each other while the rest
+  of the pool sat idle. Each job now goes to the online node in its pool with
+  the fewest jobs assigned or running, equal nodes take turns across ticks,
+  and the placement log line shows the node's load.
+  ([#137](https://github.com/cachebag/relay/pull/137))
+
 ## [0.2.8] - 2026-10-28
 
 ### Added

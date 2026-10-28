@@ -18,12 +18,22 @@ type Scheduler struct {
 	jobs    store.JobStore
 	credits *credit.Earner
 	started time.Time
+
+	// next is the round-robin position per pool, used to break ties between
+	// equally loaded nodes. It lives here so it carries across ticks.
+	next map[string]int
 }
 
 // New returns a Scheduler. credits pays owners for their machines' online
 // time each tick; nil turns that off.
 func New(nodes store.Registry, jobs store.JobStore, credits *credit.Earner) *Scheduler {
-	return &Scheduler{nodes: nodes, jobs: jobs, credits: credits, started: time.Now()}
+	return &Scheduler{
+		nodes:   nodes,
+		jobs:    jobs,
+		credits: credits,
+		started: time.Now(),
+		next:    make(map[string]int),
+	}
 }
 
 // nodeFits reports whether a node satisfies a job's requirements. Only the
@@ -89,8 +99,17 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 		return err
 	}
 
-	// Maintain separate round-robin positions for each pool.
-	nextByPool := make(map[string]int)
+	// How many jobs each node already holds. A node runs one job at a time,
+	// so a job placed on a busy node waits behind it while idle nodes sit.
+	load := make(map[string]int)
+	for _, j := range jobs {
+		if j.NodeID != "" && (j.Status == store.JobAssigned || j.Status == store.JobRunning) {
+			load[j.NodeID]++
+		}
+	}
+	if s.next == nil {
+		s.next = make(map[string]int)
+	}
 
 	for _, j := range jobs {
 
@@ -125,9 +144,19 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 			continue
 		}
 
-		// Select the next online node within this pool.
-		i := nextByPool[j.PoolID]
-		node := filtered[i%len(filtered)]
+		// Pick the least-loaded eligible node. Ties go round-robin so equal
+		// nodes take turns across ticks instead of the first one always winning.
+		least := make([]store.Node, 0, len(filtered))
+		for _, n := range filtered {
+			if len(least) == 0 || load[n.ID] < load[least[0].ID] {
+				least = least[:0]
+			}
+			if len(least) == 0 || load[n.ID] == load[least[0].ID] {
+				least = append(least, n)
+			}
+		}
+		node := least[s.next[j.PoolID]%len(least)]
+		s.next[j.PoolID]++
 
 		// Assign the job and count this placement attempt.
 		j.Status = store.JobAssigned
@@ -139,16 +168,15 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 			return err
 		}
 
-		// Advance the round-robin position for this pool only.
-		nextByPool[j.PoolID]++
-
 		log.Printf(
-			"assigned job %s to node %s in pool %s (attempt %d)",
+			"assigned job %s to node %s (%d running) in pool %s (attempt %d)",
 			j.ID,
 			j.NodeID,
+			load[node.ID],
 			j.PoolID,
 			j.Attempts,
 		)
+		load[node.ID]++
 	}
 
 	return nil

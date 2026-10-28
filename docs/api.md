@@ -927,7 +927,7 @@ When no online nodes are available in a job's pool, the job remains queued even 
 
 If a job specifies `requires.os`, only nodes using that OS are eligible. If no online node in the pool matches, the job remains queued, and `relay status` displays `queued (requires <os>)` until a matching node joins. Jobs without an OS requirement can run on nodes with any OS.
 
-Round-robin assignment operates independently for each pool within a scheduling tick. It only advances when a job gets assigned a node.
+Within a pool, each job goes to the online node with the fewest jobs already assigned or running on it, so one busy machine never queues work while others sit idle. Nodes with equal load take turns, and that position carries across ticks. Load in other pools is not counted.
 
 Jobs created before the introduction of pool ownership have an empty `pool_id` and cannot be assigned to nodes.
 
@@ -1640,7 +1640,7 @@ The scheduler tests verify that:
 - Queued jobs are assigned only to online nodes.
 - Jobs are assigned only to nodes belonging to their pool.
 - Jobs remain queued if their pool has no online nodes.
-- Round-robin scheduling operates independently within each pool.
+- Placement operates independently within each pool; load elsewhere is not counted.
 - Jobs without a pool ID cannot be scheduled.
 - Jobs assigned to offline nodes can be requeued and reassigned.
 - Jobs fail after reaching the maximum number of placement attempts.
