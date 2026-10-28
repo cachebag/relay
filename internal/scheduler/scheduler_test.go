@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -707,5 +708,101 @@ func TestNoRequirementStillRoundRobins(t *testing.T) {
 
 	if first.NodeID != "node-a-linux" || second.NodeID != "node-b-windows" {
 		t.Errorf("expected Linux then Windows, got %q then %q", first.NodeID, second.NodeID)
+	}
+}
+
+// twoIdle returns two online nodes in pool-a; "a" sorts first.
+func twoIdle(now time.Time) []store.Node {
+	return []store.Node{
+		{ID: "a", Hostname: "a", PoolID: "pool-a", LastSeen: now},
+		{ID: "b", Hostname: "b", PoolID: "pool-a", LastSeen: now},
+	}
+}
+
+// One job per tick, four ticks, same scheduler: the nodes take turns,
+// instead of the first node getting every job because the position reset.
+func TestOneJobPerTickAlternates(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+	reg := store.NewMem()
+	js := store.NewMemJobs()
+	for _, n := range twoIdle(now) {
+		if err := reg.Upsert(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := New(reg, js, nil)
+	s.started = now.Add(-store.NodeTimeout)
+
+	var got []string
+	for i := 0; i < 4; i++ {
+		id := fmt.Sprintf("job-%d", i)
+		if err := js.Create(ctx, store.Job{ID: id, PoolID: "pool-a", Status: store.JobQueued}); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Tick(ctx, now); err != nil {
+			t.Fatal(err)
+		}
+		j, err := js.Get(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, j.NodeID)
+		// The job finishes before the next one arrives, so load is equal again.
+		j.Status = store.JobDone
+		if err := js.Update(ctx, j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if fmt.Sprint(got) != "[a b a b]" {
+		t.Errorf("placements = %v, want [a b a b]", got)
+	}
+}
+
+// A node already holding a job is skipped for an idle one, whatever the order.
+func TestIdleNodeBeatsBusyNode(t *testing.T) {
+	now := time.Now()
+	jobs := []store.Job{
+		{ID: "busy", PoolID: "pool-a", Status: store.JobRunning, NodeID: "a", Attempts: 1},
+		{ID: "new", PoolID: "pool-a", Status: store.JobQueued},
+	}
+	got := tickAndGet(t, now, twoIdle(now), jobs, "new")
+	if got.NodeID != "b" {
+		t.Errorf("new job went to %q, want the idle node b", got.NodeID)
+	}
+}
+
+// Three equally idle nodes and three jobs in one tick: one job each.
+func TestEqualLoadSpreadsWithinATick(t *testing.T) {
+	now := time.Now()
+	nodes := append(twoIdle(now), store.Node{ID: "c", Hostname: "c", PoolID: "pool-a", LastSeen: now})
+	jobs := []store.Job{
+		{ID: "j1", PoolID: "pool-a", Status: store.JobQueued},
+		{ID: "j2", PoolID: "pool-a", Status: store.JobQueued},
+		{ID: "j3", PoolID: "pool-a", Status: store.JobQueued},
+	}
+	seen := map[string]bool{}
+	for _, id := range []string{"j1", "j2", "j3"} {
+		seen[tickAndGet(t, now, nodes, jobs, id).NodeID] = true
+	}
+	if len(seen) != 3 {
+		t.Errorf("three jobs landed on %d distinct nodes, want 3", len(seen))
+	}
+}
+
+// Load in another pool is that pool's business.
+func TestLoadIsCountedPerPool(t *testing.T) {
+	now := time.Now()
+	nodes := []store.Node{
+		{ID: "a", Hostname: "a", PoolID: "pool-a", LastSeen: now},
+		{ID: "x", Hostname: "x", PoolID: "pool-b", LastSeen: now},
+	}
+	jobs := []store.Job{
+		{ID: "elsewhere", PoolID: "pool-b", Status: store.JobRunning, NodeID: "x", Attempts: 1},
+		{ID: "new", PoolID: "pool-a", Status: store.JobQueued},
+	}
+	got := tickAndGet(t, now, nodes, jobs, "new")
+	if got.NodeID != "a" {
+		t.Errorf("new job went to %q, want a", got.NodeID)
 	}
 }
