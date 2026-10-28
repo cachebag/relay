@@ -11,6 +11,14 @@ without a pull request link their commit instead.
 
 ### Added
 
+- **`relay pool create` prints relayd's public address in the invite.** With
+  `relayd --public`, `POST /pools` and `POST /pools/{id}/token` return the
+  Funnel URL as `public_url`, and `pool create` and `pool rotate-token` use it
+  in the `relay-agent` command, so the invite works without editing even when
+  the CLI talks to relayd over localhost. Without `--public`, `public_url` is
+  `""` and the invite is unchanged.
+  ([#113](https://github.com/cachebag/relay/issues/113))
+
 - **`relay install` puts the binaries on your PATH.** It appends one line to
   your shell's startup file (`~/.zshrc`, `~/.bash_profile` or `~/.bashrc`,
   fish's `config.fish`) or, on Windows, to the user PATH in the registry, and

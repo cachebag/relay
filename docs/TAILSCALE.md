@@ -69,6 +69,8 @@ The last line it prints is the exact command contributors run. Send it to them:
 relay-agent --scheduler https://relay.taild0efc0.ts.net --pool-token <join token>
 ```
 
+You can also run `relay pool create my-pool` against `localhost` on the machine running relayd. relayd knows its public address, so the invite still has the `https://….ts.net` address and needs no editing. `relay pool rotate-token` does the same.
+
 Log in yourself so every other command uses the public address too:
 
 ```sh

@@ -34,8 +34,16 @@ def invite_scheduler_url(scheduler: str) -> tuple[str, bool]:
     return urlunsplit(parts._replace(netloc=f"<your address>{port}")), True
 
 
-def print_agent_invite(scheduler: str, token: str) -> None:
-    """Print the contributor command, with a hint for local schedulers."""
+def print_agent_invite(scheduler: str, token: str, public_url: str = "") -> None:
+    """Print the contributor command, with a hint for local schedulers.
+
+    When relayd runs with --public it sends its public address, and the
+    invite uses that as-is, with no hint (#113).
+    """
+    if public_url:
+        print(f"relay-agent --scheduler {public_url} --pool-token {token}")
+        return
+
     invite_url, needs_address = invite_scheduler_url(scheduler)
     print(f"relay-agent --scheduler {invite_url} --pool-token {token}")
     if needs_address:
@@ -107,7 +115,7 @@ def run_create(args) -> None:
     print("warning: the admin token is shown only once. Save it now.")
     print()
     print("share the token with contributors; they run:")
-    print_agent_invite(args.scheduler, p["token"])
+    print_agent_invite(args.scheduler, p["token"], p.get("public_url") or "")
 
 
 def pool_from_login(flag: str | None) -> tuple[str, str]:
@@ -150,6 +158,27 @@ def rotate_token(
     return r.json()["token"]
 
 
+
+def rotate(
+        scheduler: str,
+        pool_id: str,
+        admin_token: str,
+        client: httpx.Client | None = None,
+) -> dict:
+    """Rotate the join token and return the whole response.
+
+    Same request as rotate_token, but the caller also gets public_url,
+    relayd's public address ("" when it isn't running with --public).
+    """
+    client = client or httpx.Client(timeout=5)
+    r = client.post(
+        f"{scheduler}/pools/{pool_id}/token",
+        headers=profile.bearer(admin_token),
+    )
+    r.raise_for_status()
+    return r.json()
+
+
 def run_rotate_token(args) -> None:
     admin_token = args.admin_token or os.environ.get("RELAY_ADMIN_TOKEN")
     if not admin_token:
@@ -162,7 +191,8 @@ def run_rotate_token(args) -> None:
         confirm_pool(pool_id, name, "rotation")
 
     try:
-        new_token = rotate_token(args.scheduler, pool_id, admin_token)
+        rotated = rotate(args.scheduler, pool_id, admin_token)
+        new_token = rotated["token"]
     except httpx.HTTPStatusError as e:
         raise SystemExit(
             f"rotation failed: {e.response.status_code} {e.response.text.strip()}"
@@ -171,4 +201,4 @@ def run_rotate_token(args) -> None:
     print(f"new join token: {new_token}")
     print("the old join token no longer works.")
     print("restart every contributor's agent with the new token:")
-    print_agent_invite(args.scheduler, new_token)
+    print_agent_invite(args.scheduler, new_token, rotated.get("public_url") or "")

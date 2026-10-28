@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/cachebag/relay/internal/api"
@@ -142,7 +143,11 @@ func main() {
 	// Starts the scheduler in the background.
 	go scheduler.New(reg, jobs, credit.NewEarner(credits)).Run(context.Background(), 2*time.Second)
 
-	handler := api.NewHandler(reg, pools, jobs, credits, server)
+	var publicURL atomic.Value
+	publicURL.Store("")
+
+	handler := api.NewHandler(reg, pools, jobs, credits, server,
+		api.WithPublicURL(func() string { return publicURL.Load().(string) }))
 
 	// With --public, join the tailnet and serve the same handler on the
 	// Funnel listener too. A failure here is fatal on purpose: silently
@@ -153,6 +158,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		publicURL.Store(url)
 		fmt.Printf("relayd public address: %s\n", url)
 		go func() {
 			if err := http.Serve(pln, handler); err != nil {
