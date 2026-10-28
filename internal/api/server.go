@@ -159,6 +159,10 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		p, err := pools.GetByToken(r.Context(), req.PoolToken)
 
 		if errors.Is(err, store.ErrNotFound) {
+			if tokenWasRotated(r, pools, req.PoolToken) {
+				http.Error(w, store.RotatedTokenMsg, http.StatusForbidden)
+				return
+			}
 			http.Error(w, "invalid pool token", http.StatusForbidden)
 			return
 		}
@@ -730,6 +734,10 @@ func poolFromBearer(w http.ResponseWriter, r *http.Request, pools store.PoolStor
 	}
 	p, err := pools.GetByToken(r.Context(), token)
 	if errors.Is(err, store.ErrNotFound) {
+		if tokenWasRotated(r, pools, token) {
+			http.Error(w, store.RotatedTokenMsg, http.StatusForbidden)
+			return store.Pool{}, false
+		}
 		http.Error(w, "invalid pool token", http.StatusForbidden)
 		return store.Pool{}, false
 	}
@@ -786,4 +794,13 @@ func checkServerAdmin(w http.ResponseWriter, r *http.Request, server store.Serve
 		return false
 	}
 	return true
+}
+
+func tokenWasRotated(r *http.Request, pools store.PoolStore, token string) bool {
+	rc, ok := pools.(store.RotationChecker)
+	if !ok || token == "" {
+		return false
+	}
+	rotated, err := rc.WasRotated(r.Context(), token)
+	return err == nil && rotated
 }
