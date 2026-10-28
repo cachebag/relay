@@ -9,15 +9,24 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-10-28
+
 ### Added
 
+- **`relay contribute` runs the agent for the current pool.** It starts
+  `relay-agent` in the background with the saved scheduler, token and name,
+  so contributing is `relay login` then `relay contribute`. `status` and
+  `stop` manage it, and `a` in the dashboard does the same with
+  `this machine: contributing` in the top bar. An agent that dies in its
+  first ten seconds is reported with the last line of its log.
+  ([#135](https://github.com/cachebag/relay/pull/135))
 - **`relay pool create` prints relayd's public address in the invite.** With
   `relayd --public`, `POST /pools` and `POST /pools/{id}/token` return the
   Funnel URL as `public_url`, and `pool create` and `pool rotate-token` use it
   in the `relay-agent` command, so the invite works without editing even when
   the CLI talks to relayd over localhost. Without `--public`, `public_url` is
   `""` and the invite is unchanged.
-  ([#113](https://github.com/cachebag/relay/issues/113))
+  ([#136](https://github.com/cachebag/relay/pull/136))
 
 - **`relay install` puts the binaries on your PATH.** It appends one line to
   your shell's startup file (`~/.zshrc`, `~/.bash_profile` or `~/.bashrc`,
@@ -407,7 +416,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/cachebag/relay/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/cachebag/relay/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/cachebag/relay/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/cachebag/relay/compare/v0.2.1...v0.2.5
