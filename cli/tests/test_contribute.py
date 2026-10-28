@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -272,3 +273,27 @@ def test_dashboard_ignores_toggle_while_busy(cfg, monkeypatch):
 
     asyncio.run(run())
     assert calls == []
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="zombies are a POSIX thing")
+def test_pid_alive_reaps_an_exited_child():
+    """A child that exited but was never waited on is a zombie. os.kill(pid, 0)
+    still succeeds on it, so _pid_alive has to collect it and report dead."""
+    import time
+
+    proc = subprocess.Popen(["true"], start_new_session=True)
+    # Wait for it to exit without reaping it: ps shows state Z for a zombie.
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        out = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(proc.pid)],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        if out.startswith("Z") or not out:
+            break
+        time.sleep(0.05)
+    os.kill(proc.pid, 0)  # still visible to the kernel
+    assert contribution._pid_alive(proc.pid) is False
+    assert contribution._pid_alive(proc.pid) is False  # and stays dead
