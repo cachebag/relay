@@ -30,3 +30,9 @@ func HashToken(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
 }
+
+const RotatedTokenMsg = "pool token was rotated; ask the admin for the new invite"
+
+type RotationChecker interface {
+	WasRotated(ctx context.Context, token string) (bool, error)
+}

@@ -7,8 +7,9 @@ import (
 )
 
 type MemPools struct {
-	mu    sync.RWMutex
-	pools map[string]Pool
+	mu            sync.RWMutex
+	pools         map[string]Pool
+	prevTokenHash map[string]string
 }
 
 func NewMemPools() *MemPools {
@@ -61,6 +62,10 @@ func (m *MemPools) SetToken(_ context.Context, id, token string) error {
 	if !ok {
 		return ErrNotFound
 	}
+	if m.prevTokenHash == nil {
+		m.prevTokenHash = make(map[string]string)
+	}
+	m.prevTokenHash[id] = HashToken(p.Token)
 	p.Token = token
 	m.pools[id] = p
 	return nil
@@ -86,4 +91,16 @@ func (m *MemPools) AdminTokenHash(_ context.Context, id string) (string, error) 
 		return "", ErrNotFound
 	}
 	return p.AdminTokenHash, nil
+}
+
+func (m *MemPools) WasRotated(_ context.Context, token string) (bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	h := HashToken(token)
+	for id, prev := range m.prevTokenHash {
+		if prev == h && m.pools[id].Token != token {
+			return true, nil
+		}
+	}
+	return false, nil
 }
