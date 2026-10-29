@@ -30,10 +30,6 @@ func (m *MemPools) Get(_ context.Context, id string) (Pool, error) {
 	if !ok {
 		return Pool{}, ErrNotFound
 	}
-	if m.prevTokenHash == nil {
-		m.prevTokenHash = make(map[string]string)
-	}
-	m.prevTokenHash[id] = HashToken(p.Token)
 	return p, nil
 }
 
@@ -66,6 +62,10 @@ func (m *MemPools) SetToken(_ context.Context, id, token string) error {
 	if !ok {
 		return ErrNotFound
 	}
+	if m.prevTokenHash == nil {
+		m.prevTokenHash = make(map[string]string)
+	}
+	m.prevTokenHash[id] = HashToken(p.Token)
 	p.Token = token
 	m.pools[id] = p
 	return nil
