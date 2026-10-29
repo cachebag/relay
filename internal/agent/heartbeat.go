@@ -7,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	_ "io"
 	"net/http"
 	"strings"
-	_ "strings"
 
 	"github.com/cachebag/relay/internal/store"
 )
@@ -30,7 +28,6 @@ var ErrPoolConflict = errors.New(
 // admin removed this machine from the pool. Unlike a connection failure,
 // retrying will never succeed, so the agent stops.
 var ErrRemoved = errors.New("removed from pool by admin")
-var ErrTokenRotated = errors.New(store.RotatedTokenMsg)
 
 // heartbeat contains the node information and pool token
 // that are sent to the scheduler with each heartbeat.

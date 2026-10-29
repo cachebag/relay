@@ -202,8 +202,3 @@ def run_rotate_token(args) -> None:
     print("restart every contributor's agent with the new token:")
     print_agent_invite(args.scheduler, new_token, rotated.get("public_url") or "")
 
-const RotatedTokenMsg = "pool token was rotated; ask the admin for the new invite"
-
-type RotationChecker interface {
-    WasRotated(ctx context.Context, token string) (bool, error)
-}
