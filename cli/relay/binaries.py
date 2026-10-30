@@ -10,6 +10,7 @@ import platform
 import shutil
 import stat
 import sys
+import tarfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -54,7 +55,7 @@ def this_platform() -> tuple[str, str]:
 
 
 def asset_name(name: str, os_name: str, arch: str) -> str:
-    return f"{name}-{os_name}-{arch}" + (".exe" if os_name == "windows" else "")
+    return f"{name}-{os_name}-{arch}" + (".exe" if os_name == "windows" else ".tar.gz")
 
 
 def find(name: str) -> Path:
@@ -135,7 +136,15 @@ def download(
                 done += len(chunk)
                 if progress:
                     progress(done, total)
-    tmp.chmod(tmp.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    tmp.replace(dest)
+    if os_name == "windows":
+        tmp.chmod(tmp.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        tmp.replace(dest)
+    else:
+        with tarfile.open(tmp) as tar:
+            src = tar.extractfile(tar.getmember(name))
+            with open(dest, "wb") as f:
+                shutil.copyfileobj(src, f)
+        dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        tmp.unlink()
     record_version(name, tag)
     return dest, tag, True

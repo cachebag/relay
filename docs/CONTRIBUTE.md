@@ -2,7 +2,7 @@
 
 You need the scheduler's address and a pool token from your pool admin. Contributing needs nothing but the agent binary.
 
-Release assets are named `relay-agent-<os>-<arch>` (`.exe` on Windows), where `<os>-<arch>` is one of `linux-amd64`, `darwin-arm64`, `darwin-amd64`, `windows-amd64`. The examples below use `linux-amd64`; swap in yours.
+Release assets are named `relay-agent-<os>-<arch>.tar.gz` (`.exe` on Windows), where `<os>-<arch>` is one of `linux-amd64`, `darwin-arm64`, `darwin-amd64`, `windows-amd64`. The examples below use `linux-amd64`; swap in yours.
 
 The pool token can be provided with the `--pool-token` flag or through the
 `RELAY_POOL_TOKEN` environment variable. If both are provided, `--pool-token`
@@ -41,16 +41,15 @@ To run the agent by hand instead, use the commands below.
 ## Linux and macOS
 
 ```sh
-curl -LO https://github.com/cachebag/relay/releases/latest/download/relay-agent-linux-amd64
-chmod +x relay-agent-linux-amd64
-./relay-agent-linux-amd64 --scheduler http://<scheduler address>:8080 --pool-token <pool token>
+curl -L https://github.com/cachebag/relay/releases/latest/download/relay-agent-linux-amd64.tar.gz | tar xz
+./relay-agent --scheduler http://<scheduler address>:8080 --pool-token <pool token>
 ```
 
 Alternatively, set the pool token as an environment variable:
 
 ```sh
 export RELAY_POOL_TOKEN="<pool token>"
-./relay-agent-linux-amd64 --scheduler http://<scheduler address>:8080
+./relay-agent --scheduler http://<scheduler address>:8080
 ```
 
 > [!NOTE]
@@ -94,7 +93,7 @@ $env:RELAY_SCHEDULER="http://<scheduler address>:8080"     # Windows PowerShell
 Stop the agent first (Ctrl-C), then run `leave` with the same scheduler and token:
 
 ```sh
-./relay-agent-linux-amd64 leave --scheduler http://<scheduler address>:8080 --pool-token <pool token>
+./relay-agent leave --scheduler http://<scheduler address>:8080 --pool-token <pool token>
 ```
 
 The machine disappears from `relay nodes` right away, any job it was running goes to another machine, and the agent deletes the files it kept on this machine. If the agent is still running, its next heartbeat joins the pool again.
