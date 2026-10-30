@@ -201,3 +201,4 @@ def run_rotate_token(args) -> None:
     print("the old join token no longer works.")
     print("restart every contributor's agent with the new token:")
     print_agent_invite(args.scheduler, new_token, rotated.get("public_url") or "")
+

@@ -28,7 +28,6 @@ type Agent struct {
 	node         store.Node
 	client       *http.Client
 	run          Runner
-
 	// connected tracks whether the most recent heartbeat successfully reached
 	// the scheduler. This prevents the agent from printing the connected
 	// message after every successful heartbeat.
@@ -55,7 +54,8 @@ type Agent struct {
 
 	// removed is set by Tick when the scheduler says a pool admin removed
 	// this machine. Run then stops instead of retrying forever.
-	removed bool
+	removed       bool
+	rotatedWarned bool
 }
 
 // New returns an Agent for node n that talks to the scheduler at schedulerURL
@@ -129,6 +129,12 @@ func (a *Agent) Tick(ctx context.Context) {
 			log.Printf("removed from this pool by the admin")
 			a.removed = true
 
+		case errors.Is(err, ErrTokenRotated):
+			if !a.rotatedWarned {
+				log.Printf("%s", store.RotatedTokenMsg)
+				a.rotatedWarned = true
+			}
+
 		case errors.Is(err, ErrBadToken):
 			log.Printf(
 				"pool token rejected; check it with your pool admin",
@@ -160,6 +166,7 @@ func (a *Agent) Tick(ctx context.Context) {
 	if !a.connected {
 		log.Printf("connected; this machine is online in the pool")
 		a.connected = true
+		a.rotatedWarned = false
 	}
 
 	// The scheduler hands a running job back to its node on every poll, so

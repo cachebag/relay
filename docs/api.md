@@ -437,6 +437,14 @@ If the pool token is invalid:
 ```text
 403 Forbidden
 ```
+If the pool token used to be valid for this pool but an admin has rotated it:
+
+```text
+403 Forbidden
+pool token was rotated; ask the admin for the new invite
+```
+
+A token that never belonged to a pool still gets `invalid pool token`.
 
 If the node ID already belongs to a node in a different pool:
 
