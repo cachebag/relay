@@ -2,7 +2,7 @@
 
 The admin runs `relayd` somewhere pool members can reach, creates the pool, and hands out its join token. You need the `relay` CLI, which needs [uv](https://docs.astral.sh/uv/getting-started/installation/). See [SUBMIT.md](SUBMIT.md) for installing it.
 
-Release assets are named `relayd-<os>-<arch>` (`.exe` on Windows), where `<os>-<arch>` is one of `linux-amd64`, `darwin-arm64`, `darwin-amd64`, `windows-amd64`. The examples below use `linux-amd64`; swap in yours.
+Release assets are named `relayd-<os>-<arch>.tar.gz` (`.exe` on Windows), where `<os>-<arch>` is one of `linux-amd64`, `darwin-arm64`, `darwin-amd64`, `windows-amd64`. The tarball holds one executable file: `relayd`. The examples below use `linux-amd64`; swap in yours.
 
 ## Run the scheduler
 
@@ -18,12 +18,11 @@ relay scheduler start      # runs relayd in the background on :8080
 Or run `relayd` by hand:
 
 ```sh
-curl -LO https://github.com/cachebag/relay/releases/latest/download/relayd-linux-amd64
-chmod +x relayd-linux-amd64
-./relayd-linux-amd64                  # listens on :8080; leave it running
+curl -L https://github.com/cachebag/relay/releases/latest/download/relayd-linux-amd64.tar.gz | tar xz
+./relayd                  # listens on :8080; leave it running
 ```
 
-The first time it starts, `relayd` prints a server admin token. Save it. It is the only thing that can create pools on this scheduler, so strangers can't make pools on your server once it is reachable from the internet. If you lose it, `./relayd-linux-amd64 --new-admin-token` prints a new one and exits. `relayd` keeps its database, `relay.db`, in the folder you start it from; `relay scheduler start` always uses the config folder.
+The first time it starts, `relayd` prints a server admin token. Save it. It is the only thing that can create pools on this scheduler, so strangers can't make pools on your server once it is reachable from the internet. If you lose it, `./relayd --new-admin-token` prints a new one and exits. `relayd` keeps its database, `relay.db`, in the folder you start it from; `relay scheduler start` always uses the config folder.
 
 ## Create a pool
 
@@ -76,7 +75,7 @@ Then run `relayd` with the key:
 
 ```sh
 export TS_AUTHKEY=tskey-auth-...
-./relayd-linux-amd64 --public          # add --name <hostname> to pick the name
+./relayd --public          # add --name <hostname> to pick the name
 ```
 
 The first run prints a link to click if Funnel isn't enabled for your tailnet yet. Once it's up, `relayd` prints one line you paste to everyone:

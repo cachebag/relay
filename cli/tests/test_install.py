@@ -1,6 +1,8 @@
 import argparse
+import io
 import os
 import sys
+import tarfile
 from pathlib import Path
 
 import httpx
@@ -44,6 +46,15 @@ def releases(monkeypatch):
             return httpx.Response(404)
         if "/releases/download/v0.2.6/" in path or "/releases/download/v0.2.1/" in path:
             body = b"#!/bin/sh\necho fake " + path.encode()
+            if path.endswith(".tar.gz"):
+                filepath = path.rsplit("/", 1)[1][: -len(".tar.gz")].rsplit("-", 2)[0]
+                info = tarfile.TarInfo(filepath)
+                info.size = len(body)
+                info.mode = 0o755
+                buf = io.BytesIO()
+                with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+                    tar.addfile(info, io.BytesIO(body))
+                body = buf.getvalue()
             return httpx.Response(
                 200, content=body, headers={"content-length": str(len(body))}
             )
@@ -60,10 +71,10 @@ def releases(monkeypatch):
 
 
 def test_asset_names():
-    assert binaries.asset_name("relayd", "darwin", "arm64") == "relayd-darwin-arm64"
+    assert binaries.asset_name("relayd", "darwin", "arm64") == "relayd-darwin-arm64.tar.gz"
     assert (
         binaries.asset_name("relay-agent", "linux", "amd64")
-        == "relay-agent-linux-amd64"
+        == "relay-agent-linux-amd64.tar.gz"
     )
     assert (
         binaries.asset_name("relay-agent", "windows", "amd64")
@@ -96,7 +107,8 @@ def test_install_downloads_both_into_config_bin(cfg, releases, monkeypatch, caps
         assert "v0.2.6" in out
     assert "contribute this machine" in out and "run a scheduler" in out
     assert any(
-        u.endswith("/releases/download/v0.2.6/relayd-linux-amd64") for u in releases
+        u.endswith("/releases/download/v0.2.6/relayd-linux-amd64.tar.gz")
+        for u in releases
     )
     assert binaries.installed_versions() == {
         "relayd": "v0.2.6",
@@ -110,7 +122,7 @@ def test_install_agent_only_and_pinned_version(cfg, releases, monkeypatch):
     assert (cfg / "bin" / "relay-agent").exists()
     assert not (cfg / "bin" / "relayd").exists()
     assert releases == [
-        f"{binaries.REPO}/releases/download/v0.2.1/relay-agent-darwin-arm64"
+        f"{binaries.REPO}/releases/download/v0.2.1/relay-agent-darwin-arm64.tar.gz"
     ]
 
 
