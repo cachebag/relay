@@ -17,20 +17,21 @@ type SQLiteJobs struct {
 // connection. The jobs table is created automatically if it does not exist.
 func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS jobs (
-		id         TEXT PRIMARY KEY,
-		command    TEXT NOT NULL,
-		requires   TEXT NOT NULL DEFAULT '{}',
-		status     TEXT NOT NULL,
-		node_id    TEXT NOT NULL,
-		pool_id    TEXT NOT NULL DEFAULT '',
-		submitter  TEXT NOT NULL DEFAULT '',
-		attempts   INTEGER NOT NULL,
-		created_at INTEGER NOT NULL,
-		exit_code  INTEGER NOT NULL DEFAULT 0,
-		stdout     TEXT NOT NULL DEFAULT '',
-		stderr     TEXT NOT NULL DEFAULT '',
-		started_at  INTEGER NOT NULL DEFAULT 0,
-		finished_at INTEGER NOT NULL DEFAULT 0
+		id              TEXT PRIMARY KEY,
+		command         TEXT NOT NULL,
+		timeout_seconds INTEGER NOT NULL DEFAULT 3600,
+		requires        TEXT NOT NULL DEFAULT '{}',
+		status          TEXT NOT NULL,
+		node_id         TEXT NOT NULL,
+		pool_id         TEXT NOT NULL DEFAULT '',
+		submitter       TEXT NOT NULL DEFAULT '',
+		attempts        INTEGER NOT NULL,
+		created_at      INTEGER NOT NULL,
+		exit_code       INTEGER NOT NULL DEFAULT 0,
+		stdout          TEXT NOT NULL DEFAULT '',
+		stderr          TEXT NOT NULL DEFAULT '',
+		started_at      INTEGER NOT NULL DEFAULT 0,
+		finished_at     INTEGER NOT NULL DEFAULT 0
 	)`)
 	if err != nil {
 		return nil, err
@@ -42,15 +43,20 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 	_, _ = db.Exec(`ALTER TABLE jobs ADD COLUMN stdout TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.Exec(`ALTER TABLE jobs ADD COLUMN stderr TEXT NOT NULL DEFAULT ''`)
 
-	// Add job ownership columns to databases created before I79 was made. Check for
-	// missing columns explicitly so unexpected migration failures surface.
+	// Add job ownership columns to databases created before I79 was made.
+	// Check for missing columns explicitly so unexpected migration failures surface.
 	for _, column := range []string{"pool_id", "submitter"} {
 		var count int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = ?`, column).Scan(&count); err != nil {
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = ?`,
+			column,
+		).Scan(&count); err != nil {
 			return nil, err
 		}
 		if count == 0 {
-			if _, err := db.Exec(`ALTER TABLE jobs ADD COLUMN ` + column + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+			if _, err := db.Exec(
+				`ALTER TABLE jobs ADD COLUMN ` + column + ` TEXT NOT NULL DEFAULT ''`,
+			); err != nil {
 				return nil, err
 			}
 		}
@@ -58,13 +64,33 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 
 	// Job requirements are stored as JSON, same as command.
 	var hasRequires int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = 'requires'`).Scan(&hasRequires); err != nil {
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = 'requires'`,
+	).Scan(&hasRequires); err != nil {
 		return nil, err
 	}
 
 	// Adds the requires column if it is missing (legacy support).
 	if hasRequires == 0 {
-		if _, err := db.Exec(`ALTER TABLE jobs ADD COLUMN requires TEXT NOT NULL DEFAULT '{}'`); err != nil {
+		if _, err := db.Exec(
+			`ALTER TABLE jobs ADD COLUMN requires TEXT NOT NULL DEFAULT '{}'`,
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	// Existing databases did not store job time limits. Backfill them with
+	// the same one-hour default used for new API submissions.
+	var hasTimeout int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = 'timeout_seconds'`,
+	).Scan(&hasTimeout); err != nil {
+		return nil, err
+	}
+	if hasTimeout == 0 {
+		if _, err := db.Exec(
+			`ALTER TABLE jobs ADD COLUMN timeout_seconds INTEGER NOT NULL DEFAULT 3600`,
+		); err != nil {
 			return nil, err
 		}
 	}
@@ -73,11 +99,16 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 	// charging. 0 means unset.
 	for _, column := range []string{"started_at", "finished_at"} {
 		var count int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = ?`, column).Scan(&count); err != nil {
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = ?`,
+			column,
+		).Scan(&count); err != nil {
 			return nil, err
 		}
 		if count == 0 {
-			if _, err := db.Exec(`ALTER TABLE jobs ADD COLUMN ` + column + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
+			if _, err := db.Exec(
+				`ALTER TABLE jobs ADD COLUMN ` + column + ` INTEGER NOT NULL DEFAULT 0`,
+			); err != nil {
 				return nil, err
 			}
 		}
@@ -131,11 +162,13 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 	if err != nil {
 		return err
 	}
+
 	result, err := s.db.ExecContext(
 		ctx,
 		`INSERT OR IGNORE INTO jobs (
 			id,
 			command,
+			timeout_seconds,
 			requires,
 			status,
 			node_id,
@@ -149,9 +182,10 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 			started_at,
 			finished_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		j.ID,
 		string(command),
+		j.TimeoutSeconds,
 		string(requires),
 		j.Status,
 		j.NodeID,
@@ -193,13 +227,14 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, command, requires, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
+		`SELECT id, command, timeout_seconds, requires, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
 		 FROM jobs
 		 WHERE id = ?`,
 		id,
 	).Scan(
 		&j.ID,
 		&command,
+		&j.TimeoutSeconds,
 		&requires,
 		&j.Status,
 		&j.NodeID,
@@ -244,7 +279,7 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, command, requires,status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
+		`SELECT id, command, timeout_seconds, requires, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
 		 FROM jobs
 		 ORDER BY created_at ASC, id ASC`,
 	)
@@ -263,6 +298,7 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 		if err := rows.Scan(
 			&j.ID,
 			&command,
+			&j.TimeoutSeconds,
 			&requires,
 			&j.Status,
 			&j.NodeID,
@@ -320,6 +356,7 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		ctx,
 		`UPDATE jobs
 		 SET command = ?,
+		     timeout_seconds = ?,
 		     requires = ?,
 		     status = ?,
 		     node_id = ?,
@@ -334,6 +371,7 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		     finished_at = ?
 		 WHERE id = ?`,
 		string(command),
+		j.TimeoutSeconds,
 		string(requires),
 		j.Status,
 		j.NodeID,

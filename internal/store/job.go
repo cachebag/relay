@@ -18,6 +18,11 @@ const (
 	JobFailed   JobStatus = "failed"
 )
 
+const (
+	DefaultJobTimeoutSeconds = 60 * 60
+	MaxJobTimeoutSeconds     = 24 * 60 * 60
+)
+
 // Stores a job's required operating system.
 type Requires struct {
 	OS string `json:"os,omitempty"`
@@ -33,24 +38,30 @@ func (r Requires) Valid() bool {
 }
 
 type Job struct {
-	ID        string    `json:"id"`
-	Command   []string  `json:"command"`
-	Requires  Requires  `json:"requires,omitempty"`
-	Status    JobStatus `json:"status"`
-	NodeID    string    `json:"node_id"`
-	PoolID    string    `json:"pool_id"`
-	Submitter string    `json:"submitter"`
+	ID      string   `json:"id"`
+	Command []string `json:"command"`
+	// TimeoutSeconds limits each execution attempt. POST /jobs defaults it
+	// to one hour and accepts values from 1 second to 24 hours.
+	TimeoutSeconds int       `json:"timeout_seconds"`
+	Requires       Requires  `json:"requires,omitempty"`
+	Status         JobStatus `json:"status"`
+	NodeID         string    `json:"node_id"`
+	PoolID         string    `json:"pool_id"`
+	Submitter      string    `json:"submitter"`
+
 	// Attempts counts how many times the scheduler has placed this job on a
 	// node. It is bumped on every assignment, including reassignments after a
 	// node goes offline, and the scheduler gives up once it reaches its cap.
 	Attempts  int       `json:"attempts"`
 	CreatedAt time.Time `json:"created_at"`
+
 	// StartedAt is set when a node picks the job up and cleared if the job is
 	// requeued, so it always covers the current attempt. FinishedAt is set
 	// when a result is accepted or the scheduler gives up. Both stay out of
 	// the JSON until set.
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
+
 	// ExitCode, Stdout and Stderr hold the result a node reported. A reported
 	// failure always has a non-zero ExitCode, so a failed job with ExitCode 0
 	// never reported (the scheduler gave up on it). Stdout and Stderr stay out
