@@ -1,10 +1,61 @@
+import argparse
+import re
 import sys
 import time
+from decimal import ROUND_CEILING, Decimal
 
 import httpx
 
 from relay import profile
 from relay.commands import logs, status
+
+_DURATION_PART = re.compile(r"(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h)")
+
+_SECONDS_PER_UNIT = {
+    "ns": Decimal("0.000000001"),
+    "us": Decimal("0.000001"),
+    "µs": Decimal("0.000001"),
+    "μs": Decimal("0.000001"),
+    "ms": Decimal("0.001"),
+    "s": Decimal(1),
+    "m": Decimal(60),
+    "h": Decimal(3600),
+}
+
+_MAX_JOB_TIMEOUT_SECONDS = 24 * 60 * 60
+
+
+def parse_job_timeout(value: str) -> int:
+    """Convert Go-style durations or plain seconds to whole seconds.
+
+    Subsecond amounts round up because the API stores integer seconds.
+    """
+    if value.isascii() and value.isdecimal():
+        seconds = int(value)
+    else:
+        total = Decimal(0)
+        offset = 0
+
+        while offset < len(value):
+            part = _DURATION_PART.match(value, offset)
+
+            if part is None:
+                raise argparse.ArgumentTypeError(
+                    "--timeout must be seconds or a duration "
+                    "such as 5s, 10m, or 1h30m"
+                )
+
+            total += Decimal(part.group(1)) * _SECONDS_PER_UNIT[part.group(2)]
+            offset = part.end()
+
+        seconds = int(total.to_integral_value(rounding=ROUND_CEILING))
+
+    if not 1 <= seconds <= _MAX_JOB_TIMEOUT_SECONDS:
+        raise argparse.ArgumentTypeError(
+            "--timeout must be between 1 second and 24 hours"
+        )
+
+    return seconds
 
 
 def register(sub) -> None:
@@ -17,12 +68,20 @@ def register(sub) -> None:
         help="wait for the job to finish and print its output",
     )
 
-    # Sets a time limit for waiting without cancelling the job.
+    # Set the time limit enforced by the agent for each job attempt.
     p.add_argument(
         "--timeout",
+        type=parse_job_timeout,
+        metavar="DURATION",
+        help="job time limit (default: 1h; e.g. 5s, 10m, 1h30m, or plain seconds)",
+    )
+
+    # Local waiting has a separate timeout; it never cancels the remote job.
+    p.add_argument(
+        "--wait-timeout",
         type=float,
         metavar="SECONDS",
-        help="stop waiting after this many seconds (requires --wait)",
+        help="stop waiting after this many seconds without cancelling the job (requires --wait)",
     )
 
     # Restrict the job to run only on nodes with the specified
@@ -44,21 +103,21 @@ def submit(
     submitter: str,
     client: httpx.Client | None = None,
     os: str | None = None,
+    timeout_seconds: int | None = None,
 ) -> dict:
     """Submit a job using the logged-in pool token and user name."""
     client = client or httpx.Client(timeout=5)
 
+    body = {
+        "command": command,
+        "submitter": submitter,
+    }
+
     if os is not None:
-        body = {
-            "command": command,
-            "submitter": submitter,
-            "requires": {"os": os},
-        }
-    else:
-        body = {
-            "command": command,
-            "submitter": submitter,
-        }
+        body["requires"] = {"os": os}
+
+    if timeout_seconds is not None:
+        body["timeout_seconds"] = timeout_seconds
 
     r = client.post(
         f"{scheduler.rstrip('/')}/jobs",
@@ -161,17 +220,31 @@ def wait_for_job(
 def run(args) -> None:
     """Submit a job using the saved login profile."""
 
-    # Validate the timeout before submitting the job.
-    timeout = getattr(args, "timeout", None)
+    # Arguments parsed by argparse are already normalized to integer seconds.
+    # Also validate manual Namespace callers before making any HTTP requests.
+    timeout_seconds = getattr(args, "timeout", None)
 
-    if timeout is not None:
+    if timeout_seconds is not None and (
+        not isinstance(timeout_seconds, int)
+        or isinstance(timeout_seconds, bool)
+        or not 1 <= timeout_seconds <= _MAX_JOB_TIMEOUT_SECONDS
+    ):
+        print(
+            "relay: --timeout must be between 1 second and 24 hours",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    wait_timeout = getattr(args, "wait_timeout", None)
+
+    if wait_timeout is not None:
         if not getattr(args, "wait", False):
-            print("relay: --timeout requires --wait", file=sys.stderr)
+            print("relay: --wait-timeout requires --wait", file=sys.stderr)
             sys.exit(2)
 
-        if not 0 < timeout < float("inf"):
+        if not 0 < wait_timeout < float("inf"):
             print(
-                "relay: --timeout must be a positive number of seconds",
+                "relay: --wait-timeout must be a positive number of seconds",
                 file=sys.stderr,
             )
             sys.exit(2)
@@ -198,6 +271,7 @@ def run(args) -> None:
             token,
             name,
             os=getattr(args, "os", None),
+            timeout_seconds=timeout_seconds,
         )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 403:
@@ -211,7 +285,7 @@ def run(args) -> None:
 
     print(f"{job['id']}  {job['status']}", flush=True)
 
-    # Wait for completion if requested, passing along the timeout value.
+    # Wait for completion if requested, using only the local polling timeout.
     # Otherwise, return immediately after submitting the job.
     if getattr(args, "wait", False):
         sys.exit(
@@ -220,6 +294,6 @@ def run(args) -> None:
                 job["id"],
                 token,
                 initial_job=job,
-                timeout=timeout,
+                timeout=wait_timeout,
             )
         )
