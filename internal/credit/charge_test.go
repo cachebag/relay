@@ -49,6 +49,7 @@ func TestChargeSkipsUnfinishedOrAnonymous(t *testing.T) {
 	noName.Submitter = ""
 	noLaunch.Status = store.JobFailed
 	noLaunch.ExitCode = -1
+	noLaunch.Stderr = "exec: command not found\n"
 
 	for name, j := range map[string]store.Job{"no start": noStart, "no finish": noFinish, "no submitter": noName, "couldn't start": noLaunch} {
 		credits := store.NewMemCredits()
@@ -57,6 +58,42 @@ func TestChargeSkipsUnfinishedOrAnonymous(t *testing.T) {
 		}
 		if got, _ := credits.Balances(context.Background(), "pool-a"); len(got) != 0 {
 			t.Errorf("%s: expected no entries, got %v", name, got)
+		}
+	}
+}
+
+// TestChargeBillsTimedOutJob verifies that jobs terminated by their execution
+// deadline are charged even though they report exit code -1.
+func TestChargeBillsTimedOutJob(t *testing.T) {
+	cases := []struct {
+		run     time.Duration
+		timeout string
+		want    int
+	}{
+		{5 * time.Second, "5s", -1},
+		{time.Hour, "1h", -60},
+	}
+
+	for _, c := range cases {
+		j := chargedJob(0, c.run)
+		j.Status = store.JobFailed
+		j.ExitCode = -1
+		j.Stderr = "command output\nrelay: job timed out after " + c.timeout + "\n"
+
+		credits := store.NewMemCredits()
+
+		if err := Charge(context.Background(), credits, j); err != nil {
+			t.Fatalf("Charge: %v", err)
+		}
+
+		got, err := credits.Balances(context.Background(), "pool-a")
+		if err != nil {
+			t.Fatalf("Balances: %v", err)
+		}
+
+		if got["akrm"] != c.want {
+			t.Errorf("timed-out job ran %s: balance = %d, want %d",
+				c.run, got["akrm"], c.want)
 		}
 	}
 }

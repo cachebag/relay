@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/cachebag/relay/internal/store"
@@ -14,13 +15,17 @@ import (
 const ReasonJob = "job"
 
 // Charge bills the submitter of j for the time it ran, 1 credit per minute
-// rounded up and never less than 1. It needs both timestamps and a
-// submitter, so a job the scheduler gave up on (never reported, no finish
-// from a node) or one from before submitters existed is not charged. A job
-// whose command couldn't be started (exit code -1) used nothing, so it
-// isn't charged either.
+// rounded up and never less than 1. Jobs without a submitter or complete
+// timestamps are not charged. Commands that never launched are also free,
+// but jobs terminated by their execution deadline are charged.
 func Charge(ctx context.Context, credits store.CreditStore, j store.Job) error {
-	if j.Submitter == "" || j.StartedAt == nil || j.FinishedAt == nil || j.ExitCode == -1 {
+	if j.Submitter == "" || j.StartedAt == nil || j.FinishedAt == nil {
+		return nil
+	}
+
+	// Exit code -1 can mean either a launch failure or an execution timeout.
+	// Only skip billing when the command failed to launch.
+	if j.ExitCode == -1 && !timedOut(j) {
 		return nil
 	}
 
@@ -43,6 +48,14 @@ func Charge(ctx context.Context, credits store.CreditStore, j store.Job) error {
 	}
 	log.Printf("charged %s %d credits in pool %s: job %s ran %s", j.Submitter, minutes, j.PoolID, j.ID, Runtime(j))
 	return nil
+}
+
+// timedOut checks for the timeout message appended by the agent.
+// The message must be the last line of stderr.
+func timedOut(j store.Job) bool {
+	stderr := strings.TrimRight(j.Stderr, "\r\n")
+	lastLine := stderr[strings.LastIndex(stderr, "\n")+1:]
+	return strings.HasPrefix(lastLine, "relay: job timed out after ")
 }
 
 // Runtime is how long j ran, or has been running, for logs.
