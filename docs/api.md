@@ -1496,21 +1496,6 @@ relay submit --os linux -- uname -a
 
 Until a matching node is online, `relay status <id>` displays `queued (requires linux)`, and `relay jobs` lists the required OS in the `REQUIRES` column.
 
-To set an execution deadline for each attempt, pass `--timeout` with a
-Go-style duration or plain seconds:
-
-```bash
-relay submit --timeout 10m -- uname -n
-relay submit --timeout 600 -- uname -n
-```
-
-Without this option, the API assigns a one-hour (`3600` second) limit. A
-timeout fails the job with exit code `-1` and appends
-`relay: job timed out after 10m` to stderr. `relay status <id>` and the job
-details in `relay dash` show the limit and, while running, time remaining.
-`--wait-timeout` only stops local CLI waiting and does not change the job's
-execution limit. See [job time limits](TIMEOUTS.md) for an end-to-end test.
-
 ### Example
 
 First, log into a pool:
