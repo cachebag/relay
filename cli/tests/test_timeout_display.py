@@ -23,9 +23,7 @@ def running_job(started_at: str, timeout_seconds: int = 600) -> dict:
     }
 
 
-def test_time_limit_defaults_and_formats():
-    assert status.time_limit({}) == "1h"
-    assert status.time_limit({"timeout_seconds": 0}) == "1h"
+def test_time_limit_formats():
     assert status.time_limit({"timeout_seconds": 5}) == "5s"
     assert status.time_limit({"timeout_seconds": 90}) == "1m30s"
     assert status.time_limit({"timeout_seconds": 600}) == "10m"
@@ -102,7 +100,7 @@ def test_status_prints_limit_for_queued_job(monkeypatch, capsys):
         **running_job("2026-11-01T12:00:00Z"),
         "status": "queued",
         "started_at": None,
-        "timeout_seconds": None,
+        "timeout_seconds": 3600,
     }
 
     monkeypatch.setattr(

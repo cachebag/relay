@@ -50,16 +50,7 @@ def runtime(job: dict) -> str | None:
 
 def timeout_seconds(job: dict) -> int:
     """Return the job's per-attempt timeout in seconds."""
-    seconds = job.get("timeout_seconds")
-
-    # Jobs created before timeouts were introduced may not have this field.
-    # Treat missing or invalid values as the default one-hour limit.
-    if not isinstance(seconds, int) or seconds <= 0:
-        return 3600
-
-    # The API allows a maximum of 24 hours per attempt. 
-    # Keep the display consistent with the limit enforced by the agent.
-    return min(seconds, 86400)
+    return job["timeout_seconds"]
 
 
 def format_limit(seconds: int) -> str:
