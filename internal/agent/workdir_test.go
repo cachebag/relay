@@ -1,10 +1,12 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cachebag/relay/internal/store"
 )
@@ -42,6 +44,30 @@ func TestJobRunsInItsOwnFolder(t *testing.T) {
 }
 
 // Folders left by a crash are cleared when the agent starts, except the one
+// for a result that hasn't been reported yet.
+func TestLeftoverWorkdirsClearedOnStart(t *testing.T) {
+	f := newFakeScheduler(t)
+	jobs := filepath.Join(f.cacheDir, jobsDir)
+	for _, id := range []string{"crashed", "unreported"} {
+		if err := os.MkdirAll(filepath.Join(jobs, id), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	newTestAgent(f, "node-1", nil).setPending(pending{JobID: "unreported", Attempt: 1})
+
+	a := newTestAgent(f, "node-1", nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	a.Run(ctx, time.Hour)
+
+	if _, err := os.Stat(filepath.Join(jobs, "crashed")); !os.IsNotExist(err) {
+		t.Errorf("leftover job folder not removed on start: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(jobs, "unreported")); err != nil {
+		t.Errorf("folder of an unreported result was removed: %v", err)
+	}
+}
+
 // A job ID that isn't a plain name never becomes a path.
 func TestWorkdirRejectsPathLikeIDs(t *testing.T) {
 	a := &Agent{cacheDir: t.TempDir()}

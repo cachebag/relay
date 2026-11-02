@@ -57,3 +57,24 @@ func (a *Agent) removeWorkdir(id string) {
 		log.Printf("removing job folder %s: %v", dir, err)
 	}
 }
+
+// cleanWorkdirs deletes job folders left behind by a crash. The folder of a
+// result still waiting to be reported is kept until it is. The shared temp
+// fallback is left alone, since other agents may be using it.
+func (a *Agent) cleanWorkdirs() {
+	if a.cacheDir == "" {
+		return
+	}
+	entries, err := os.ReadDir(a.workRoot())
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if a.pending != nil && e.Name() == a.pending.JobID {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(a.workRoot(), e.Name())); err != nil {
+			log.Printf("removing leftover job folder %s: %v", e.Name(), err)
+		}
+	}
+}

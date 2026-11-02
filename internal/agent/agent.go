@@ -275,6 +275,7 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 	// Save the interval so connection failure messages can tell the user
 	// when the next retry will occur.
 	a.retryInterval = interval
+	a.cleanWorkdirs()
 
 	// stopJob kills a running job if this machine gets removed from the
 	// pool. The scheduler has already put that job back in the queue.
