@@ -15,9 +15,9 @@ import (
 	"github.com/cachebag/relay/internal/store"
 )
 
-// Runner executes a job's command and reports how it went. It is a field on
-// Agent so tests can replace it with a fake.
-type Runner func(ctx context.Context, argv []string) Result
+// Runner executes a job's command in dir and reports how it went. It is a
+// field on Agent so tests can replace it with a fake.
+type Runner func(ctx context.Context, argv []string, dir string) Result
 
 // Agent is one node's side of the scheduler conversation: it heartbeats, asks
 // for its next job, runs it and reports the result.
@@ -221,12 +221,19 @@ func (a *Agent) execute(ctx context.Context, job store.Job) {
 	jobCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
-	res := a.run(jobCtx, job.Command)
+	var res Result
+	dir, err := a.makeWorkdir(job.ID)
+	if err != nil {
+		res = Result{ExitCode: -1, Stderr: fmt.Sprintf("relay: can't create job folder: %v\n", err)}
+	} else {
+		res = a.run(jobCtx, job.Command, dir)
+	}
 
 	// A job killed because the agent is shutting down didn't really fail, so
 	// leave it unreported for the scheduler to hand out again.
 	if ctx.Err() != nil {
 		log.Printf("job %s interrupted, not reporting a result", job.ID)
+		a.removeWorkdir(job.ID)
 		return
 	}
 

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -18,8 +20,9 @@ const (
 // Runs argv directly (no shell) as the agent's user, with no
 // sandbox, and captures stdout and stderr separately. The exit code comes
 // from the process; if it can't be started at all, the exit code is -1 and
-// stderr holds the error text.
-func RunCommand(ctx context.Context, argv []string) Result {
+// stderr holds the error text. When dir is set the command runs there, with
+// its home and temp folders pointed inside it.
+func RunCommand(ctx context.Context, argv []string, dir string) Result {
 	if len(argv) == 0 {
 		return Result{ExitCode: -1, Stderr: "empty command"}
 	}
@@ -34,6 +37,10 @@ func RunCommand(ctx context.Context, argv []string) Result {
 	}
 	cmd.WaitDelay = 500 * time.Millisecond
 
+	if dir != "" {
+		cmd.Dir = dir
+		cmd.Env = jobEnv(dir)
+	}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -57,6 +64,20 @@ func RunCommand(ctx context.Context, argv []string) Result {
 	default:
 		return Result{ExitCode: -1, Stdout: stdout.String(), Stderr: err.Error() + "\n"}
 	}
+}
+
+// jobEnv is the agent's environment with home and temp moved into dir, so a
+// job's stray files land in its folder and are deleted with it. Later
+// entries win, so appending is enough to override.
+func jobEnv(dir string) []string {
+	tmp := filepath.Join(dir, "tmp")
+	return append(os.Environ(),
+		"HOME="+dir,
+		"USERPROFILE="+dir,
+		"TMPDIR="+tmp,
+		"TEMP="+tmp,
+		"TMP="+tmp,
+	)
 }
 
 // CapWriter keeps the first maxOutput bytes written to it and drops the rest.

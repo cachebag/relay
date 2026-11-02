@@ -116,7 +116,7 @@ func TestRunRemovedStopsRunningJob(t *testing.T) {
 	// A fake job that runs until it is cancelled. The admin removes the
 	// machine once the job has started.
 	started := make(chan struct{})
-	a.run = func(ctx context.Context, argv []string) Result {
+	a.run = func(ctx context.Context, argv []string, dir string) Result {
 		close(started)
 		gone.Store(true)
 		<-ctx.Done()

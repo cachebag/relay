@@ -35,6 +35,8 @@ func TestMain(m *testing.M) {
 // sleep:N    sleep for N milliseconds
 // spawnchild:P spawn a child that writes a marker at path P
 // markafter:P  wait two seconds, then write a marker at path P
+// pwd          print the working directory on its own line
+// env:NAME     print the value of NAME on its own line
 func helperMain(args []string) int {
 	for _, arg := range args {
 		op, val, _ := strings.Cut(arg, ":")
@@ -43,6 +45,11 @@ func helperMain(args []string) int {
 			fmt.Fprint(os.Stdout, val)
 		case "err":
 			fmt.Fprint(os.Stderr, val)
+		case "pwd":
+			wd, _ := os.Getwd()
+			fmt.Fprintln(os.Stdout, wd)
+		case "env":
+			fmt.Fprintln(os.Stdout, os.Getenv(val))
 
 		// Handle output truncation for large streams.
 		case "outn", "errn":
@@ -84,7 +91,7 @@ func helperMain(args []string) int {
 func runHelper(t *testing.T, args ...string) Result {
 	t.Helper()
 	t.Setenv(helperEnv, "1")
-	return RunCommand(context.Background(), append([]string{os.Args[0]}, args...))
+	return RunCommand(context.Background(), append([]string{os.Args[0]}, args...), "")
 }
 
 // Verifies that stdout and stderr are captured separately
@@ -120,7 +127,7 @@ func TestRunCommandReportsExitCode(t *testing.T) {
 // Tests that `RunCommand` correctly handles a missing executable.
 func TestRunCommandMissingExecutable(t *testing.T) {
 	const name = "relay-no-such-executable"
-	res := RunCommand(context.Background(), []string{name, "arg"})
+	res := RunCommand(context.Background(), []string{name, "arg"}, "")
 
 	if res.ExitCode != -1 {
 		t.Errorf("exit code = %d, want -1", res.ExitCode)
@@ -136,7 +143,7 @@ func TestRunCommandMissingExecutable(t *testing.T) {
 
 // Tests that `RunCommand` correctly handles an empty command.
 func TestRunCommandEmptyCommand(t *testing.T) {
-	res := RunCommand(context.Background(), nil)
+	res := RunCommand(context.Background(), nil, "")
 
 	if res.ExitCode != -1 || res.Stderr == "" {
 		t.Errorf("got %+v, want exit code -1 with an error in stderr", res)

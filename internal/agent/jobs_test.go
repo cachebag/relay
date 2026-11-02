@@ -151,7 +151,7 @@ type FakeRunner struct {
 
 // `run` records the command it is asked to run and returns
 // the pre-set result.
-func (r *FakeRunner) run(ctx context.Context, argv []string) Result {
+func (r *FakeRunner) run(ctx context.Context, argv []string, dir string) Result {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, argv)
@@ -367,7 +367,7 @@ func TestHeartbeatsContinueWhileJobRuns(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var runs atomic.Int32
-	blocked := func(ctx context.Context, argv []string) Result {
+	blocked := func(ctx context.Context, argv []string, dir string) Result {
 		runs.Add(1)
 		close(started)
 		<-release
@@ -420,7 +420,7 @@ func TestInterruptedJobIsNotReported(t *testing.T) {
 	// Set up a job that blocks until the context is canceled, allowing us to test
 	// that interrupted jobs are not reported.
 	started := make(chan struct{})
-	waitForCancel := func(ctx context.Context, argv []string) Result {
+	waitForCancel := func(ctx context.Context, argv []string, dir string) Result {
 		close(started)
 		<-ctx.Done()
 		return Result{ExitCode: -1, Stderr: ctx.Err().Error()}
