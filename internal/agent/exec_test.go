@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Marks a re-exec of the test binary as the helper process that
@@ -30,6 +32,9 @@ func TestMain(m *testing.M) {
 // outn:N     write N bytes to stdout
 // errn:N     write N bytes to stderr
 // exit:N     exit with status N
+// sleep:N    sleep for N milliseconds
+// spawnchild:P spawn a child that writes a marker at path P
+// markafter:P  wait two seconds, then write a marker at path P
 func helperMain(args []string) int {
 	for _, arg := range args {
 		op, val, _ := strings.Cut(arg, ":")
@@ -50,6 +55,26 @@ func helperMain(args []string) int {
 		case "exit":
 			n, _ := strconv.Atoi(val)
 			return n
+		case "sleep":
+			n, _ := strconv.Atoi(val)
+			time.Sleep(time.Duration(n) * time.Millisecond)
+		case "spawnchild":
+			// A child that writes a marker two seconds later. Its parent
+			// stays alive, letting timeout tests verify tree termination.
+			child := exec.Command(os.Args[0], "markafter:"+val)
+			if err := child.Start(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 99
+			}
+			_ = child.Process.Release()
+			fmt.Fprintln(os.Stdout, "spawned")
+			time.Sleep(time.Minute)
+		case "markafter":
+			time.Sleep(2 * time.Second)
+			if err := os.WriteFile(val, []byte("child survived"), 0600); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 99
+			}
 		}
 	}
 	return 0

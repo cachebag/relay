@@ -337,11 +337,12 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			return
 		}
 
-		// Read the command and submitter from the request.
+		// Read the command, submitter, requirements, and timeout.
 		var req struct {
-			Command   []string       `json:"command"`
-			Submitter string         `json:"submitter"`
-			Requires  store.Requires `json:"requires"`
+			Command        []string       `json:"command"`
+			Submitter      string         `json:"submitter"`
+			Requires       store.Requires `json:"requires"`
+			TimeoutSeconds *int           `json:"timeout_seconds"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -366,16 +367,28 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			return
 		}
 
+		// Jobs default to one hour unless a timeout was supplied.
+		// Explicit zero, negative values, and values over 24 hours are invalid.
+		timeoutSeconds := store.DefaultJobTimeoutSeconds
+		if req.TimeoutSeconds != nil {
+			timeoutSeconds = *req.TimeoutSeconds
+		}
+		if timeoutSeconds < 1 || timeoutSeconds > store.MaxJobTimeoutSeconds {
+			http.Error(w, "timeout_seconds must be between 1 and 86400", http.StatusBadRequest)
+			return
+		}
+
 		// Create the job with a server-generated ID and queued status.
 		// The authenticated token determines the pool, not the request body.
 		j := store.Job{
-			ID:        store.NewID(),
-			Command:   req.Command,
-			Requires:  req.Requires,
-			Status:    store.JobQueued,
-			PoolID:    p.ID,
-			Submitter: req.Submitter,
-			CreatedAt: time.Now().UTC(),
+			ID:             store.NewID(),
+			Command:        req.Command,
+			TimeoutSeconds: timeoutSeconds,
+			Requires:       req.Requires,
+			Status:         store.JobQueued,
+			PoolID:         p.ID,
+			Submitter:      req.Submitter,
+			CreatedAt:      time.Now().UTC(),
 		}
 
 		// Save the new job.

@@ -70,6 +70,7 @@ def test_commands_send_bearer_from_profile(cfg, monkeypatch, name, module, args,
                 json={
                     "id": "j1",
                     "status": "queued",
+                    "timeout_seconds": 3600,
                     "node_id": "",
                     "attempts": 0,
                     "command": ["x"],

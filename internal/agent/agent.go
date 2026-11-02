@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -206,7 +207,21 @@ func (a *Agent) Tick(ctx context.Context) {
 // straight away. If that fails, Tick keeps retrying it before fetching more
 // work.
 func (a *Agent) execute(ctx context.Context, job store.Job) {
-	res := a.run(ctx, job.Command)
+	// Legacy jobs have no timeout field. Cap unexpected values from older
+	// schedulers as well, so every attempt has a bounded execution time.
+	timeoutSeconds := job.TimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = store.DefaultJobTimeoutSeconds
+	}
+	if timeoutSeconds > store.MaxJobTimeoutSeconds {
+		timeoutSeconds = store.MaxJobTimeoutSeconds
+	}
+
+	// Create an independent deadline for this execution attempt.
+	jobCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+
+	res := a.run(jobCtx, job.Command)
 
 	// A job killed because the agent is shutting down didn't really fail, so
 	// leave it unreported for the scheduler to hand out again.
@@ -215,12 +230,36 @@ func (a *Agent) execute(ctx context.Context, job store.Job) {
 		return
 	}
 
+	// Report an execution deadline as a failed job with exit code -1.
+	if errors.Is(jobCtx.Err(), context.DeadlineExceeded) {
+		res.ExitCode = -1
+		if res.Stderr != "" && !strings.HasSuffix(res.Stderr, "\n") {
+			res.Stderr += "\n"
+		}
+		res.Stderr += fmt.Sprintf("relay: job timed out after %s\n", formatJobTimeout(timeoutSeconds))
+	}
+
 	a.setPending(pending{
 		JobID:   job.ID,
 		Attempt: job.Attempts,
 		Result:  res,
 	})
 	a.flushPending(ctx)
+}
+
+// formatJobTimeout presents whole-second limits without redundant zeros.
+func formatJobTimeout(seconds int) string {
+	var formatted strings.Builder
+	if hours := seconds / 3600; hours > 0 {
+		fmt.Fprintf(&formatted, "%dh", hours)
+	}
+	if minutes := seconds % 3600 / 60; minutes > 0 {
+		fmt.Fprintf(&formatted, "%dm", minutes)
+	}
+	if remainder := seconds % 60; remainder > 0 {
+		fmt.Fprintf(&formatted, "%ds", remainder)
+	}
+	return formatted.String()
 }
 
 // Run calls Tick every interval until ctx is cancelled, then waits for any

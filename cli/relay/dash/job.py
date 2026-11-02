@@ -74,9 +74,15 @@ class JobModal(ModalScreen[None]):
             f"node       {self.hostnames.get(node, node) or '-'}",
             f"attempts   {job.get('attempts', 0)}",
             f"submitter  {job.get('submitter') or '-'}",
+            # Keep the limit visible even after the job finishes.
+            f"time limit {status_cmd.time_limit(job)}",
         ]
         if ran:
             lines.append(f"{'running' if state == 'running' else 'ran':<11}{ran}")
+        # This modal already refreshes every two seconds, so the value below
+        # counts down automatically until the job is done or failed.
+        if state == "running":
+            lines.append(f"time left  {status_cmd.time_left(job) or '-'}")
         if out is not None:
             lines.append(f"exit code  {out.get('exit_code', 0)}")
         self.query_one("#job-summary", Static).update("\n".join(lines))

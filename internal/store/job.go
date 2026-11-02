@@ -18,6 +18,11 @@ const (
 	JobFailed   JobStatus = "failed"
 )
 
+const (
+	DefaultJobTimeoutSeconds = 60 * 60
+	MaxJobTimeoutSeconds     = 24 * 60 * 60
+)
+
 // Stores a job's required operating system.
 type Requires struct {
 	OS string `json:"os,omitempty"`
@@ -33,13 +38,16 @@ func (r Requires) Valid() bool {
 }
 
 type Job struct {
-	ID        string    `json:"id"`
-	Command   []string  `json:"command"`
-	Requires  Requires  `json:"requires,omitempty"`
-	Status    JobStatus `json:"status"`
-	NodeID    string    `json:"node_id"`
-	PoolID    string    `json:"pool_id"`
-	Submitter string    `json:"submitter"`
+	ID      string   `json:"id"`
+	Command []string `json:"command"`
+	// TimeoutSeconds limits each execution attempt. POST /jobs defaults it
+	// to one hour and accepts values from 1 second to 24 hours.
+	TimeoutSeconds int       `json:"timeout_seconds"`
+	Requires       Requires  `json:"requires,omitempty"`
+	Status         JobStatus `json:"status"`
+	NodeID         string    `json:"node_id"`
+	PoolID         string    `json:"pool_id"`
+	Submitter      string    `json:"submitter"`
 	// Attempts counts how many times the scheduler has placed this job on a
 	// node. It is bumped on every assignment, including reassignments after a
 	// node goes offline, and the scheduler gives up once it reaches its cap.

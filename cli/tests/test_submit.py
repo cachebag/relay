@@ -189,13 +189,14 @@ def _mock_cli(monkeypatch, handler):
 
 
 # Creates the arguments normally passed by relay submit --wait.
-def _wait_args(timeout=None):
+def _wait_args(wait_timeout=None, timeout=None):
     """Build arguments for relay submit --wait."""
     return argparse.Namespace(
         scheduler="http://scheduler",
         command=["echo", "hello"],
         wait=True,
         timeout=timeout,
+        wait_timeout=wait_timeout,
     )
 
 
@@ -384,7 +385,7 @@ def test_submit_wait_timeout_exits_124(monkeypatch, capsys):
     )
 
     with pytest.raises(SystemExit) as exc:
-        submit_command.run(_wait_args(timeout=1))
+        submit_command.run(_wait_args(wait_timeout=1))
 
     captured = capsys.readouterr()
 
@@ -436,32 +437,32 @@ def test_submit_wait_keyboard_interrupt_exits_130(monkeypatch, capsys):
     ]
 
 
-def test_submit_timeout_requires_wait(monkeypatch, capsys):
-    """--timeout cannot be used without --wait."""
-
-    # Validation must happen before reading the login or submitting.
+def test_submit_wait_timeout_requires_wait(monkeypatch, capsys):
+    """The local wait limit requires --wait."""
     monkeypatch.setattr(
         profile,
         "load",
         lambda: pytest.fail("should not submit"),
     )
 
-    args = _wait_args(timeout=1)
+    args = _wait_args(wait_timeout=1)
     args.wait = False
 
     with pytest.raises(SystemExit) as exc:
         submit_command.run(args)
 
     assert exc.value.code == 2
-    assert "--timeout requires --wait" in capsys.readouterr().err
+    assert "--wait-timeout requires --wait" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
     "invalid_timeout",
     [0, -1, float("nan"), float("inf")],
 )
-def test_submit_rejects_invalid_timeout(monkeypatch, capsys, invalid_timeout):
-    """Non-positive and non-finite timeouts are rejected before submission."""
+def test_submit_rejects_invalid_wait_timeout(
+    monkeypatch, capsys, invalid_timeout
+):
+    """Invalid local waiting limits are rejected before submission."""
     monkeypatch.setattr(
         profile,
         "load",
@@ -469,24 +470,35 @@ def test_submit_rejects_invalid_timeout(monkeypatch, capsys, invalid_timeout):
     )
 
     with pytest.raises(SystemExit) as exc:
-        submit_command.run(_wait_args(timeout=invalid_timeout))
+        submit_command.run(_wait_args(wait_timeout=invalid_timeout))
 
     assert exc.value.code == 2
-    assert "--timeout must be a positive number" in capsys.readouterr().err
+    assert "--wait-timeout must be a positive number" in capsys.readouterr().err
 
 
 def test_submit_register_accepts_wait_and_timeout():
-    """The CLI parser accepts --wait, --timeout, and the submitted command."""
+    """The CLI accepts separate execution and waiting time limits."""
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers()
     submit_command.register(sub)
 
     args = parser.parse_args(
-        ["submit", "--wait", "--timeout", "1", "--", "uname", "-n"]
+        [
+            "submit",
+            "--wait",
+            "--timeout",
+            "10m",
+            "--wait-timeout",
+            "1.5",
+            "--",
+            "uname",
+            "-n",
+        ]
     )
 
     assert args.wait is True
-    assert args.timeout == 1.0
+    assert args.timeout == 600
+    assert args.wait_timeout == 1.5
     assert args.command == ["uname", "-n"]
 
 

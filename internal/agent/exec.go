@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"time"
 )
 
 const (
@@ -25,10 +26,23 @@ func RunCommand(ctx context.Context, argv []string) Result {
 
 	var stdout, stderr CapWriter
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	configureJobProcess(cmd)
+
+	// Cancel the entire process tree rather than only the immediate process.
+	cmd.Cancel = func() error {
+		return killJobProcessTree(cmd)
+	}
+	cmd.WaitDelay = 500 * time.Millisecond
+
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
 	err := cmd.Run()
+	// A canceled or timed-out command is reported with exit code -1.
+	// Preserve any output captured before the command stopped.
+	if ctx.Err() != nil {
+		return Result{ExitCode: -1, Stdout: stdout.String(), Stderr: stderr.String()}
+	}
 
 	var exitErr *exec.ExitError
 	switch {

@@ -52,21 +52,25 @@ relay submit --wait -- uname -n
 
 The CLI checks the job's status once per second, prints each status change, then displays the job's output and exits with the job's exit code.
 
-To stop waiting after a certain number of seconds, use `--timeout`:
+To stop waiting after a certain number of seconds, use `--wait-timeout`:
 
 ```sh
-relay submit --wait --timeout 30 -- uname -n
+relay submit --wait --wait-timeout 30 -- uname -n
 ```
 
 If the timeout expires, the CLI exits with code `124`. Pressing Ctrl+C while waiting exits with code `130`. In both cases, the submitted job continues running and can be checked later.
 
-To submit a job without waiting, omit `--wait`:
+### Job execution timeouts
+
+Jobs have a one-hour execution limit by default, up to a maximum of 24 hours.
+Set a different limit with `--timeout`:
 
 ```sh
-relay submit -- uname -n
-relay status <id>
-relay logs <id>
+relay submit --timeout 10m -- uname -n
 ```
+
+Jobs that exceed their limit are killed and marked `failed`. The timeout
+message (for example, `relay: job timed out after 10m`) appears in `relay logs`.
 
 ## See what's in the pool
 

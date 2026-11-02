@@ -85,6 +85,7 @@ def test_status_prints_the_requirement(monkeypatch, capsys):
             "attempts": 0,
             "created_at": "2026-09-23T15:01:03.320292Z",
             "requires": {"os": "linux"},
+            "timeout_seconds": 3600,
         },
     )
     status.run(argparse.Namespace(scheduler="http://scheduler", job_id="abc123"))
