@@ -132,5 +132,3 @@ def test_run_submit_sends_timeout_without_wait(monkeypatch, capsys):
     )
 
     assert "job123  queued" in capsys.readouterr().out
-
-

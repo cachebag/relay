@@ -37,6 +37,7 @@ NODE = {
 JOB = {
     "id": "j1",
     "status": "done",
+    "timeout_seconds": 3600,
     "node_id": "n1",
     "attempts": 1,
     "submitter": "akrm",
