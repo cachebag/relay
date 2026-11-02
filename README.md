@@ -60,6 +60,21 @@ relay login --scheduler http://<scheduler address>:8080 --pool-token <pool token
 relay submit --wait -- uname -n
 ```
 
+Every job has a **one-hour execution limit** by default. Set a shorter or
+longer limit with `--timeout`, up to 24 hours:
+
+```sh
+relay submit --timeout 10m -- uname -n
+```
+
+The agent stops the job and its child processes when the limit expires. The
+job becomes `failed` with exit code `-1`, and `relay logs <job-id>` ends with
+`relay: job timed out after 10m`. Use `relay status <job-id>` or select the job
+in `relay dash` to view its limit and, while running, the time remaining.
+
+`--wait-timeout` is separate: it only limits how long the CLI waits for a job
+and does not stop the job itself. See [job timeout behavior and testing](docs/TIMEOUTS.md).
+
 **Run a pool.** Start the scheduler in the background and create a pool. The admin token relayd prints on first start is saved for you:
 
 ```sh
@@ -73,6 +88,7 @@ relay pool create my-pool
 |---|---|
 | Lend my machine to a pool, or leave one | [docs/CONTRIBUTE.md](docs/CONTRIBUTE.md) |
 | Install the CLI and run jobs | [docs/SUBMIT.md](docs/SUBMIT.md) |
+| Set job deadlines and test timeouts | [docs/TIMEOUTS.md](docs/TIMEOUTS.md) |
 | Run a scheduler, create pools, rotate tokens | [docs/ADMIN.md](docs/ADMIN.md) |
 | Put my scheduler on the internet | [docs/TAILSCALE.md](docs/TAILSCALE.md) |
 | Use the HTTP API directly | [docs/api.md](docs/api.md) |

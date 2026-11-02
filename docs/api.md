@@ -689,7 +689,8 @@ Example body:
 {
   "command": ["echo", "hi"],
   "submitter": "alice",
-  "requires": {"os": "linux"}
+  "requires": {"os": "linux"},
+  "timeout_seconds": 600
 }
 ```
 
@@ -700,6 +701,7 @@ Example body:
 | `command` | Command and arguments to execute. Must contain at least one value |
 | `submitter` | Name of the person submitting the job. Cannot be empty or whitespace |
 | `requires` | Optional. `{"os": "linux"}`, `darwin` or `windows`. When set, the job only runs on a node with that OS |
+| `timeout_seconds` | Optional integer execution limit per attempt, from `1` to `86400` seconds (24 hours). Defaults to `3600` seconds (1 hour) if omitted |
 
 The client does not select the job's `pool_id`.
 
@@ -732,7 +734,7 @@ The scheduler can only assign the job to an online node belonging to the same po
 
 #### Error Responses
 
-If the JSON request is malformed, the command is empty, the submitter is missing or blank, or `requires.os` is not `linux`, `darwin`, `windows` or empty:
+If the JSON request is malformed, the command is empty, the submitter is missing or blank, `requires.os` is not `linux`, `darwin`, `windows` or empty, or `timeout_seconds` is `0`, negative, or greater than `86400`:
 
 ```text
 400 Bad Request
@@ -784,6 +786,7 @@ Example response:
   "id": "40ca4109f082",
   "command": ["echo", "hi"],
   "requires": {},
+  "timeout_seconds": 3600,
   "status": "queued",
   "node_id": "",
   "pool_id": "pool-id",
@@ -802,6 +805,11 @@ Example response:
 `node_id` is the node the scheduler assigned the job to, or empty while the job is queued.
 
 `attempts` counts how many times the scheduler has placed the job on a node.
+
+`timeout_seconds` is the maximum time an agent may spend executing a single
+attempt. It is always included in job responses, and defaults to `3600` for
+jobs without an explicit limit. Waiting in the queue does not consume this
+execution time. The limit is applied again if the scheduler reassigns a job.
 
 `started_at` appears once a node has picked the job up and `finished_at` once a result was accepted or the scheduler gave up. If the job is put back in the queue, `started_at` is cleared so it always covers the current attempt. When a result is accepted, the submitter is charged 1 credit for every minute between the two, rounded up (minimum 1). A job the scheduler failed after 3 lost nodes never reported, so it gets `finished_at` but no charge.
 
@@ -868,6 +876,7 @@ Example response:
     "id": "40ca4109f082",
     "command": ["echo", "hi"],
     "requires": {},
+    "timeout_seconds": 3600,
     "status": "queued",
     "node_id": "",
     "pool_id": "pool-a",
@@ -879,6 +888,7 @@ Example response:
     "id": "51db5210a193",
     "command": ["sleep", "5"],
     "requires": {"os": "linux"},
+    "timeout_seconds": 600,
     "status": "assigned",
     "node_id": "node-2",
     "pool_id": "pool-a",
@@ -1485,6 +1495,21 @@ relay submit --os linux -- uname -a
 ```
 
 Until a matching node is online, `relay status <id>` displays `queued (requires linux)`, and `relay jobs` lists the required OS in the `REQUIRES` column.
+
+To set an execution deadline for each attempt, pass `--timeout` with a
+Go-style duration or plain seconds:
+
+```bash
+relay submit --timeout 10m -- uname -n
+relay submit --timeout 600 -- uname -n
+```
+
+Without this option, the API assigns a one-hour (`3600` second) limit. A
+timeout fails the job with exit code `-1` and appends
+`relay: job timed out after 10m` to stderr. `relay status <id>` and the job
+details in `relay dash` show the limit and, while running, time remaining.
+`--wait-timeout` only stops local CLI waiting and does not change the job's
+execution limit. See [job time limits](TIMEOUTS.md) for an end-to-end test.
 
 ### Example
 
