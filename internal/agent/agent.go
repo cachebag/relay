@@ -43,6 +43,10 @@ type Agent struct {
 	// point it at a temp directory.
 	cacheDir string
 
+	// keepWorkdir leaves each job's folder in place after its result is
+	// reported, for debugging.
+	keepWorkdir bool
+
 	// pending is a finished result the scheduler hasn't acknowledged yet.
 	// It is only touched by the job goroutine while busy, and by Tick
 	// otherwise.
@@ -90,6 +94,12 @@ func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Ag
 	}
 	a.loadPending()
 	return a
+}
+
+// KeepWorkdir leaves job folders in place instead of deleting them, and
+// stops Run from clearing leftover ones when it starts.
+func (a *Agent) KeepWorkdir() {
+	a.keepWorkdir = true
 }
 
 // isConnectionError reports whether err represents a networking failure.

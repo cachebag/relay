@@ -47,10 +47,15 @@ func (a *Agent) makeWorkdir(id string) (string, error) {
 	return dir, nil
 }
 
-// removeWorkdir deletes job id's folder.
+// removeWorkdir deletes job id's folder, or with --keep-workdir says where
+// it was left.
 func (a *Agent) removeWorkdir(id string) {
 	dir, err := a.workdir(id)
 	if err != nil {
+		return
+	}
+	if a.keepWorkdir {
+		log.Printf("kept job folder %s", dir)
 		return
 	}
 	if err := os.RemoveAll(dir); err != nil {
@@ -62,7 +67,7 @@ func (a *Agent) removeWorkdir(id string) {
 // result still waiting to be reported is kept until it is. The shared temp
 // fallback is left alone, since other agents may be using it.
 func (a *Agent) cleanWorkdirs() {
-	if a.cacheDir == "" {
+	if a.keepWorkdir || a.cacheDir == "" {
 		return
 	}
 	entries, err := os.ReadDir(a.workRoot())

@@ -43,6 +43,23 @@ func TestJobRunsInItsOwnFolder(t *testing.T) {
 	}
 }
 
+// With KeepWorkdir the folder is left in place after the result is reported.
+func TestKeepWorkdirLeavesFolder(t *testing.T) {
+	f := newFakeScheduler(t)
+	f.setNext(serveJob(store.Job{ID: "job-1", Command: []string{"true"}}))
+	a := newTestAgent(f, "node-1", (&FakeRunner{}).run)
+	a.KeepWorkdir()
+
+	tickAndWait(a)
+
+	if len(f.posted()) != 1 {
+		t.Fatal("result was not reported")
+	}
+	if _, err := os.Stat(filepath.Join(f.cacheDir, jobsDir, "job-1")); err != nil {
+		t.Errorf("job folder removed despite KeepWorkdir: %v", err)
+	}
+}
+
 // Folders left by a crash are cleared when the agent starts, except the one
 // for a result that hasn't been reported yet.
 func TestLeftoverWorkdirsClearedOnStart(t *testing.T) {
