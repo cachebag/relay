@@ -1,4 +1,3 @@
-
 from datetime import UTC, datetime
 from math import ceil
 

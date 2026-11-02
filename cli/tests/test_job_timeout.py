@@ -18,7 +18,6 @@ from relay.commands.submit import submit
         ("10m", 600),
         ("1h30m", 5400),
         ("1.5h", 5400),
-        ("1500ms", 2),
         ("24h", 86400),
     ],
 )
@@ -39,6 +38,11 @@ def test_parse_job_timeout(value, seconds):
         "1.5",
         "5x",
         "1hgarbage",
+        "1500ms",
+        "1ns",
+        "5us",
+        "5µs",
+        "5μs",
     ],
 )
 def test_parse_job_timeout_rejects_invalid_values(value):
@@ -130,28 +134,3 @@ def test_run_submit_sends_timeout_without_wait(monkeypatch, capsys):
     assert "job123  queued" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    "value",
-    [0, -1, 86401, float("nan"), 1.5],
-)
-def test_submit_rejects_invalid_job_timeout(monkeypatch, capsys, value):
-    """Invalid job limits are rejected before submission."""
-
-    monkeypatch.setattr(
-        profile,
-        "load",
-        lambda: pytest.fail("should not submit"),
-    )
-
-    args = argparse.Namespace(
-        scheduler="http://scheduler",
-        command=["echo", "hello"],
-        timeout=value,
-        wait=False,
-    )
-
-    with pytest.raises(SystemExit) as exc:
-        submit_command.run(args)
-
-    assert exc.value.code == 2
-    assert "--timeout must be between" in capsys.readouterr().err

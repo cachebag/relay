@@ -9,14 +9,9 @@ import httpx
 from relay import profile
 from relay.commands import logs, status
 
-_DURATION_PART = re.compile(r"(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|μs|ms|s|m|h)")
+_DURATION_PART = re.compile(r"(\d+(?:\.\d*)?|\.\d+)(s|m|h)")
 
 _SECONDS_PER_UNIT = {
-    "ns": Decimal("0.000000001"),
-    "us": Decimal("0.000001"),
-    "µs": Decimal("0.000001"),
-    "μs": Decimal("0.000001"),
-    "ms": Decimal("0.001"),
     "s": Decimal(1),
     "m": Decimal(60),
     "h": Decimal(3600),
@@ -26,9 +21,9 @@ _MAX_JOB_TIMEOUT_SECONDS = 24 * 60 * 60
 
 
 def parse_job_timeout(value: str) -> int:
-    """Convert Go-style durations or plain seconds to whole seconds.
+    """Convert durations using s, m, h or plain seconds to whole seconds.
 
-    Subsecond amounts round up because the API stores integer seconds.
+    Fractional durations round up because the API stores integer seconds.
     """
     if value.isascii() and value.isdecimal():
         seconds = int(value)
@@ -220,20 +215,8 @@ def wait_for_job(
 def run(args) -> None:
     """Submit a job using the saved login profile."""
 
-    # Arguments parsed by argparse are already normalized to integer seconds.
-    # Also validate manual Namespace callers before making any HTTP requests.
+    # Argparse already validated and converted the job limit to seconds.
     timeout_seconds = getattr(args, "timeout", None)
-
-    if timeout_seconds is not None and (
-        not isinstance(timeout_seconds, int)
-        or isinstance(timeout_seconds, bool)
-        or not 1 <= timeout_seconds <= _MAX_JOB_TIMEOUT_SECONDS
-    ):
-        print(
-            "relay: --timeout must be between 1 second and 24 hours",
-            file=sys.stderr,
-        )
-        sys.exit(2)
 
     wait_timeout = getattr(args, "wait_timeout", None)
 

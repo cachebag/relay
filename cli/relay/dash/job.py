@@ -1,4 +1,3 @@
-
 """Enter on a job: what it is, where it ran, and what it printed."""
 
 from typing import ClassVar

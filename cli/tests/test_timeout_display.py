@@ -1,4 +1,3 @@
-
 """Time limits and remaining time in CLI status and dashboard job details."""
 
 import argparse
