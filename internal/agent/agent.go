@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -28,6 +29,7 @@ type Agent struct {
 	node         store.Node
 	client       *http.Client
 	run          Runner
+
 	// connected tracks whether the most recent heartbeat successfully reached
 	// the scheduler. This prevents the agent from printing the connected
 	// message after every successful heartbeat.
@@ -73,6 +75,7 @@ func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Ag
 	// the scheduler to a GET, which it then refuses. Strip it here once.
 	schedulerURL = strings.TrimRight(schedulerURL, "/")
 	n.ID = loadOrCreateNodeID(cacheDir, n.ID)
+
 	a := &Agent{
 		schedulerURL: schedulerURL,
 		poolToken:    poolToken,
@@ -87,6 +90,7 @@ func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Ag
 
 		cacheDir: cacheDir,
 	}
+
 	a.loadPending()
 	return a
 }
@@ -110,6 +114,7 @@ func isConnectionError(err error) bool {
 func (a *Agent) Tick(ctx context.Context) {
 	// Send the node heartbeat to the scheduler.
 	err := Send(ctx, a.client, a.schedulerURL, a.node, a.poolToken)
+
 	if err != nil {
 		// Any failed heartbeat means the agent is no longer considered
 		// connected. The next successful heartbeat will print the
@@ -180,21 +185,26 @@ func (a *Agent) Tick(ctx context.Context) {
 	}
 
 	job, err := a.Next(ctx)
+
 	if errors.Is(err, ErrBadToken) {
 		log.Printf("pool token rejected; check it with your pool admin")
 		return
 	}
+
 	if err != nil {
 		log.Printf("fetching next job failed: %v", err)
 		return
 	}
+
 	if job == nil {
 		return
 	}
 
 	log.Printf("running job %s: %v", job.ID, job.Command)
+
 	a.busy.Store(true)
 	a.wg.Add(1)
+
 	go func() {
 		defer a.wg.Done()
 		defer a.busy.Store(false)
@@ -206,7 +216,26 @@ func (a *Agent) Tick(ctx context.Context) {
 // straight away. If that fails, Tick keeps retrying it before fetching more
 // work.
 func (a *Agent) execute(ctx context.Context, job store.Job) {
-	res := a.run(ctx, job.Command)
+	// Legacy jobs have no timeout field. Cap unexpected values from older
+	// schedulers as well, so every attempt has a bounded execution time.
+	timeoutSeconds := job.TimeoutSeconds
+
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = store.DefaultJobTimeoutSeconds
+	}
+
+	if timeoutSeconds > store.MaxJobTimeoutSeconds {
+		timeoutSeconds = store.MaxJobTimeoutSeconds
+	}
+
+	// Create an independent deadline for this execution attempt.
+	jobCtx, cancel := context.WithTimeout(
+		ctx,
+		time.Duration(timeoutSeconds)*time.Second,
+	)
+	defer cancel()
+
+	res := a.run(jobCtx, job.Command)
 
 	// A job killed because the agent is shutting down didn't really fail, so
 	// leave it unreported for the scheduler to hand out again.
@@ -215,12 +244,46 @@ func (a *Agent) execute(ctx context.Context, job store.Job) {
 		return
 	}
 
+	// Report an execution deadline as a failed job with exit code -1.
+	if errors.Is(jobCtx.Err(), context.DeadlineExceeded) {
+		res.ExitCode = -1
+
+		if res.Stderr != "" && !strings.HasSuffix(res.Stderr, "\n") {
+			res.Stderr += "\n"
+		}
+
+		res.Stderr += fmt.Sprintf(
+			"relay: job timed out after %s\n",
+			formatJobTimeout(timeoutSeconds),
+		)
+	}
+
 	a.setPending(pending{
 		JobID:   job.ID,
 		Attempt: job.Attempts,
 		Result:  res,
 	})
+
 	a.flushPending(ctx)
+}
+
+// formatJobTimeout presents whole-second limits without redundant zeros.
+func formatJobTimeout(seconds int) string {
+	var formatted strings.Builder
+
+	if hours := seconds / 3600; hours > 0 {
+		fmt.Fprintf(&formatted, "%dh", hours)
+	}
+
+	if minutes := seconds % 3600 / 60; minutes > 0 {
+		fmt.Fprintf(&formatted, "%dm", minutes)
+	}
+
+	if remainder := seconds % 60; remainder > 0 {
+		fmt.Fprintf(&formatted, "%ds", remainder)
+	}
+
+	return formatted.String()
 }
 
 // Run calls Tick every interval until ctx is cancelled, then waits for any
@@ -241,6 +304,7 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 
 	for {
 		a.Tick(ctx)
+
 		// Removed by the pool admin: stop the job and return nil, so
 		// relay-agent exits 0 instead of retrying a heartbeat that will
 		// never be accepted. The deferred wg.Wait lets the job wind down.
@@ -248,6 +312,7 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 			stopJob()
 			return nil
 		}
+
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
