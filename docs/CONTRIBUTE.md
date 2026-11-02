@@ -74,6 +74,12 @@ $env:RELAY_POOL_TOKEN="<pool token>"
 
 > Use `curl.exe`, not `curl`: in Windows PowerShell, `curl` is an alias for a different command.
 
+## Where jobs run
+
+Each job runs in its own empty folder, `relay/jobs/<job id>` in your cache folder (`~/.cache` on Linux, `~/Library/Caches` on macOS, `%LocalAppData%` on Windows), with `HOME` and the temp folder pointed inside it. The folder is deleted once the result is reported, and any left behind by a crash are deleted when the agent next starts. Jobs still run as your user, so this keeps their files tidy but doesn't stop a job reading yours.
+
+To look at what a job left behind, start the agent with `--keep-workdir`. It keeps every job's folder and logs where it is.
+
 ## Scheduler address
 
 `relay-agent` finds the scheduler the same way the CLI does: the `--scheduler` flag
