@@ -16,8 +16,7 @@ import (
 // avoids depending on echo or sh, which Windows doesn't have.
 const helperEnv = "RELAY_AGENT_TEST_HELPER"
 
-// Checks if the helper environment variable is set and runs the `helperMain`
-// function if it is.
+// Checks if the helper environment variable is set and runs the `helperMain` function if it is.
 func TestMain(m *testing.M) {
 	if os.Getenv(helperEnv) == "1" {
 		os.Exit(helperMain(os.Args[1:]))
@@ -129,8 +128,7 @@ func TestStreamsCapturedSeparately(t *testing.T) {
 	}
 }
 
-// Tests that `RunCommand` correctly reports the exit code of
-// the executed command.
+// Tests that `RunCommand` correctly reports the exit code of the executed command.
 func TestRunCommandReportsExitCode(t *testing.T) {
 	res := runHelper(t, "out:partial", "err:boom", "exit:7")
 
@@ -243,8 +241,7 @@ func TestRunCommandTruncatesOutput(t *testing.T) {
 		}
 	})
 
-	// Tests that `RunCommand` does not truncate output that is exactly
-	// at the maximum allowed length.
+	// Tests that `RunCommand` does not truncate output that is exactly at the maximum allowed length.
 	t.Run("exactly at the cap is not truncated", func(t *testing.T) {
 		res := runHelper(
 			t,
@@ -262,8 +259,7 @@ func TestRunCommandTruncatesOutput(t *testing.T) {
 	})
 }
 
-// tail returns the last 30 characters of the given string, or
-// the entire string if it is shorter than 30 characters.
+// tail returns the last 30 characters of the given string, or the entire string if it is shorter than 30 characters.
 func tail(s string) string {
 	if len(s) > 30 {
 		return s[len(s)-30:]
