@@ -1,3 +1,4 @@
+
 """Enter on a job: what it is, where it ran, and what it printed."""
 
 from typing import ClassVar
@@ -45,6 +46,7 @@ class JobModal(ModalScreen[None]):
 
     def on_mount(self) -> None:
         self.load()
+
         # A job that is still going updates on its own, like the tables.
         self.timer = self.set_interval(REFRESH_S, self.load)
 
@@ -52,12 +54,14 @@ class JobModal(ModalScreen[None]):
     def load(self) -> None:
         app = self.app
         token = app.prof.get("pool_token", "")
+
         try:
             job = status_cmd.fetch(app.scheduler, self.job_id, token)
             code, out = logs_cmd.fetch_output(app.scheduler, self.job_id, token)
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             app.call_from_thread(self.show_error, f"can't load job: {exc}")
             return
+
         app.call_from_thread(self.show, job, code, out)
 
     def show_error(self, msg: str) -> None:
@@ -67,6 +71,7 @@ class JobModal(ModalScreen[None]):
         state = job["status"]
         node = job.get("node_id") or ""
         ran = status_cmd.runtime(job)
+
         lines = [
             f"[b]{' '.join(job['command'])}[/b]",
             "",
@@ -74,24 +79,46 @@ class JobModal(ModalScreen[None]):
             f"node       {self.hostnames.get(node, node) or '-'}",
             f"attempts   {job.get('attempts', 0)}",
             f"submitter  {job.get('submitter') or '-'}",
+
+            # Keep the limit visible even after the job finishes.
+            f"time limit {status_cmd.time_limit(job)}",
         ]
+
         if ran:
-            lines.append(f"{'running' if state == 'running' else 'ran':<11}{ran}")
+            lines.append(
+                f"{'running' if state == 'running' else 'ran':<11}{ran}"
+            )
+
+        # This modal already refreshes every two seconds, so the value below
+        # counts down automatically until the job is done or failed.
+        if state == "running":
+            lines.append(
+                f"time left  {status_cmd.time_left(job) or '-'}"
+            )
+
         if out is not None:
             lines.append(f"exit code  {out.get('exit_code', 0)}")
+
         self.query_one("#job-summary", Static).update("\n".join(lines))
 
         stdout = self.query_one("#job-stdout", Static)
         stderr = self.query_one("#job-stderr", Static)
+
         if out is None:
             stdout.update(
-                "(no output yet, the job hasn't finished)" if code == 409 else ""
+                "(no output yet, the job hasn't finished)"
+                if code == 409
+                else ""
             )
             stderr.update("")
         else:
             stdout.update(out.get("stdout", "") or "(no output)")
             stderr.update(out.get("stderr", ""))
-            self.output_text = out.get("stdout", "") + out.get("stderr", "")
+
+            self.output_text = (
+                out.get("stdout", "") + out.get("stderr", "")
+            )
+
         if state in FINISHED and self.timer is not None:
             self.timer.stop()
             self.timer = None
