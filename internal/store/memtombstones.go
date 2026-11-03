@@ -31,3 +31,21 @@ func (m *Mem) HasTombstone(_ context.Context, poolID, nodeID string) (bool, erro
 	_, ok := m.tombstones[tombstoneKey{poolID, nodeID}]
 	return ok, nil
 }
+
+// GetTombstone returns the tombstone for nodeID in poolID.
+func (m *Mem) GetTombstone(_ context.Context, poolID, nodeID string) (Tombstone, bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	t, ok := m.tombstones[tombstoneKey{poolID, nodeID}]
+	return t, ok, nil
+}
+
+// DeleteTombstone removes the tombstone for nodeID in poolID.
+func (m *Mem) DeleteTombstone(_ context.Context, poolID, nodeID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.tombstones, tombstoneKey{poolID, nodeID})
+	return nil
+}

@@ -14,7 +14,7 @@ import (
 // newRemoveHandler sets up two pools with one node each and the given jobs.
 // Pool p1's join token is "tok1", its admin token "admin1" and its node n1;
 // pool p2's are "tok2", "admin2" and n2.
-func newRemoveHandler(t *testing.T, js ...store.Job) (http.Handler, *store.Mem, store.JobStore) {
+func newRemoveHandler(t *testing.T, js ...store.Job) (http.Handler, *store.Mem, store.JobStore, *store.MemPools) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -49,7 +49,7 @@ func newRemoveHandler(t *testing.T, js ...store.Job) (http.Handler, *store.Mem, 
 		}
 	}
 
-	return NewHandler(reg, pools, jobs, store.NewMemCredits(), testServer()), reg, jobs
+	return NewHandler(reg, pools, jobs, store.NewMemCredits(), testServer()), reg, jobs, pools
 }
 
 // removeNode sends DELETE /pools/{pool}/nodes/{id} with the given admin
@@ -78,7 +78,7 @@ func heartbeatAs(handler http.Handler, id, poolToken string) *httptest.ResponseR
 // from GET /nodes, puts its running job back in the queue with the attempt
 // given back, and that the machine's next heartbeat gets 410.
 func TestAdminRemoveNode(t *testing.T) {
-	handler, reg, jobs := newRemoveHandler(t,
+	handler, reg, jobs, _ := newRemoveHandler(t,
 		store.Job{ID: "running", Command: []string{"a"}, Status: store.JobRunning, NodeID: "n1", PoolID: "p1", Attempts: 1},
 		store.Job{ID: "other", Command: []string{"b"}, Status: store.JobRunning, NodeID: "n2", PoolID: "p2", Attempts: 1},
 	)
@@ -146,7 +146,7 @@ func TestAdminRemoveNodeRejected(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			handler, reg, jobs := newRemoveHandler(t, running)
+			handler, reg, jobs, _ := newRemoveHandler(t, running)
 
 			if code := removeNode(handler, c.pool, c.node, c.token); code != c.want {
 				t.Fatalf("expected %d, got %d", c.want, code)
@@ -165,5 +165,138 @@ func TestAdminRemoveNodeRejected(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRemovedNodeRejoinsAfterRotate checks that a token from time of removal is
+// still 410, a token issued by a later rotate is accepted and clears the
+// tombstone, and the pre-rotate token is still refused.
+func TestRemovedNodeRejoinsAfterRotate(t *testing.T) {
+	handler, reg, _, pools := newRemoveHandler(t)
+	ctx := context.Background()
+
+	if code := removeNode(handler, "p1", "n1", "admin1"); code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", code)
+	}
+
+	rec := heartbeatAs(handler, "n1", "tok1")
+	if rec.Code != http.StatusGone {
+		t.Fatalf("old token: got %d %q, want 410", rec.Code, rec.Body.String())
+	}
+	if ids := nodeIDs(t, reg); ids["n1"] {
+		t.Error("old token brought the node back")
+	}
+
+	if err := pools.SetToken(ctx, "p1", "tok-later"); err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+
+	rec = heartbeatAs(handler, "n1", "tok1")
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), store.RotatedTokenMsg) {
+		t.Fatalf("pre-rotate token: got %d %q, want 403 rotated", rec.Code, rec.Body.String())
+	}
+	if ids := nodeIDs(t, reg); ids["n1"] {
+		t.Error("pre-rotate token brought the node back")
+	}
+
+	rec = heartbeatAs(handler, "n1", "tok-later")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("token from a later rotate: got %d %q, want 204", rec.Code, rec.Body.String())
+	}
+	if ids := nodeIDs(t, reg); !ids["n1"] {
+		t.Error("expected the node back after the new token")
+	}
+	if removed, _ := reg.HasTombstone(ctx, "p1", "n1"); removed {
+		t.Error("expected the tombstone to be cleared")
+	}
+}
+
+// TestRemovedNodeOldTokenExpiresAfter30Days checks that the token from
+// removal is still refused inside the 30-day window and that the token
+// is accepted once that window has passed.
+func TestRemovedNodeOldTokenExpiresAfter30Days(t *testing.T) {
+	handler, reg, _, _ := newRemoveHandler(t)
+	ctx := context.Background()
+	if err := reg.Delete(ctx, "n1"); err != nil {
+		t.Fatalf("delete node: %v", err)
+	}
+
+	// 31-day test ensures that a tombstone older than the 30-day TTL no longer blocks the token.
+	t.Run("31 days", func(t *testing.T) {
+		if err := reg.AddTombstone(ctx, store.Tombstone{
+			PoolID:    "p1",
+			NodeID:    "n1",
+			CreatedAt: time.Now().UTC().Add(-31 * 24 * time.Hour),
+			TokenHash: store.HashToken("tok1"),
+		}); err != nil {
+			t.Fatalf("add: %v", err)
+		}
+		rec := heartbeatAs(handler, "n1", "tok1")
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("got %d %q, want 204", rec.Code, rec.Body.String())
+		}
+		if ids := nodeIDs(t, reg); !ids["n1"] {
+			t.Error("expected the node back after expiry")
+		}
+		if removed, _ := reg.HasTombstone(ctx, "p1", "n1"); removed {
+			t.Error("expected the expired tombstone to be cleared")
+		}
+	})
+
+	// 29-day test ensures that a tombstone within the 30-day TTL still blocks the token.
+	t.Run("29 days", func(t *testing.T) {
+		if err := reg.Delete(ctx, "n1"); err != nil {
+			t.Fatalf("delete node: %v", err)
+		}
+		if err := reg.AddTombstone(ctx, store.Tombstone{
+			PoolID:    "p1",
+			NodeID:    "n1",
+			CreatedAt: time.Now().UTC().Add(-29 * 24 * time.Hour),
+			TokenHash: store.HashToken("tok1"),
+		}); err != nil {
+			t.Fatalf("add: %v", err)
+		}
+		rec := heartbeatAs(handler, "n1", "tok1")
+		if rec.Code != http.StatusGone {
+			t.Fatalf("got %d %q, want 410", rec.Code, rec.Body.String())
+		}
+		if ids := nodeIDs(t, reg); ids["n1"] {
+			t.Error("29-day tombstone let the node back")
+		}
+	})
+}
+
+// TestTombstoneBlocks verifies the behavior of the tombstoneBlocks function,
+// ensuring that tokens are correctly blocked or allowed based on the token hash
+// and the age of the tombstone relative to the 30-day TTL.
+func TestTombstoneBlocks(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	hash := store.HashToken("tok")
+	base := store.Tombstone{
+		PoolID:    "p",
+		NodeID:    "n",
+		TokenHash: hash,
+		CreatedAt: now.Add(-time.Hour),
+	}
+	if !tombstoneBlocks(base, "tok", now) {
+		t.Error("same token should block")
+	}
+	if tombstoneBlocks(base, "other", now) {
+		t.Error("newer token should not block")
+	}
+	empty := base
+	empty.TokenHash = ""
+	if !tombstoneBlocks(empty, "other", now) {
+		t.Error("empty hash should block")
+	}
+	expired := base
+	expired.CreatedAt = now.Add(-store.TombstoneTTL)
+	if tombstoneBlocks(expired, "tok", now) {
+		t.Error("tombstone at 30 days should not block")
+	}
+	still := base
+	still.CreatedAt = now.Add(-store.TombstoneTTL + time.Second)
+	if !tombstoneBlocks(still, "tok", now) {
+		t.Error("tombstone one second short of 30 days should block")
 	}
 }

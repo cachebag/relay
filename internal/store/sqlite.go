@@ -54,13 +54,17 @@ func NewSQLite(path string) (*SQLite, error) {
     		pool_id    TEXT NOT NULL,
     		node_id    TEXT NOT NULL,
     		created_at INTEGER NOT NULL,
+			token_hash TEXT NOT NULL DEFAULT '',
     		PRIMARY KEY (pool_id, node_id)
     	)`)
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-
+	if err := migrateTombstoneTokenHash(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &SQLite{db: db}, nil
 }
 
