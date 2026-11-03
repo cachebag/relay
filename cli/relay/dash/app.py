@@ -210,6 +210,10 @@ class DashApp(App[None]):
         self.call_from_thread(self.redraw)
 
     def redraw(self) -> None:
+        # The 1 s timer and the refresh worker can both land after the app has
+        # started shutting down and the screen is gone; nothing to draw then.
+        if not self.query("#where"):
+            return
         prof = self.prof
         logged_in = bool(prof.get("pool_token"))
         if logged_in:
