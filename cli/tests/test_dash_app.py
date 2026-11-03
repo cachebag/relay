@@ -533,3 +533,15 @@ def test_jobs_are_newest_first_and_all_reachable(cfg, calls, monkeypatch):
         assert jobs.scroll_y > 0
 
     drive(app, steps)
+
+
+def test_redraw_after_the_app_has_exited_is_a_no_op(cfg, calls):
+    """The 1 s redraw timer can fire while the app is shutting down."""
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+
+    drive(app, steps)
+    app.redraw()
