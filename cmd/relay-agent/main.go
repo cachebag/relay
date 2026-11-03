@@ -141,6 +141,13 @@ func main() {
 	// Pointer to command-line 'owner' flag.
 	owner := ownerFlag(flag.CommandLine)
 
+	// Leaves each job's folder in place after it finishes, for debugging.
+	keepWorkdir := flag.Bool(
+		"keep-workdir",
+		false,
+		"keep each job's folder after it finishes and print where it is",
+	)
+
 	// Replaces the default help output with Relay-specific usage information and an example showing how to join a pool.
 	flag.Usage = func() {
 		printUsage(flag.CommandLine.Output(), flag.CommandLine)
@@ -195,6 +202,9 @@ func main() {
 	// Every 10 seconds, sends a heartbeat to the scheduler, then fetches,
 	// runs and reports the node's next job.
 	a := agent.New(*scheduler, *poolToken, node)
+	if *keepWorkdir {
+		a.KeepWorkdir()
+	}
 	if err := a.Run(ctx, 10*time.Second); err != nil && ctx.Err() == nil {
 		log.Fatal(err)
 	}

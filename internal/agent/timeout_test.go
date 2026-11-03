@@ -168,6 +168,7 @@ func TestRunCommandDeadlineKillsChildProcess(t *testing.T) {
 	res := RunCommand(
 		ctx,
 		[]string{os.Args[0], "spawnchild:" + marker},
+		"",
 	)
 
 	// The command and its children should stop shortly

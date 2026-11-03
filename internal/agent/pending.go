@@ -122,8 +122,12 @@ func (a *Agent) setPending(p pending) {
 	}
 }
 
-// clearPending forgets the pending result and deletes its file.
+// clearPending forgets the pending result and deletes its file and the
+// job's folder.
 func (a *Agent) clearPending() {
+	if a.pending != nil {
+		a.removeWorkdir(a.pending.JobID)
+	}
 	a.pending = nil
 	if a.cacheDir == "" {
 		return

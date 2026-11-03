@@ -15,9 +15,9 @@ import (
 	"github.com/cachebag/relay/internal/store"
 )
 
-// Runner executes a job's command and reports how it went. It is a field on
-// Agent so tests can replace it with a fake.
-type Runner func(ctx context.Context, argv []string) Result
+// Runner executes a job's command in dir and reports how it went. It is a
+// field on Agent so tests can replace it with a fake.
+type Runner func(ctx context.Context, argv []string, dir string) Result
 
 // Agent is one node's side of the scheduler conversation: it heartbeats, asks
 // for its next job, runs it and reports the result.
@@ -42,6 +42,10 @@ type Agent struct {
 	// restart. Empty means keep it in memory only. A field so tests can
 	// point it at a temp directory.
 	cacheDir string
+
+	// keepWorkdir leaves each job's folder in place after its result is
+	// reported, for debugging.
+	keepWorkdir bool
 
 	// pending is a finished result the scheduler hasn't acknowledged yet.
 	// It is only touched by the job goroutine while busy, and by Tick
@@ -90,6 +94,12 @@ func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Ag
 	}
 	a.loadPending()
 	return a
+}
+
+// KeepWorkdir leaves job folders in place instead of deleting them, and
+// stops Run from clearing leftover ones when it starts.
+func (a *Agent) KeepWorkdir() {
+	a.keepWorkdir = true
 }
 
 // isConnectionError reports whether err represents a networking failure.
@@ -221,12 +231,19 @@ func (a *Agent) execute(ctx context.Context, job store.Job) {
 	jobCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
-	res := a.run(jobCtx, job.Command)
+	var res Result
+	dir, err := a.makeWorkdir(job.ID)
+	if err != nil {
+		res = Result{ExitCode: -1, Stderr: fmt.Sprintf("relay: can't create job folder: %v\n", err)}
+	} else {
+		res = a.run(jobCtx, job.Command, dir)
+	}
 
 	// A job killed because the agent is shutting down didn't really fail, so
 	// leave it unreported for the scheduler to hand out again.
 	if ctx.Err() != nil {
 		log.Printf("job %s interrupted, not reporting a result", job.ID)
+		a.removeWorkdir(job.ID)
 		return
 	}
 
@@ -268,6 +285,7 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 	// Save the interval so connection failure messages can tell the user
 	// when the next retry will occur.
 	a.retryInterval = interval
+	a.cleanWorkdirs()
 
 	// stopJob kills a running job if this machine gets removed from the
 	// pool. The scheduler has already put that job back in the queue.
