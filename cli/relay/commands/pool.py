@@ -86,6 +86,14 @@ def server_admin_token(flag: str | None) -> str:
         sys.exit(1)
     return token
 
+def own_scheduler(server: dict | None = None) -> str:
+    server = profile.server() if server is None else server
+    return server.get("public_url") or server.get("address") or ""
+
+def create_scheduler(args) -> str:
+    if getattr(args, "scheduler_given", True):
+        return args.scheduler
+    return own_scheduler()
 
 def create(
     scheduler: str, name: str, admin_token: str, client: httpx.Client | None = None
@@ -100,9 +108,12 @@ def create(
 
 
 def run_create(args) -> None:
+    scheduler = create_scheduler(args)
+    if not scheduler:
+        raise SystemExit(NO_SERVER_HINT)
     admin_token = server_admin_token(args.admin_token)
     try:
-        p = create(args.scheduler, args.name, admin_token)
+        p = create(scheduler, args.name, admin_token)
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 401:
             raise SystemExit("create failed: the server admin token was rejected")
@@ -115,7 +126,8 @@ def run_create(args) -> None:
     print("warning: the admin token is shown only once. Save it now.")
     print()
     print("share the token with contributors; they run:")
-    print_agent_invite(args.scheduler, p["token"], p.get("public_url") or "")
+    print_agent_invite(scheduler, p["token"], p.get("public_url") or "")
+
 
 
 def pool_from_login(flag: str | None) -> tuple[str, str]:
@@ -180,6 +192,9 @@ def rotate(
 
 def run_rotate_token(args) -> None:
     admin_token = args.admin_token or os.environ.get("RELAY_ADMIN_TOKEN")
+    NO_SERVER_HINT = (
+        "no scheduler on this machine; run relay scheduler start, or pass --scheduler"
+    )
     if not admin_token:
         raise SystemExit(
             "an admin token is required: pass --admin-token or set RELAY_ADMIN_TOKEN"
