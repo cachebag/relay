@@ -124,3 +124,64 @@ def test_resolve_survives_submit_argv():
     )
     relay_main.resolve(args, {}, {"scheduler": "http://saved:1"})
     assert args.scheduler == "http://saved:1"
+
+
+@pytest.mark.parametrize(
+    ("scheduler", "env", "prof", "server", "expected"),
+    [
+        # CLI flag with a trailing slash
+        (
+            "https://relay.example.ts.net/",
+            {},
+            {},
+            {},
+            "https://relay.example.ts.net",
+        ),
+        # Environment variable with multiple trailing slashes
+        (
+            None,
+            {"RELAY_SCHEDULER": "https://relay.example.ts.net///"},
+            {},
+            {},
+            "https://relay.example.ts.net",
+        ),
+        # Saved login with a trailing slash
+        (
+            None,
+            {},
+            {"scheduler": "https://relay.example.ts.net/"},
+            {},
+            "https://relay.example.ts.net",
+        ),
+        # Saved public URL with a trailing slash
+        (
+            None,
+            {},
+            {},
+            {"public_url": "https://relay.example.ts.net/"},
+            "https://relay.example.ts.net",
+        ),
+        # Server address with a trailing slash
+        (
+            None,
+            {},
+            {},
+            {"address": "https://relay.example.ts.net/"},
+            "https://relay.example.ts.net",
+        ),
+        # URL without a trailing slash remains unchanged
+        (
+            "https://relay.example.ts.net",
+            {},
+            {},
+            {},
+            "https://relay.example.ts.net",
+        ),
+    ],
+)
+def test_resolve_strips_trailing_slashes(scheduler, env, prof, server, expected):
+    args = argparse.Namespace(scheduler=scheduler)
+
+    relay_main.resolve(args, env, prof, server)
+
+    assert args.scheduler == expected

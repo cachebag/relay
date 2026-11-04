@@ -71,7 +71,9 @@ def releases(monkeypatch):
 
 
 def test_asset_names():
-    assert binaries.asset_name("relayd", "darwin", "arm64") == "relayd-darwin-arm64.tar.gz"
+    assert (
+        binaries.asset_name("relayd", "darwin", "arm64") == "relayd-darwin-arm64.tar.gz"
+    )
     assert (
         binaries.asset_name("relay-agent", "linux", "amd64")
         == "relay-agent-linux-amd64.tar.gz"
