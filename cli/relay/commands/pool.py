@@ -195,9 +195,6 @@ def rotate(
 
 def run_rotate_token(args) -> None:
     admin_token = args.admin_token or os.environ.get("RELAY_ADMIN_TOKEN")
-    NO_SERVER_HINT = (
-        "no scheduler on this machine; run relay scheduler start, or pass --scheduler"
-    )
     if not admin_token:
         raise SystemExit(
             "an admin token is required: pass --admin-token or set RELAY_ADMIN_TOKEN"
@@ -219,4 +216,3 @@ def run_rotate_token(args) -> None:
     print("the old join token no longer works.")
     print("restart every contributor's agent with the new token:")
     print_agent_invite(args.scheduler, new_token, rotated.get("public_url") or "")
-
