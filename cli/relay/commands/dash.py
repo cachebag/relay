@@ -21,4 +21,8 @@ def run(args) -> None:
         or os.environ.get("RELAY_ADMIN_TOKEN")
         or profile.server().get("admin_token")
     )
-    DashApp(args.scheduler, admin_token).run()
+    DashApp(
+        args.scheduler,
+        admin_token,
+        scheduler_given=getattr(args, "scheduler_given", False),
+    ).run()

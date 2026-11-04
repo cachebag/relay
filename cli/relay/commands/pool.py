@@ -12,6 +12,9 @@ ADMIN_TOKEN_HINT = (
     "or start the scheduler with relay scheduler start, which saves it"
 )
 
+NO_SERVER_HINT = (
+    "no scheduler on this machine; run relay scheduler start, or pass --scheduler"
+)
 
 def invite_scheduler_url(scheduler: str) -> tuple[str, bool]:
     """Return a shareable scheduler URL and whether its host was replaced."""
