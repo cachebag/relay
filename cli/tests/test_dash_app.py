@@ -68,9 +68,11 @@ def calls(monkeypatch):
     """Route every httpx.Client through a MockTransport and record requests."""
     seen = Calls()
     seen.bodies = {}
+    seen.urls = []
 
     def handler(req: httpx.Request) -> httpx.Response:
         seen.append((req.method, req.url.path, req.headers.get("Authorization")))
+        seen.urls.append((req.method, str(req.url)))
         auth = req.headers.get("Authorization", "")
         if req.content:
             seen.bodies[(req.method, req.url.path)] = json.loads(req.content)
@@ -278,6 +280,85 @@ def test_new_pool_from_dashboard_with_typed_admin_token(cfg, calls):
     drive(app, steps)
     assert ("POST", "/pools", "Bearer wrong") in calls
     assert profile.load()["pool_token"] == "tok"
+
+    MINE = "http://mine:8080"
+
+
+def test_new_pool_goes_to_this_machines_scheduler_not_the_login(cfg, calls):
+    profile.save(SAVED)
+    profile.save_server(address=MINE, admin_token="sat")
+    app = DashApp(SCHED)
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, NewPoolModal)
+        assert MINE in text(app.screen.query_one("#create-on"))
+        assert not app.screen.query("#address")
+        app.screen.query_one("#pool-name", Input).value = "mine"
+        await pilot.press("enter")
+        await settle(pilot)
+        assert invite_line(MINE, "newjt") in text(
+            app.screen.query_one("#create-result")
+        )
+        await pilot.press("enter")
+        await settle(pilot)
+        assert app.prof["scheduler"] == MINE
+
+    drive(app, steps)
+    assert ("POST", f"{MINE}/pools") in calls.urls
+    assert ("POST", f"{SCHED}/pools") not in calls.urls
+    assert ("POST", "/pools", "Bearer sat") in calls
+
+
+def test_new_pool_prefers_public_url(cfg, calls):
+    profile.save(SAVED)
+    profile.save_server(
+        address="http://localhost:8080", public_url=MINE, admin_token="sat"
+    )
+    app = DashApp(SCHED, admin_token="sat", scheduler_given=False)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        app.screen.query_one("#pool-name", Input).value = "mine"
+        await pilot.press("enter")
+        await settle(pilot)
+
+    drive(app, steps)
+    assert ("POST", f"{MINE}/pools") in calls.urls
+
+
+def test_new_pool_without_server_settings_asks_for_address(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED, admin_token="sat", scheduler_given=False)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("n")
+        await pilot.pause()
+        assert isinstance(app.screen, NewPoolModal)
+        assert "no scheduler on this machine" in text(
+            app.screen.query_one("#create-on")
+        )
+        address = app.screen.query_one("#address", Input)
+        assert app.screen.focused is address
+        app.screen.query_one("#pool-name", Input).value = "mine"
+        app.screen.query_one("#pool-name", Input).focus()
+        await pilot.press("enter")
+        await settle(pilot)
+        # Nothing is sent to the login's scheduler while the address is empty.
+        assert "address" in text(app.screen.query_one("#create-error"))
+        address.value = "mine:8080"
+        app.screen.query_one("#pool-name", Input).focus()
+        await pilot.press("enter")
+        await settle(pilot)
+        assert "created mine" in text(app.screen.query_one("#create-result"))
+
+    drive(app, steps)
+    assert ("POST", f"{SCHED}/pools") not in calls.urls
+    assert ("POST", f"{MINE}/pools") in calls.urls
 
 
 def test_copy_invite(cfg, calls, monkeypatch):
