@@ -40,7 +40,7 @@ def resolve(
         or server.get("public_url")
         or server.get("address")
         or DEFAULT_SCHEDULER
-    )
+    ).rstrip("/")
 
 
 def main() -> None:

@@ -34,36 +34,24 @@ def test_time_limit_formats():
 def test_time_left_counts_down_and_stops_at_zero():
     now = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
 
-    job = running_job(
-        (now - timedelta(seconds=45)).isoformat()
-    )
+    job = running_job((now - timedelta(seconds=45)).isoformat())
     assert status.time_left(job, now) == "9m15s"
 
-    job["started_at"] = (
-        now - timedelta(seconds=700)
-    ).isoformat()
+    job["started_at"] = (now - timedelta(seconds=700)).isoformat()
     assert status.time_left(job, now) == "0s"
 
-    job["started_at"] = (
-        now + timedelta(seconds=10)
-    ).isoformat()
+    job["started_at"] = (now + timedelta(seconds=10)).isoformat()
     assert status.time_left(job, now) == "10m"
 
 
 def test_time_left_only_for_running_jobs():
     job = running_job("2026-11-01T12:00:00Z")
 
-    assert status.time_left(
-        {**job, "status": "queued"}
-    ) is None
+    assert status.time_left({**job, "status": "queued"}) is None
 
-    assert status.time_left(
-        {**job, "status": "done"}
-    ) is None
+    assert status.time_left({**job, "status": "done"}) is None
 
-    assert status.time_left(
-        {**job, "started_at": None}
-    ) is None
+    assert status.time_left({**job, "started_at": None}) is None
 
 
 def test_status_prints_limit_and_time_left(monkeypatch, capsys):
@@ -156,9 +144,7 @@ def test_dashboard_job_modal_displays_limit_and_time_left(monkeypatch):
                 None,
             )
 
-            summary = str(
-                modal.query_one("#job-summary", Static).render()
-            )
+            summary = str(modal.query_one("#job-summary", Static).render())
 
             assert "time limit 10m" in summary
             assert "time left" in summary
@@ -173,9 +159,7 @@ def test_dashboard_job_modal_displays_limit_and_time_left(monkeypatch):
                 {},
             )
 
-            summary = str(
-                modal.query_one("#job-summary", Static).render()
-            )
+            summary = str(modal.query_one("#job-summary", Static).render())
 
             assert "time limit 10m" in summary
             assert "time left" not in summary

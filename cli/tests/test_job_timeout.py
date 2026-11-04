@@ -87,9 +87,7 @@ def test_submit_register_rejects_invalid_duration(capsys):
     submit_command.register(sub)
 
     with pytest.raises(SystemExit) as exc:
-        parser.parse_args(
-            ["submit", "--timeout", "25h", "--", "echo", "hi"]
-        )
+        parser.parse_args(["submit", "--timeout", "25h", "--", "echo", "hi"])
 
     assert exc.value.code == 2
     assert "24 hours" in capsys.readouterr().err
