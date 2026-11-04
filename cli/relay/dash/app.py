@@ -476,8 +476,8 @@ class DashApp(App[None]):
         self.push_screen(
             AdminModal(
                 f"REMOVE {host}",
-                f"Takes {host} ({node_id}) out of the pool. The owner can "
-                "rejoin with the invite unless you rotate the token too.",
+                f"Takes {host} ({node_id}) out of the pool. They can "
+                "rejoin with a new invite granted the invite token had been rotated.",
                 run,
                 describe,
             ),
