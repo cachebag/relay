@@ -4,6 +4,7 @@ import json
 import httpx
 import pytest
 from textual.widgets import Input
+from textual.worker import WorkerCancelled
 
 from relay import profile
 from relay.dash import DashApp, invite_line, parse_invite
@@ -139,7 +140,11 @@ def main(app):
 
 
 async def settle(pilot):
-    await pilot.app.workers.wait_for_complete()
+    for worker in list(pilot.app.workers):
+        try:
+            await worker.wait()
+        except WorkerCancelled:
+            pass
     await pilot.pause()
 
 
