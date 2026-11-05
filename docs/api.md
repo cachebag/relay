@@ -454,13 +454,15 @@ If the node ID already belongs to a node in a different pool:
 
 The response body is `node ID already belongs to another pool; leave that pool before joining this one`. Nothing is saved. A node that wants to move pools has to run `relay-agent leave` first. The agent prints that message and keeps heartbeating, so fixing the token or leaving the old pool is enough.
 
-If a pool admin removed this node from the pool with `DELETE /pools/{id}/nodes/{node_id}`:
+If a pool admin removed this node from the pool with `DELETE /pools/{id}/nodes/{node_id}`, this node's join token has not changed since removal, and the removal was less than 30 days prior:
 
 ```text
 410 Gone
 ```
 
 The response body is `removed from pool by admin`. Nothing about the node is saved, so it does not reappear in `GET /nodes`. `relay-agent` logs `removed from this pool by the admin` and exits with status 0 instead of retrying.
+
+Only join tokens at the time of removal that have been removed less than 30 days prior are refused. After 30 days, the token from the time of removal is accepted too. Any token that has been rotated away is going to be a `403` whether or not a tombstone exists.
 
 If the node cannot be stored:
 
@@ -624,7 +626,7 @@ Any job that is `assigned` or `running` on the node goes back to `queued` with i
 
 The node record is then deleted, so the node disappears from `GET /nodes` immediately.
 
-A tombstone is also recorded for the node in this pool. Its later heartbeats get `410 Gone` instead of registering it again, so the agent stops on its next heartbeat. Tombstones are not purged yet.
+A tombstone is also recorded for the node in this pool and stores the hash of the join token so that the node will not be permanently banned. Its later heartbeats get `410 Gone` for 30 days instead of registering it again, so the agent stops on its next heartbeat. A heartbeat that presents a join token that was issued after removal is accepted and its tombstone is cleared.
 
 #### Request
 

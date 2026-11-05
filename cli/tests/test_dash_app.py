@@ -420,6 +420,7 @@ def test_remove_node_deletes_the_highlighted_machine(cfg, calls):
         await pilot.pause()
         assert isinstance(app.screen, AdminModal)
         assert "box" in text(app.screen.query_one(".title"))
+        assert "rejoin with a new invite" in text(app.screen.query_one(".hint"))
         await confirm(pilot, app, "wrong", "lab")
         assert "rejected" in text(app.screen.query_one("#admin-error"))
         await confirm(pilot, app, "pat", "lab")

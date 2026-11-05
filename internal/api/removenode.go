@@ -16,7 +16,8 @@ import (
 //
 // The machine's assigned and running jobs go back to the queue without
 // using an attempt, the machine is deleted, and a tombstone stops its later
-// heartbeats from registering it again (CM-07).
+// heartbeats that still carry the join token from the time the node was removed
+// from registering it again (CM-07).
 func handleRemoveNode(reg store.Registry, pools store.PoolStore, jobs store.JobStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		poolID := r.PathValue("id")
@@ -62,6 +63,15 @@ func handleRemoveNode(reg store.Registry, pools store.PoolStore, jobs store.JobS
 			return
 		}
 
+		// The tombstone blocks this join token, not the node ID.
+		// It ensures that any heartbeat using the same token is refused, even if
+		// the node itself attempts to re-register.
+		p, err := pools.Get(r.Context(), poolID)
+		if err != nil {
+			http.Error(w, "store error", http.StatusInternalServerError)
+			return
+		}
+
 		// Tombstone first, so a heartbeat that arrives while the jobs are
 		// being requeued is already refused instead of re-registering the
 		// machine. Retrying a removal that failed below is safe, because
@@ -70,6 +80,7 @@ func handleRemoveNode(reg store.Registry, pools store.PoolStore, jobs store.JobS
 			PoolID:    poolID,
 			NodeID:    nodeID,
 			CreatedAt: time.Now().UTC(),
+			TokenHash: store.HashToken(p.Token),
 		}); err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
@@ -122,22 +133,37 @@ func requeueNodeJobs(ctx context.Context, jobs store.JobStore, nodeID, why strin
 	return nil
 }
 
-// refuseRemoved answers 410 Gone and returns true if an admin removed nodeID
-// from poolID. The heartbeat handler calls it before saving anything, so a
-// removed machine's heartbeat changes nothing. A registry without
-// tombstones never refuses.
-func refuseRemoved(w http.ResponseWriter, r *http.Request, reg store.Registry, poolID, nodeID string) bool {
+// refuseRemoved answers 410 if the node has been removed by an admin and the tombstone still applies.
+// It returns stop=true if the caller should stop processing the heartbeat, and clear=true if
+// the tombstone no longer applies and should be deleted after a successful upsert.
+func refuseRemoved(w http.ResponseWriter, r *http.Request, reg store.Registry, poolID, nodeID, token string) (stop, clear bool) {
 	ts, ok := reg.(store.Tombstones)
 	if !ok {
-		return false
+		return false, false
 	}
-	removed, err := ts.HasTombstone(r.Context(), poolID, nodeID)
+	t, found, err := ts.GetTombstone(r.Context(), poolID, nodeID)
 	if err != nil {
 		http.Error(w, "store error", http.StatusInternalServerError)
-		return true
+		return true, false
 	}
-	if removed {
+	if !found {
+		return false, false
+	}
+	if tombstoneBlocks(t, token, time.Now().UTC()) {
 		http.Error(w, "removed from pool by admin", http.StatusGone)
+		return true, false
+	}
+	return false, true
+}
+
+// tombstoneBlocks reports whether a tombstone t should block a heartbeat or not.
+// A tombstone blocks if it is still within its TTL and either has an empty token hash
+// or its token hash matches the presented token. Tombstones past their TTL never block.
+func tombstoneBlocks(t store.Tombstone, token string, now time.Time) bool {
+	if !now.Before(t.CreatedAt.Add(store.TombstoneTTL)) {
+		return false
+	}
+	if t.TokenHash == "" || t.TokenHash == store.HashToken(token) {
 		return true
 	}
 	return false
