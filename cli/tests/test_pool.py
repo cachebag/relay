@@ -293,3 +293,66 @@ def test_rotate_returns_public_url():
 
     body = pool.rotate("http://test", "pool1", "admintok", client=mock_client(handler))
     assert body == {"token": "newtok", "public_url": PUBLIC_URL}
+
+
+def test_create_uses_this_machines_scheduler_when_flag_not_given(monkeypatch, capsys):
+    seen = []
+
+    def handler(req):
+        seen.append(str(req.url))
+        return httpx.Response(
+            201, json={"id": "p1", "name": "lab", "token": "jt", "admin_token": "at"}
+        )
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    monkeypatch.setattr(
+        pool.profile,
+        "server",
+        lambda: {"address": "http://localhost:8080", "public_url": "https://me.ts.net"},
+    )
+    pool.run_create(
+        argparse.Namespace(
+            scheduler="http://friend:8080",
+            scheduler_given=False,
+            name="lab",
+            admin_token="sat",
+        )
+    )
+    assert seen == ["https://me.ts.net/pools"]
+    assert "relay-agent --scheduler https://me.ts.net" in capsys.readouterr().out
+
+
+def test_create_flag_beats_server_settings(monkeypatch):
+    seen = []
+
+    def handler(req):
+        seen.append(str(req.url))
+        return httpx.Response(
+            201, json={"id": "p1", "name": "lab", "token": "jt", "admin_token": "at"}
+        )
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    monkeypatch.setattr(pool.profile, "server", lambda: {"address": "http://mine:8080"})
+    pool.run_create(
+        argparse.Namespace(
+            scheduler="http://other:8080",
+            scheduler_given=True,
+            name="lab",
+            admin_token="sat",
+        )
+    )
+    assert seen == ["http://other:8080/pools"]
+
+
+def test_create_without_server_settings_or_flag_exits(monkeypatch):
+    monkeypatch.setattr(pool.profile, "server", dict)
+    with pytest.raises(SystemExit) as exc:
+        pool.run_create(
+            argparse.Namespace(
+                scheduler="http://friend:8080",
+                scheduler_given=False,
+                name="lab",
+                admin_token="sat",
+            )
+        )
+    assert "no scheduler on this machine" in str(exc.value)

@@ -108,11 +108,15 @@ class DashApp(App[None]):
         Binding("q", "quit", "Quit"),
     ]
 
-    def __init__(self, scheduler: str, admin_token: str | None = None) -> None:
+    def __init__(
+        self,
+        scheduler: str,
+        admin_token: str | None = None,
+        scheduler_given: bool = True,
+    ) -> None:
         super().__init__()
         self.scheduler = scheduler
-        # The server admin token creates pools. The pool admin token rotates
-        # the join token and removes machines. They are different secrets.
+        self.own_scheduler = scheduler if scheduler_given else pool_cmd.own_scheduler()
         self.admin_token = admin_token
         self.pool_admin_token: str | None = None
         self.prof: dict = {}

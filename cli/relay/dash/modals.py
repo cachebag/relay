@@ -106,13 +106,25 @@ class NewPoolModal(ModalScreen[dict | None]):
         super().__init__()
         self.can_cancel = can_cancel
         self.created: dict | None = None
+        # The scheduler the pool goes on: this machine's, never the login's (#146).
+        self.target = ""
 
     def copyable(self) -> str:
         from relay.dash.app import invite_line
 
         if not self.created:
             return ""
-        return invite_line(self.app.scheduler, self.created["token"])
+        return invite_line(self.target, self.created["token"])
+
+    def scheduler_address(self) -> str:
+        """Where to create the pool: this machine's scheduler, or the address
+        typed in when this machine doesn't run one."""
+        if self.target:
+            return self.target
+        typed = self.query_one("#address", Input).value.strip()
+        if typed and "://" not in typed:
+            typed = f"http://{typed}"
+        return typed
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="modal"):
@@ -122,6 +134,15 @@ class NewPoolModal(ModalScreen[dict | None]):
                 "started. Only the person running relayd has it.",
                 classes="hint",
             )
+            self.target = getattr(self.app, "own_scheduler", "") or ""
+            if self.target:
+                yield Static(
+                    f"creating on {self.target}", id="create-on", classes="hint"
+                )
+            else:
+                yield Static(pool_cmd.NO_SERVER_HINT, id="create-on", classes="hint")
+                yield Static("scheduler address", classes="label")
+                yield Input(placeholder="http://localhost:8080", id="address")
             yield Static("server admin token", classes="label")
             yield Input(
                 self.app.admin_token or "",
@@ -140,6 +161,13 @@ class NewPoolModal(ModalScreen[dict | None]):
             )
 
     def on_mount(self) -> None:
+        token = self.query_one("#admin-token", Input)
+        (self.query_one("#pool-name", Input) if token.value else token).focus()
+        if not self.target:
+            self.query_one("#address", Input).focus()
+
+    @on(Input.Submitted, "#address")
+    def on_address(self) -> None:
         token = self.query_one("#admin-token", Input)
         (self.query_one("#pool-name", Input) if token.value else token).focus()
 
@@ -161,13 +189,18 @@ class NewPoolModal(ModalScreen[dict | None]):
         if not admin_token:
             error.update("the server admin token is needed to create a pool")
             return
+        if not self.scheduler_address():
+            error.update("enter the address of the scheduler to create the pool on")
+            self.query_one("#address", Input).focus()
+            return
+        self.target = self.scheduler_address()
         error.update("creating…")
         self.create(name, admin_token)
 
     @work(exclusive=True, thread=True)
     def create(self, name: str, admin_token: str) -> None:
         try:
-            p = pool_cmd.create(self.app.scheduler, name, admin_token)
+            p = pool_cmd.create(self.target, name, admin_token)
         except httpx.HTTPStatusError as exc:
             msg = (
                 "the server admin token was rejected"
@@ -181,7 +214,7 @@ class NewPoolModal(ModalScreen[dict | None]):
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             self.app.call_from_thread(
                 self.query_one("#create-error", Label).update,
-                f"can't reach {self.app.scheduler}: {exc}",
+                f"can't reach {self.target}: {exc}",
             )
             return
         self.app.call_from_thread(self.show_created, name, admin_token, p)
@@ -196,7 +229,7 @@ class NewPoolModal(ModalScreen[dict | None]):
         self.query_one("#create-result", Static).update(
             f"[b]created {name}[/b]  ({p['id']})\n\n"
             f"invite, send this to contributors:\n"
-            f"[$accent]{invite_line(self.app.scheduler, p['token'])}[/]\n\n"
+            f"[$accent]{invite_line(self.target, p['token'])}[/]\n\n"
             f"pool admin token, shown once, keep it to yourself:\n"
             f"[$accent]{p.get('admin_token', '-')}[/]"
         )
@@ -212,7 +245,7 @@ class NewPoolModal(ModalScreen[dict | None]):
 
     def finish(self) -> None:
         assert self.created is not None
-        self.log_in(self.app.scheduler, self.created["token"])
+        self.log_in(self.target, self.created["token"])
 
     @work(exclusive=True, thread=True)
     def log_in(self, scheduler: str, token: str) -> None:
