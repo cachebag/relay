@@ -281,6 +281,7 @@ def test_new_pool_from_dashboard_with_typed_admin_token(cfg, calls):
     assert ("POST", "/pools", "Bearer wrong") in calls
     assert profile.load()["pool_token"] == "tok"
 
+
 MINE = "http://mine:8080"
 
 
@@ -288,6 +289,7 @@ def test_new_pool_goes_to_this_machines_scheduler_not_the_login(cfg, calls):
     profile.save(SAVED)
     profile.save_server(address=MINE, admin_token="sat")
     app = DashApp(SCHED, admin_token="sat", scheduler_given=False)
+
     async def steps(pilot):
         await settle(pilot)
         await pilot.press("n")

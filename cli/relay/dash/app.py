@@ -109,20 +109,14 @@ class DashApp(App[None]):
     ]
 
     def __init__(
-            self,
-            scheduler: str,
-            admin_token: str | None = None,
-            scheduler_given: bool = True,
+        self,
+        scheduler: str,
+        admin_token: str | None = None,
+        scheduler_given: bool = True,
     ) -> None:
         super().__init__()
         self.scheduler = scheduler
-        # Pools are created on the scheduler this machine runs, not on the
-        # pool you're logged in to (#146). --scheduler wins when given.
         self.own_scheduler = scheduler if scheduler_given else pool_cmd.own_scheduler()
-        super().__init__()
-        self.scheduler = scheduler
-        # The server admin token creates pools. The pool admin token rotates
-        # the join token and removes machines. They are different secrets.
         self.admin_token = admin_token
         self.pool_admin_token: str | None = None
         self.prof: dict = {}

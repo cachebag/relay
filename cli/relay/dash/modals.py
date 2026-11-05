@@ -44,7 +44,7 @@ class JoinModal(ModalScreen[dict | str | None]):
                 "enter join   ctrl+n create a pool instead   "
                 + ("esc back" if self.can_cancel else "esc quit"),
                 classes="keys",
-                )
+            )
 
     def on_mount(self) -> None:
         self.query_one("#invite", Input).focus()
@@ -149,7 +149,7 @@ class NewPoolModal(ModalScreen[dict | None]):
                 placeholder="paste it here",
                 password=True,
                 id="admin-token",
-                )
+            )
             yield Static("pool name", classes="label")
             yield Input(placeholder="lab", id="pool-name")
             yield Label("", id="create-error", classes="error")
@@ -158,7 +158,7 @@ class NewPoolModal(ModalScreen[dict | None]):
                 "enter create   " + ("esc back" if self.can_cancel else "esc quit"),
                 id="create-keys",
                 classes="keys",
-                )
+            )
 
     def on_mount(self) -> None:
         token = self.query_one("#admin-token", Input)

@@ -16,6 +16,7 @@ NO_SERVER_HINT = (
     "no scheduler on this machine; run relay scheduler start, or pass --scheduler"
 )
 
+
 def invite_scheduler_url(scheduler: str) -> tuple[str, bool]:
     """Return a shareable scheduler URL and whether its host was replaced."""
     parts = urlsplit(scheduler)
@@ -89,14 +90,17 @@ def server_admin_token(flag: str | None) -> str:
         sys.exit(1)
     return token
 
+
 def own_scheduler(server: dict | None = None) -> str:
     server = profile.server() if server is None else server
     return server.get("public_url") or server.get("address") or ""
+
 
 def create_scheduler(args) -> str:
     if getattr(args, "scheduler_given", True):
         return args.scheduler
     return own_scheduler()
+
 
 def create(
     scheduler: str, name: str, admin_token: str, client: httpx.Client | None = None
@@ -130,7 +134,6 @@ def run_create(args) -> None:
     print()
     print("share the token with contributors; they run:")
     print_agent_invite(scheduler, p["token"], p.get("public_url") or "")
-
 
 
 def pool_from_login(flag: str | None) -> tuple[str, str]:

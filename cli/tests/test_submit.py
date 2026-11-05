@@ -459,9 +459,7 @@ def test_submit_wait_timeout_requires_wait(monkeypatch, capsys):
     "invalid_timeout",
     [0, -1, float("nan"), float("inf")],
 )
-def test_submit_rejects_invalid_wait_timeout(
-    monkeypatch, capsys, invalid_timeout
-):
+def test_submit_rejects_invalid_wait_timeout(monkeypatch, capsys, invalid_timeout):
     """Invalid local waiting limits are rejected before submission."""
     monkeypatch.setattr(
         profile,

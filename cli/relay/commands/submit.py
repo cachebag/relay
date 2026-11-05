@@ -36,8 +36,7 @@ def parse_job_timeout(value: str) -> int:
 
             if part is None:
                 raise argparse.ArgumentTypeError(
-                    "--timeout must be seconds or a duration "
-                    "such as 5s, 10m, or 1h30m"
+                    "--timeout must be seconds or a duration such as 5s, 10m, or 1h30m"
                 )
 
             total += Decimal(part.group(1)) * _SECONDS_PER_UNIT[part.group(2)]

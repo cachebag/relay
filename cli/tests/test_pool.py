@@ -294,6 +294,7 @@ def test_rotate_returns_public_url():
     body = pool.rotate("http://test", "pool1", "admintok", client=mock_client(handler))
     assert body == {"token": "newtok", "public_url": PUBLIC_URL}
 
+
 def test_create_uses_this_machines_scheduler_when_flag_not_given(monkeypatch, capsys):
     seen = []
 
