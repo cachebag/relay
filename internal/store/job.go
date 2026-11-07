@@ -37,9 +37,29 @@ func (r Requires) Valid() bool {
 	return false
 }
 
+// OutputFile is one file a job wrote to out/, as listed from the output
+// bundle when it was uploaded.
+type OutputFile struct {
+	Path  string `json:"path"`
+	Bytes int64  `json:"bytes"`
+}
+
 type Job struct {
-	ID      string   `json:"id"`
+	ID string `json:"id"`
+	// Command is the command line to run. With a bundle it holds only the
+	// arguments passed to Entry, and may be empty.
 	Command []string `json:"command"`
+	// Entry is the file inside the bundle to run, such as run.sh or
+	// crunch.py. Empty with a bundle means the agent picks run.sh, run.ps1 or
+	// run.cmd for its OS. Always empty without a bundle.
+	Entry string `json:"entry,omitempty"`
+	// BundleBytes is the size of the input bundle (a gzipped tar of the
+	// submitter's folder) stored beside the job, or 0 if it has none.
+	// OutputBytes and OutputFiles describe the out/ bundle the node sent back
+	// with the result, once there is one.
+	BundleBytes int64        `json:"bundle_bytes"`
+	OutputBytes int64        `json:"output_bytes"`
+	OutputFiles []OutputFile `json:"output_files,omitempty"`
 	// TimeoutSeconds limits each execution attempt. POST /jobs defaults it
 	// to one hour and accepts values from 1 second to 24 hours.
 	TimeoutSeconds int       `json:"timeout_seconds"`
