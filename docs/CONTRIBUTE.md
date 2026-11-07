@@ -78,6 +78,8 @@ $env:RELAY_POOL_TOKEN="<pool token>"
 
 Each job runs in its own empty folder, `relay/jobs/<job id>` in your cache folder (`~/.cache` on Linux, `~/Library/Caches` on macOS, `%LocalAppData%` on Windows), with `HOME` and the temp folder pointed inside it. The folder is deleted once the result is reported, and any left behind by a crash are deleted when the agent next starts. Jobs still run as your user, so this keeps their files tidy but doesn't stop a job reading yours.
 
+A job submitted with `relay submit --dir` or `--file` has its files unpacked into that folder first, and whatever it writes to `out/` there (up to 50 MB packed) is sent back to the scheduler with the result for the submitter to fetch.
+
 To look at what a job left behind, start the agent with `--keep-workdir`. It keeps every job's folder and logs where it is.
 
 ## Scheduler address
