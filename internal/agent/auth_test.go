@@ -39,7 +39,7 @@ func TestNextAndReportSendPoolToken(t *testing.T) {
 	if _, err := a.Next(context.Background()); err != nil {
 		t.Fatalf("Next: %v", err)
 	}
-	if err := a.Report(context.Background(), store.Job{ID: "job1"}, resultBody{NodeID: "n1", Attempt: 1}); err != nil {
+	if err := a.Report(context.Background(), store.Job{ID: "job1"}, resultBody{NodeID: "n1", Attempt: 1}, ""); err != nil {
 		t.Fatalf("Report: %v", err)
 	}
 
@@ -67,7 +67,7 @@ func TestNextAndReportRejectedToken(t *testing.T) {
 	if _, err := a.Next(context.Background()); !errors.Is(err, ErrBadToken) {
 		t.Errorf("Next: expected ErrBadToken, got %v", err)
 	}
-	if err := a.Report(context.Background(), store.Job{ID: "job1"}, resultBody{}); !errors.Is(err, ErrBadToken) {
+	if err := a.Report(context.Background(), store.Job{ID: "job1"}, resultBody{}, ""); !errors.Is(err, ErrBadToken) {
 		t.Errorf("Report: expected ErrBadToken, got %v", err)
 	}
 

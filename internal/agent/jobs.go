@@ -6,8 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
 
 	"github.com/cachebag/relay/internal/store"
 )
@@ -27,6 +31,9 @@ type Result struct {
 	ExitCode int    `json:"exit_code"`
 	Stdout   string `json:"stdout"`
 	Stderr   string `json:"stderr"`
+	// err is set instead of a real result when the job never ran because
+	// its files couldn't be fetched yet. It stays out of the JSON.
+	err error
 }
 
 // resultBody is the body of POST /jobs/{id}/result. NodeID and Attempt echo
@@ -82,11 +89,14 @@ func (a *Agent) Next(ctx context.Context) (*store.Job, error) {
 	}
 }
 
-// Report sends a finished job's result to the scheduler.
+// Report sends a finished job's result to the scheduler. With outputPath,
+// the tar of the job's out/ folder goes along in a multipart form; if that
+// file is gone the result is sent without it.
 func (a *Agent) Report(
 	ctx context.Context,
 	job store.Job,
-	rb resultBody) error {
+	rb resultBody,
+	outputPath string) error {
 
 	// Marshal the job result into JSON format.
 	body, err := json.Marshal(resultBody{
@@ -98,21 +108,54 @@ func (a *Agent) Report(
 		return err
 	}
 
+	var output *os.File
+	if outputPath != "" {
+		if output, err = os.Open(outputPath); err != nil {
+			log.Printf("output files for job %s are gone, sending the result without them: %v", job.ID, err)
+		} else {
+			defer output.Close()
+		}
+	}
+
+	client := a.client
+	var reqBody io.Reader = bytes.NewReader(body)
+	contentType := "application/json"
+	if output != nil {
+		var form bytes.Buffer
+		mw := multipart.NewWriter(&form)
+		if err := mw.WriteField("result", string(body)); err != nil {
+			return err
+		}
+		fw, err := mw.CreateFormFile("output", "out.tgz")
+		if err != nil {
+			return err
+		}
+		if _, err := io.Copy(fw, output); err != nil {
+			return err
+		}
+		if err := mw.Close(); err != nil {
+			return err
+		}
+		reqBody = &form
+		contentType = mw.FormDataContentType()
+		client = a.transferClient()
+	}
+
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
 		a.schedulerURL+"/jobs/"+url.PathEscape(job.ID)+"/result",
-		bytes.NewReader(body))
+		reqBody)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
 
 	// Results are only accepted from the job's own pool.
 	req.Header.Set("Authorization", "Bearer "+a.poolToken)
 
 	// Sends the HTTP request to the scheduler.
-	resp, err := a.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
