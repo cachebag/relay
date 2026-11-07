@@ -146,8 +146,15 @@ func main() {
 	var publicURL atomic.Value
 	publicURL.Store("")
 
+	// Job files live beside relay.db, one gzipped tar per job in and out.
+	bundles, err := store.NewBundles("bundles")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	handler := api.NewHandler(reg, pools, jobs, credits, server,
-		api.WithPublicURL(func() string { return publicURL.Load().(string) }))
+		api.WithPublicURL(func() string { return publicURL.Load().(string) }),
+		api.WithBundles(bundles))
 
 	// With --public, join the tailnet and serve the same handler on the
 	// Funnel listener too. A failure here is fatal on purpose: silently
