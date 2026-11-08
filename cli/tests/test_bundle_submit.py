@@ -25,10 +25,11 @@ def make_job_dir(tmp_path: Path, entry: str = "run.sh") -> Path:
     root = tmp_path / "crunch"
     (root / "sub").mkdir(parents=True)
     (root / ".git").mkdir()
-    (root / entry).write_text("#!/bin/sh\necho hi\n")
-    (root / "data.csv").write_text("1,2\n")
-    (root / "sub" / "x.txt").write_text("x")
-    (root / ".git" / "HEAD").write_text("ref")
+    # Bytes, not text: write_text would turn \n into \r\n on Windows.
+    (root / entry).write_bytes(b"#!/bin/sh\necho hi\n")
+    (root / "data.csv").write_bytes(b"1,2\n")
+    (root / "sub" / "x.txt").write_bytes(b"x")
+    (root / ".git" / "HEAD").write_bytes(b"ref")
     return root
 
 
