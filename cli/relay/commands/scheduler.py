@@ -3,10 +3,11 @@
 import getpass
 import os
 import re
+import time
 
 import httpx
 
-from relay import binaries, procs, profile
+from relay import binaries, procs, profile, services
 
 NAME = "relayd"
 TAILSCALE_STEPS = (
@@ -34,9 +35,19 @@ def register(sub) -> None:
         default="relay",
         help="Tailscale hostname for --public (default relay)",
     )
+    st.add_argument(
+        "--service",
+        action="store_true",
+        help="install or start the boot service",
+    )
     st.set_defaults(func=run_start)
 
     sp = ps.add_parser("stop", help="stop relayd")
+    sp.add_argument(
+        "--service",
+        action="store_true",
+        help="stop and remove the boot service",
+    )
     sp.set_defaults(func=run_stop)
 
     ss = ps.add_parser("status", help="is relayd running, and where")
@@ -72,6 +83,20 @@ def after(line: str | None, prefix: str) -> str:
 
 
 def run_start(args) -> None:
+    try:
+        managed = services.installed()
+        if managed:
+            if getattr(args, "service", False):
+                start_service(args, existing=True)
+            else:
+                print("relayd is installed as a service; use relay scheduler status")
+            return
+        if getattr(args, "service", False):
+            start_service(args, existing=False)
+            return
+    except services.ServiceError as exc:
+        raise SystemExit(f"relay scheduler: {exc}") from exc
+
     pid = procs.running(NAME)
     if pid:
         print(f"relayd is already running (pid {pid})")
@@ -153,11 +178,145 @@ def run_start(args) -> None:
         print("  (relayd is still starting; relay scheduler status shows the rest)")
 
 
+def start_service(args, existing: bool) -> None:
+    start_at = (
+        procs.log_path(NAME).stat().st_size if procs.log_path(NAME).exists() else 0
+    )
+    if existing:
+        argv = services.configuration()
+        if services.state() in {"active", "activating"}:
+            print("relayd service is already running with its saved configuration")
+            run_status(args)
+            return
+        services.start()
+        print("starting relayd service with its saved configuration")
+    else:
+        if procs.running(NAME):
+            raise services.ServiceError(
+                "relayd is already running outside the service; "
+                "run relay scheduler stop before installing it"
+            )
+        try:
+            binary = binaries.find(NAME)
+        except binaries.MissingBinary as exc:
+            raise services.ServiceError(str(exc)) from exc
+        argv = [str(binary), "--port", str(args.port)]
+        key = None
+        if args.public:
+            argv += ["--public", "--name", args.name]
+            key = authkey()
+            profile.save_server(ts_authkey=key)
+        services.install(argv, key)
+        print("relayd service installed and starting")
+
+    port = argv[argv.index("--port") + 1]
+    public = "--public" in argv
+    address = f"http://localhost:{port}"
+    if public:
+        profile.save_server(address=address)
+    else:
+        profile.save_server(address=address, public_url="")
+    want = ["relayd listening on"]
+    if public:
+        want.append("relayd public address:")
+        print("joining the tailnet, up to a minute...")
+    initial_deadline = time.monotonic() + 5
+
+    def service_is_starting() -> bool:
+        state = services.state()
+        return state in {"active", "activating"} or (
+            state == "inactive" and time.monotonic() < initial_deadline
+        )
+
+    try:
+        found = procs.wait_for(
+            NAME,
+            want,
+            60 if public else 15,
+            start_at,
+            is_running=service_is_starting,
+        )
+    except KeyboardInterrupt:
+        raise SystemExit(
+            "stopped waiting; the service remains installed. "
+            "relay scheduler status shows where it got to."
+        )
+
+    state = services.state()
+    if state in {"inactive", "failed"}:
+        raise services.ServiceError(
+            "service did not start; check its log and the service manager"
+        )
+    capture_service_output(start_at)
+    public_url = after(found.get("relayd public address:"), "relayd public address:")
+    print(f"  local address:   {address}")
+    if public_url:
+        ready = warm_up(public_url)
+        suffix = "" if ready else " (not answering yet; give it a minute)"
+        print(f"  public address:  {public_url}{suffix}")
+    elif public:
+        print("  public address:  not up yet; check relay scheduler status")
+    if not want_all_found(found, want):
+        print("  service is still starting or retrying; check relay scheduler status")
+    print(f"  log: {procs.log_path(NAME)}")
+
+
+def capture_service_output(start_at: int | None = None) -> None:
+    if start_at is None:
+        start_at = services.log_offset()
+    public = "--public" in services.configuration()
+    token = ""
+    public_url = ""
+    try:
+        with procs.log_path(NAME).open("rb") as log:
+            log.seek(0, os.SEEK_END)
+            log.seek(start_at if start_at <= log.tell() else 0)
+            for raw_line in log:
+                line = raw_line.decode(errors="replace")
+                token_match = re.search(r"server admin token: (\S+)", line)
+                if token_match:
+                    token = token_match.group(1)
+                if public:
+                    url_match = re.search(r"relayd public address: (\S+)", line)
+                    if url_match:
+                        public_url = url_match.group(1)
+    except FileNotFoundError:
+        return
+    srv = profile.server()
+    updates = {}
+    new_token = token and not services.token_was_captured(token)
+    if new_token and token != srv.get("admin_token"):
+        updates["admin_token"] = token
+    if public_url and public_url != srv.get("public_url"):
+        updates["public_url"] = public_url
+    if updates:
+        profile.save_server(**updates)
+    if new_token:
+        services.remember_captured_token(token)
+
+
 def want_all_found(found: dict, want: list[str]) -> bool:
     return all(w in found for w in want)
 
 
 def run_stop(args) -> None:
+    try:
+        managed = services.installed()
+        if getattr(args, "service", False):
+            if managed:
+                services.remove()
+                print("relayd service stopped and removed")
+            else:
+                print("relayd service is not installed")
+            return
+        if managed:
+            if services.stop():
+                print("relayd service stopped; it remains registered for boot")
+            else:
+                print("relayd service is not running; it remains registered for boot")
+            return
+    except services.ServiceError as exc:
+        raise SystemExit(f"relay scheduler: {exc}") from exc
     if procs.stop(NAME):
         print("relayd stopped")
     else:
@@ -165,6 +324,31 @@ def run_stop(args) -> None:
 
 
 def run_status(args) -> None:
+    try:
+        if services.installed():
+            state = services.state()
+            capture_service_output()
+            srv = profile.server()
+            labels = {
+                "active": "running",
+                "activating": "starting or retrying",
+                "reloading": "reloading",
+                "deactivating": "stopping",
+                "inactive": "stopped",
+                "failed": "failed",
+            }
+            print(f"relayd service {labels[state]} (installed for boot)")
+            if srv.get("address"):
+                print(f"  local address:   {srv['address']}")
+            if srv.get("public_url"):
+                print(f"  public address:  {srv['public_url']}")
+            print(
+                f"  admin token:     {'saved' if srv.get('admin_token') else 'not saved'}"
+            )
+            print(f"  log: {procs.log_path(NAME)}")
+            return
+    except services.ServiceError as exc:
+        raise SystemExit(f"relay scheduler: {exc}") from exc
     pid = procs.running(NAME)
     srv = profile.server()
     if pid is None:

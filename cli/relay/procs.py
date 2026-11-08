@@ -9,6 +9,8 @@ import signal
 import subprocess
 import sys
 import time
+
+from collections.abc import Callable
 from pathlib import Path
 
 from relay import profile
@@ -86,14 +88,23 @@ def stop(name: str, timeout: float = 5.0) -> bool:
     return True
 
 
-def wait_for(name: str, patterns: list[str], timeout: float, start_at: int = 0) -> dict:
+def wait_for(
+    name: str,
+    patterns: list[str],
+    timeout: float,
+    start_at: int = 0,
+    is_running: Callable[[], bool] | None = None,
+) -> dict:
     """Watch the log from offset start_at until every pattern has a line, or
     the process dies, or timeout. Returns {pattern: matching line}."""
     found: dict[str, str] = {}
     deadline = time.monotonic() + timeout
     while True:
         try:
-            text = log_path(name).read_bytes()[start_at:].decode(errors="replace")
+            with log_path(name).open("rb") as log:
+                log.seek(0, os.SEEK_END)
+                log.seek(start_at if start_at <= log.tell() else 0)
+                text = log.read().decode(errors="replace")
         except OSError:
             text = ""
         for line in text.splitlines():
@@ -101,7 +112,10 @@ def wait_for(name: str, patterns: list[str], timeout: float, start_at: int = 0) 
                 if pat not in found and pat in line:
                     found[pat] = line.strip()
         # One pass always runs, so a timeout of 0 means "read what's there".
-        if len(found) == len(patterns) or running(name) is None:
+        if len(found) == len(patterns):
+            break
+        alive = is_running() if is_running is not None else running(name) is not None
+        if not alive:
             break
         if time.monotonic() >= deadline:
             break
