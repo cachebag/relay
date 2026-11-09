@@ -3,7 +3,6 @@ import argparse
 import pytest
 
 from relay import procs, profile, services
-
 from relay.commands import pool, scheduler
 
 
