@@ -47,6 +47,9 @@ func printStartup(w io.Writer, n store.Node, scheduler string) {
 		n.Owner,
 	)
 }
+
+// reportExit prints the one-line reason for a terminal exit and reports
+// whether err was one.
 func reportExit(w io.Writer, err error) bool {
 	var msg string
 	switch {
