@@ -9,6 +9,23 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Added
+
+- **Jobs carry their own files.** `relay submit --dir ./crunch -- <args>`
+  packs the folder (50 MB cap, `.git` and the like left out), sends it with
+  the job, and the node unpacks it into the job's own folder and runs its
+  `run.sh`, `run.ps1` or `run.cmd` there, or the file named with `--entry`.
+  `--file script.py` sends one script and runs it. Interpreters come from
+  the extension (`.sh`, `.py`, `.ps1`, `.cmd`). Whatever the job writes to
+  `out/` comes back with the result, is listed on the job as `output_files`,
+  and is served by `GET /jobs/{id}/output/files` for `relay fetch` (#141).
+  relayd keeps the bundles in `bundles/` beside `relay.db`; `POST /jobs` and
+  `POST /jobs/{id}/result` take a multipart form with the tar, and
+  `GET /jobs/{id}/bundle` hands it to the job's node. `relay status`,
+  `relay jobs` and the dash show the entry in place of the command, and the
+  dash's job view lists the output files.
+  ([#140](https://github.com/cachebag/relay/issues/140))
+
 ## [0.2.9] - 2026-10-28
 
 ### Fixed

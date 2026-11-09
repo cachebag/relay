@@ -12,6 +12,16 @@ def register(sub) -> None:
     p.set_defaults(func=run)
 
 
+def describe(job: dict) -> str:
+    """The job's command line as one string. A job with files shows what
+    runs inside them (its entry, or the default run file) and then its
+    arguments."""
+    parts = list(job.get("command") or [])
+    if job.get("bundle_bytes"):
+        parts.insert(0, job.get("entry") or "run.*")
+    return " ".join(parts)
+
+
 def requires(job: dict) -> str:
     """The required OS for the job, or an empty string if it can run on any OS."""
     return (job.get("requires") or {}).get("os", "")
@@ -117,5 +127,5 @@ def run(args) -> None:
         f"{j['id']}  {state:<9} node={node}  attempts={attempts}  "
         f"limit={time_limit(j)}  "
         f"{'left=' + (remaining or '-') + '  ' if j['status'] == 'running' else ''}"
-        f"{timing}{' '.join(j['command'])}"
+        f"{timing}{describe(j)}"
     )

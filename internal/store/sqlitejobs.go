@@ -31,7 +31,11 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 		stdout     TEXT NOT NULL DEFAULT '',
 		stderr     TEXT NOT NULL DEFAULT '',
 		started_at  INTEGER NOT NULL DEFAULT 0,
-		finished_at INTEGER NOT NULL DEFAULT 0
+		finished_at INTEGER NOT NULL DEFAULT 0,
+		entry        TEXT NOT NULL DEFAULT '',
+		bundle_bytes INTEGER NOT NULL DEFAULT 0,
+		output_bytes INTEGER NOT NULL DEFAULT 0,
+		output_files TEXT NOT NULL DEFAULT '[]'
 	)`)
 	if err != nil {
 		return nil, err
@@ -96,7 +100,45 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 		}
 	}
 
+	// Job bundles: the entry point and the sizes of the files sent with the
+	// job and sent back, plus the list of files sent back as JSON.
+	for _, column := range []struct{ name, decl string }{
+		{"entry", "TEXT NOT NULL DEFAULT ''"},
+		{"bundle_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"output_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"output_files", "TEXT NOT NULL DEFAULT '[]'"},
+	} {
+		var count int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name = ?`, column.name).Scan(&count); err != nil {
+			return nil, err
+		}
+		if count == 0 {
+			if _, err := db.Exec(`ALTER TABLE jobs ADD COLUMN ` + column.name + ` ` + column.decl); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &SQLiteJobs{db: db}, nil
+}
+
+// outputFilesJSON stores an empty list as [] rather than null.
+func outputFilesJSON(files []OutputFile) (string, error) {
+	if files == nil {
+		files = []OutputFile{}
+	}
+	b, err := json.Marshal(files)
+	return string(b), err
+}
+
+// convertOutputFiles reads the list back; nothing becomes nil, not [].
+func convertOutputFiles(s string) ([]OutputFile, error) {
+	if s == "" || s == "[]" {
+		return nil, nil
+	}
+	var files []OutputFile
+	err := json.Unmarshal([]byte(s), &files)
+	return files, err
 }
 
 // Returns a Requires struct and any error encountered during unmarshalling.
@@ -144,6 +186,10 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 	if err != nil {
 		return err
 	}
+	outputFiles, err := outputFilesJSON(j.OutputFiles)
+	if err != nil {
+		return err
+	}
 	result, err := s.db.ExecContext(
 		ctx,
 		`INSERT OR IGNORE INTO jobs (
@@ -161,9 +207,13 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 			stdout,
 			stderr,
 			started_at,
-			finished_at
+			finished_at,
+			entry,
+			bundle_bytes,
+			output_bytes,
+			output_files
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		j.ID,
 		string(command),
 		j.TimeoutSeconds,
@@ -179,6 +229,10 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 		j.Stderr,
 		unixOrZero(j.StartedAt),
 		unixOrZero(j.FinishedAt),
+		j.Entry,
+		j.BundleBytes,
+		j.OutputBytes,
+		outputFiles,
 	)
 	if err != nil {
 		return err
@@ -203,12 +257,12 @@ func (s *SQLiteJobs) Create(ctx context.Context, j Job) error {
 // interface behavior used by the in-memory implementation.
 func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 	var j Job
-	var command, requires string
+	var command, requires, outputFiles string
 	var createdAt, startedAt, finishedAt int64
 
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, command, timeout_seconds, requires, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
+		`SELECT id, command, timeout_seconds, requires, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at, entry, bundle_bytes, output_bytes, output_files
 		 FROM jobs
 		 WHERE id = ?`,
 		id,
@@ -228,6 +282,10 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 		&j.Stderr,
 		&startedAt,
 		&finishedAt,
+		&j.Entry,
+		&j.BundleBytes,
+		&j.OutputBytes,
+		&outputFiles,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -242,6 +300,9 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 		return Job{}, err
 	}
 	if j.Requires, err = convertRequires(requires); err != nil {
+		return Job{}, err
+	}
+	if j.OutputFiles, err = convertOutputFiles(outputFiles); err != nil {
 		return Job{}, err
 	}
 
@@ -260,7 +321,7 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, command, timeout_seconds, requires,status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at
+		`SELECT id, command, timeout_seconds, requires, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at, entry, bundle_bytes, output_bytes, output_files
 		 FROM jobs
 		 ORDER BY created_at ASC, id ASC`,
 	)
@@ -273,7 +334,7 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 
 	for rows.Next() {
 		var j Job
-		var command, requires string
+		var command, requires, outputFiles string
 		var createdAt, startedAt, finishedAt int64
 
 		if err := rows.Scan(
@@ -292,6 +353,10 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 			&j.Stderr,
 			&startedAt,
 			&finishedAt,
+			&j.Entry,
+			&j.BundleBytes,
+			&j.OutputBytes,
+			&outputFiles,
 		); err != nil {
 			return nil, err
 		}
@@ -301,6 +366,9 @@ func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
 			return nil, err
 		}
 		if j.Requires, err = convertRequires(requires); err != nil {
+			return nil, err
+		}
+		if j.OutputFiles, err = convertOutputFiles(outputFiles); err != nil {
 			return nil, err
 		}
 
@@ -332,6 +400,10 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 	if err != nil {
 		return err
 	}
+	outputFiles, err := outputFilesJSON(j.OutputFiles)
+	if err != nil {
+		return err
+	}
 
 	result, err := s.db.ExecContext(
 		ctx,
@@ -349,7 +421,11 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		     stdout = ?,
 		     stderr = ?,
 		     started_at = ?,
-		     finished_at = ?
+		     finished_at = ?,
+		     entry = ?,
+		     bundle_bytes = ?,
+		     output_bytes = ?,
+		     output_files = ?
 		 WHERE id = ?`,
 		string(command),
 		j.TimeoutSeconds,
@@ -365,6 +441,10 @@ func (s *SQLiteJobs) Update(ctx context.Context, j Job) error {
 		j.Stderr,
 		unixOrZero(j.StartedAt),
 		unixOrZero(j.FinishedAt),
+		j.Entry,
+		j.BundleBytes,
+		j.OutputBytes,
+		outputFiles,
 		j.ID,
 	)
 	if err != nil {

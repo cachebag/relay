@@ -27,6 +27,9 @@ type pending struct {
 	JobID   string `json:"job_id"`
 	Attempt int    `json:"attempt"`
 	Result  Result `json:"result"`
+	// OutputPath is the packed out/ folder waiting in the job's folder, or
+	// empty when the job wrote no files.
+	OutputPath string `json:"output_path,omitempty"`
 }
 
 // defaultCacheDir is where the agent keeps its node ID and pending result:
@@ -151,7 +154,7 @@ func (a *Agent) flushPending(ctx context.Context) bool {
 		NodeID:  a.node.ID,
 		Attempt: p.Attempt,
 		Result:  p.Result,
-	})
+	}, p.OutputPath)
 	switch {
 	case err == nil:
 		log.Printf("job %s finished with exit code %d", p.JobID, p.Result.ExitCode)

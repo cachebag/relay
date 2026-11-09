@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -20,6 +22,8 @@ import (
 type PostedResult struct {
 	jobID string
 	body  map[string]any
+	// output is the out/ tarball that came with the result, if any.
+	output []byte
 }
 
 // `FakeScheduler` is an httptest server speaking the node-facing contract:
@@ -44,6 +48,11 @@ type FakeScheduler struct {
 	resultStatus int
 	results      []PostedResult
 	resultPosted chan struct{}
+	// bundle is served by GET /jobs/{id}/bundle with bundleStatus, and
+	// bundleNodes records the ?node= each download named.
+	bundle       []byte
+	bundleStatus int
+	bundleNodes  []string
 }
 
 // Creates a new FakeScheduler and starts its HTTP server. The server
@@ -78,13 +87,37 @@ func newFakeScheduler(t *testing.T) *FakeScheduler {
 		f.mu.Unlock()
 		next(w)
 	})
+	mux.HandleFunc("GET /jobs/{id}/bundle", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.bundleNodes = append(f.bundleNodes, r.URL.Query().Get("node"))
+		data, status := f.bundle, f.bundleStatus
+		f.mu.Unlock()
+		if status != 0 && status != http.StatusOK {
+			http.Error(w, "no", status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/gzip")
+		w.Write(data)
+	})
 	mux.HandleFunc("POST /jobs/{id}/result", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		var output []byte
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			if err := r.ParseMultipartForm(32 << 20); err != nil {
+				t.Errorf("parsing multipart result: %v", err)
+			}
+			if err := json.Unmarshal([]byte(r.FormValue("result")), &body); err != nil {
+				t.Errorf("decoding result part: %v", err)
+			}
+			if of, _, err := r.FormFile("output"); err == nil {
+				output, _ = io.ReadAll(of)
+				of.Close()
+			}
+		} else if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Errorf("decoding result body: %v", err)
 		}
 		f.mu.Lock()
-		f.results = append(f.results, PostedResult{jobID: r.PathValue("id"), body: body})
+		f.results = append(f.results, PostedResult{jobID: r.PathValue("id"), body: body, output: output})
 		status := f.resultStatus
 		f.mu.Unlock()
 		w.WriteHeader(status)
@@ -103,6 +136,14 @@ func (f *FakeScheduler) setNext(fn func(w http.ResponseWriter)) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.next = fn
+}
+
+// `setBundle` makes GET /jobs/{id}/bundle serve data with status.
+func (f *FakeScheduler) setBundle(data []byte, status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.bundle = data
+	f.bundleStatus = status
 }
 
 // `setResultStatus` sets the HTTP status code that the FakeScheduler

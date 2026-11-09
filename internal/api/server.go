@@ -351,22 +351,62 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			return
 		}
 
-		// Read the command, submitter, requirements, and timeout.
+		// Read the command, submitter, requirements, timeout and entry point.
+		// A job's files come as a multipart form: the JSON in a "job" part
+		// and the gzipped tar in a "bundle" part.
 		var req struct {
 			Command        []string       `json:"command"`
 			Submitter      string         `json:"submitter"`
 			Requires       store.Requires `json:"requires"`
 			TimeoutSeconds *int           `json:"timeout_seconds"`
+			Entry          string         `json:"entry"`
 		}
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		bundle, err := readJSONWithFile(w, r, "job", "bundle", &req)
+		if errors.Is(err, errBundleTooBig) {
+			http.Error(w, "job "+err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
+		if err != nil {
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
 		}
+		if bundle != nil {
+			defer bundle.Close()
+		}
 
-		if len(req.Command) == 0 {
+		// Without files the command is the whole job. With files it is the
+		// arguments to the entry point, and may be empty.
+		if len(req.Command) == 0 && bundle == nil {
 			http.Error(w, "command is required", http.StatusBadRequest)
 			return
+		}
+		if bundle != nil && cfg.bundles == nil {
+			http.Error(w, "this scheduler does not accept job files", http.StatusServiceUnavailable)
+			return
+		}
+		if req.Entry != "" && bundle == nil {
+			http.Error(w, "entry needs a bundle", http.StatusBadRequest)
+			return
+		}
+		if !validEntry(req.Entry) {
+			http.Error(w, "entry must be a relative path inside the bundle", http.StatusBadRequest)
+			return
+		}
+		if bundle != nil {
+			files, err := listBundle(bundle)
+			if err != nil {
+				http.Error(w, "bundle is not a gzipped tar: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			if req.Entry != "" && !hasFile(files, req.Entry) {
+				http.Error(w, "entry "+req.Entry+" is not in the bundle", http.StatusBadRequest)
+				return
+			}
+			if req.Entry == "" && !hasDefaultEntry(files) {
+				http.Error(w, "bundle has no run.sh, run.ps1 or run.cmd; name the file to run with entry", http.StatusBadRequest)
+				return
+			}
 		}
 
 		// A job must record who submitted it.
@@ -397,6 +437,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		j := store.Job{
 			ID:             store.NewID(),
 			Command:        req.Command,
+			Entry:          req.Entry,
 			TimeoutSeconds: timeoutSeconds,
 			Requires:       req.Requires,
 			Status:         store.JobQueued,
@@ -404,9 +445,25 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			Submitter:      req.Submitter,
 			CreatedAt:      time.Now().UTC(),
 		}
+		if j.Command == nil {
+			j.Command = []string{}
+		}
+
+		// Store the files first, so the job is never queued without them.
+		if bundle != nil {
+			n, err := cfg.bundles.Put(j.ID, store.BundleInput, bundle)
+			if err != nil {
+				http.Error(w, "store error", http.StatusInternalServerError)
+				return
+			}
+			j.BundleBytes = n
+		}
 
 		// Save the new job.
 		if err := jobs.Create(r.Context(), j); err != nil {
+			if bundle != nil {
+				cfg.bundles.Delete(j.ID)
+			}
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
 		}
@@ -461,6 +518,47 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(jobsList)
+	})
+
+	// Serves a job's input files to the node the job is on. The node names
+	// itself with ?node=, and only that node, for an assigned or running
+	// job, gets the download. Another pool's job is a 404 as everywhere.
+	mux.HandleFunc("GET /jobs/{id}/bundle", func(w http.ResponseWriter, r *http.Request) {
+		p, ok := poolFromBearer(w, r, pools)
+		if !ok {
+			return
+		}
+		j, ok := poolJob(w, r, jobs, p.ID)
+		if !ok {
+			return
+		}
+		if j.BundleBytes == 0 || cfg.bundles == nil {
+			http.Error(w, "job has no files", http.StatusNotFound)
+			return
+		}
+		node := r.URL.Query().Get("node")
+		if node == "" || node != j.NodeID || (j.Status != store.JobAssigned && j.Status != store.JobRunning) {
+			http.Error(w, "job is not assigned to this node", http.StatusForbidden)
+			return
+		}
+		serveBundle(w, r, cfg.bundles, j.ID, store.BundleInput)
+	})
+
+	// Serves the files a finished job wrote to out/, for relay fetch.
+	mux.HandleFunc("GET /jobs/{id}/output/files", func(w http.ResponseWriter, r *http.Request) {
+		p, ok := poolFromBearer(w, r, pools)
+		if !ok {
+			return
+		}
+		j, ok := poolJob(w, r, jobs, p.ID)
+		if !ok {
+			return
+		}
+		if j.OutputBytes == 0 || cfg.bundles == nil {
+			http.Error(w, "job has no output files", http.StatusNotFound)
+			return
+		}
+		serveBundle(w, r, cfg.bundles, j.ID, store.BundleOutput)
 	})
 
 	// Hands a node its oldest assigned or running job. Handing back a running
@@ -531,9 +629,17 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			Stderr   string `json:"stderr"`
 		}
 
-		// Read the node ID and attempt number from the request.
-		r.Body = http.MaxBytesReader(w, r.Body, maxResultBytes)
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Read the result. With output files it is a multipart form: the
+		// JSON in a "result" part and the gzipped tar of out/ in "output".
+		if !isMultipart(r) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxResultBytes)
+		}
+		output, err := readJSONWithFile(w, r, "result", "output", &req)
+		if errors.Is(err, errBundleTooBig) {
+			http.Error(w, "output "+err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
+		if err != nil {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
 				http.Error(w, "result too large", http.StatusRequestEntityTooLarge)
@@ -541,6 +647,9 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			}
 			http.Error(w, "invalid json", http.StatusBadRequest)
 			return
+		}
+		if output != nil {
+			defer output.Close()
 		}
 
 		if req.ExitCode == nil {
@@ -573,6 +682,24 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			log.Printf("stale result for job %s from %s (attempt %d, current %d)", j.ID, req.NodeID, req.Attempt, j.Attempts)
 			http.Error(w, "stale result: job was reassigned", http.StatusConflict)
 			return
+		}
+
+		// Keep the files the job wrote to out/, if the node sent any. A
+		// scheduler without a bundles folder drops them rather than
+		// refusing the result, so the job still finishes.
+		if output != nil && cfg.bundles != nil {
+			files, err := listBundle(output)
+			if err != nil {
+				http.Error(w, "output is not a gzipped tar: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			n, err := cfg.bundles.Put(j.ID, store.BundleOutput, output)
+			if err != nil {
+				http.Error(w, "store error", http.StatusInternalServerError)
+				return
+			}
+			j.OutputBytes = n
+			j.OutputFiles = toOutputFiles(files)
 		}
 
 		// Mark the job done.
