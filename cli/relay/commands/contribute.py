@@ -1,4 +1,4 @@
-"""Start contributing this machine's compute power to the saved pool."""
+"""Start, list, and stop this machine's agents for saved pools."""
 
 import sys
 
@@ -9,22 +9,34 @@ from relay import contribution, profile
 def register(sub) -> None:
     parser = sub.add_parser(
         "contribute",
-        help="run the agent for your current pool",
+        help="run one local agent per pool",
+    )
+    parser.add_argument(
+        "--pool",
+        metavar="NAME",
+        help="saved pool name or ID (default: current login)",
     )
     parser.set_defaults(func=run_start)
 
-    # Register the commands used to stop and inspect the local agent.
+    # Register the commands used to stop and inspect local agents.
     actions = parser.add_subparsers(dest="contribute_action")
 
     stop_parser = actions.add_parser(
         "stop",
-        help="stop the local agent",
+        help="stop one pool's agent or all local agents",
     )
+    target = stop_parser.add_mutually_exclusive_group()
+    target.add_argument(
+        "--pool",
+        metavar="NAME",
+        help="pool name or ID (default: current login)",
+    )
+    target.add_argument("--all", action="store_true", help="stop agents for every pool")
     stop_parser.set_defaults(func=run_stop)
 
     status_parser = actions.add_parser(
         "status",
-        help="show local agent status",
+        help="list all running local agents",
     )
     status_parser.set_defaults(func=run_status)
 
@@ -40,13 +52,48 @@ def _pool_label(state: dict) -> str:
     return name or pool_id or "unknown pool"
 
 
-def run_start(args) -> None:
-    # Use the saved login so users don't need to enter their scheduler, pool token, or username again.
-    prof = profile.require_login()
+def _saved_login(pool: str) -> dict:
+    """Select a saved login without changing the current pool."""
+    for field in ("pool_id", "pool_name"):
+        matches = [login for login in profile.logins() if login.get(field) == pool]
+        if matches:
+            if len(matches) > 1:
+                raise contribution.ContributionError(
+                    f"pool {pool!r} is ambiguous; use its pool ID"
+                )
+            return matches[0]
+    raise contribution.ContributionError(
+        f"pool {pool!r} is not saved; run relay login for that pool first"
+    )
 
-    # Start the background agent and report any errors without displaying a Python traceback to the user.
+
+def _stop_pool_id(pool: str) -> str:
+    """Allow stopping a running pool even if its saved login was removed."""
+    for field in ("pool_id", "pool_name"):
+        matches = [
+            running for running in contribution.statuses() if running.get(field) == pool
+        ]
+        if matches:
+            if len(matches) > 1:
+                raise contribution.ContributionError(
+                    f"pool {pool!r} is ambiguous; use its pool ID"
+                )
+            return matches[0]["pool_id"]
+    return _saved_login(pool)["pool_id"]
+
+
+def run_start(args) -> None:
+    # A named pool has its own scheduler and credentials; 
+    # selecting it does not change the current login used by other commands.
     try:
-        pid, log_path = contribution.start(prof, args.scheduler)
+        requested = getattr(args, "pool", None)
+        prof = _saved_login(requested) if requested else profile.require_login()
+        scheduler = (
+            args.scheduler
+            if getattr(args, "scheduler_given", False)
+            else prof.get("scheduler") or args.scheduler
+        )
+        pid, log_path = contribution.start(prof, scheduler)
     except contribution.ContributionError as exc:
         print(f"relay contribute: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
@@ -59,28 +106,45 @@ def run_start(args) -> None:
 
 
 def run_stop(args) -> None:
-    # Stop the saved agent process and report the result to the user.
+    # No pool means the current login; 
+    # --all includes other logins and even agents whose logins were removed after they were started.
     try:
-        stopped = contribution.stop()
+        if getattr(args, "all", False):
+            stopped_agents = contribution.stop_all()
+        else:
+            requested = getattr(args, "pool", None)
+            pool_id = (
+                _stop_pool_id(requested) if requested else profile.load().get("pool_id")
+            )
+            stopped = contribution.stop(pool_id) if pool_id else None
+            stopped_agents = [stopped] if stopped is not None else []
     except contribution.ContributionError as exc:
         print(f"relay contribute stop: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
 
-    if stopped is None:
+    if not stopped_agents:
         print("not contributing")
     else:
-        print(f"stopped contributing to {_pool_label(stopped)} (PID {stopped['pid']})")
+        for stopped in stopped_agents:
+            print(
+                f"stopped contributing to {_pool_label(stopped)} (PID {stopped['pid']})"
+            )
 
 
 def run_status(args) -> None:
-    # Check whether this machine is currently contributing to a pool.
+    # Show every running agent, not just the agent for the current login.
     try:
-        running = contribution.status()
+        running_agents = contribution.statuses()
     except contribution.ContributionError as exc:
         print(f"relay contribute status: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
 
-    if running is None:
+    if not running_agents:
         print("not contributing")
     else:
-        print(f"contributing to {_pool_label(running)} (PID {running['pid']})")
+        for running in running_agents:
+            scheduler = running.get("scheduler")
+            suffix = f" at {scheduler}" if scheduler else ""
+            print(
+                f"contributing to {_pool_label(running)} (PID {running['pid']}){suffix}"
+            )

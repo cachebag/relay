@@ -24,6 +24,13 @@ SAVED = {
     "pool_token": "tok",
     "name": "akrm",
 }
+SECOND = {
+    **SAVED,
+    "scheduler": "http://other:8080",
+    "pool_id": "p2",
+    "pool_name": "second",
+    "pool_token": "tok2",
+}
 
 
 @pytest.fixture
@@ -259,15 +266,134 @@ def test_cli_contribute_uses_saved_login(cfg, monkeypatch, capsys):
 
 
 def test_cli_contribute_status_and_stop(cfg, monkeypatch, capsys):
+    profile.save(SAVED)
     state = {"pid": 4321, "pool_name": "lab", "pool_id": "p1"}
-    monkeypatch.setattr(contribution, "status", lambda: state)
-    monkeypatch.setattr(contribution, "stop", lambda: state)
+    monkeypatch.setattr(contribution, "statuses", lambda: [state])
+    monkeypatch.setattr(
+        contribution, "stop", lambda pool_id: state if pool_id == "p1" else None
+    )
 
     contribute.run_status(argparse.Namespace())
     assert "contributing to lab (p1)" in capsys.readouterr().out
 
     contribute.run_stop(argparse.Namespace())
     assert "stopped contributing to lab (p1)" in capsys.readouterr().out
+
+
+def test_cli_named_pool_uses_its_scheduler_without_switching(cfg, monkeypatch, capsys):
+    profile.save(SAVED)
+    profile.save(SECOND)
+    started = []
+
+    def fake_start(prof, scheduler):
+        started.append((prof["pool_id"], scheduler, prof["pool_token"]))
+        return 4321, cfg / "relay-agent.p1.log"
+
+    monkeypatch.setattr(contribution, "start", fake_start)
+    contribute.run_start(
+        argparse.Namespace(
+            scheduler=SECOND["scheduler"], pool="lab", scheduler_given=False
+        )
+    )
+
+    assert started == [("p1", SCHED, "tok")]
+    assert profile.load()["pool_id"] == "p2"
+    assert "contributing to lab" in capsys.readouterr().out
+
+
+def test_cli_explicit_scheduler_overrides_selected_pool(cfg, monkeypatch):
+    profile.save(SAVED)
+    started = []
+    monkeypatch.setattr(
+        contribution,
+        "start",
+        lambda prof, scheduler: (started.append(scheduler) or 4321, cfg / "agent.log"),
+    )
+    contribute.run_start(
+        argparse.Namespace(
+            scheduler="http://override:8080", scheduler_given=True, pool="lab"
+        )
+    )
+    assert started == ["http://override:8080"]
+
+
+def test_cli_status_lists_every_pool(cfg, monkeypatch, capsys):
+    states = [
+        {"pid": 4321, "pool_name": "lab", "pool_id": "p1", "scheduler": SCHED},
+        {
+            "pid": 5678,
+            "pool_name": "second",
+            "pool_id": "p2",
+            "scheduler": SECOND["scheduler"],
+        },
+    ]
+    monkeypatch.setattr(contribution, "statuses", lambda: states)
+    contribute.run_status(argparse.Namespace())
+    output = capsys.readouterr().out
+    assert "contributing to lab (p1) (PID 4321) at http://test:8080" in output
+    assert "contributing to second (p2) (PID 5678) at http://other:8080" in output
+
+
+def test_cli_stop_named_pool_without_changing_current(cfg, monkeypatch, capsys):
+    profile.save(SAVED)
+    profile.save(SECOND)
+    tracked_agent(cfg, pid=4321)
+    tracked_agent(cfg, pid=5678, pool_id="p2", pool_name="second")
+    stopped = set()
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid not in stopped)
+    monkeypatch.setattr(contribution.os, "kill", lambda pid, sig: stopped.add(pid))
+
+    contribute.run_stop(argparse.Namespace(pool="lab", all=False))
+
+    assert stopped == {4321}
+    assert contribution.status("p2")["pid"] == 5678
+    assert profile.load()["pool_id"] == "p2"
+    assert "stopped contributing to lab (p1)" in capsys.readouterr().out
+
+
+def test_cli_stop_all_includes_agents_without_saved_logins(cfg, monkeypatch, capsys):
+    tracked_agent(cfg, pid=4321)
+    tracked_agent(cfg, pid=5678, pool_id="p2", pool_name="second")
+    stopped = set()
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid not in stopped)
+    monkeypatch.setattr(contribution.os, "kill", lambda pid, sig: stopped.add(pid))
+
+    contribute.run_stop(argparse.Namespace(all=True))
+
+    assert stopped == {4321, 5678}
+    assert contribution.statuses() == []
+    output = capsys.readouterr().out
+    assert "stopped contributing to lab (p1)" in output
+    assert "stopped contributing to second (p2)" in output
+
+
+def test_cli_unknown_or_ambiguous_pool_is_reported(cfg, monkeypatch, capsys):
+    profile.save(SAVED)
+    profile.save({**SECOND, "pool_name": "lab"})
+    monkeypatch.setattr(contribution, "start", lambda *args: pytest.fail("started"))
+
+    with pytest.raises(SystemExit) as error:
+        contribute.run_start(argparse.Namespace(scheduler=SCHED, pool="lab"))
+    assert error.value.code == 1
+    assert "ambiguous" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as error:
+        contribute.run_start(argparse.Namespace(scheduler=SCHED, pool="missing"))
+    assert error.value.code == 1
+    assert "not saved" in capsys.readouterr().err
+
+
+def test_cli_contribute_argument_parsing():
+    parser = argparse.ArgumentParser()
+    contribute.register(parser.add_subparsers(dest="command"))
+    assert parser.parse_args(["contribute", "--pool", "lab"]).pool == "lab"
+    assert parser.parse_args(["contribute", "status"]).func == contribute.run_status
+    args = parser.parse_args(["contribute", "stop", "--pool", "lab"])
+    assert args.pool == "lab" and args.all is False
+    args = parser.parse_args(["contribute", "stop", "--all"])
+    assert args.all is True
+    with pytest.raises(SystemExit):
+        parser.parse_args(["contribute", "stop", "--all", "--pool", "lab"])
 
 
 def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):

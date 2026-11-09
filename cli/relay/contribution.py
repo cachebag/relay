@@ -118,8 +118,8 @@ def _read_running(paths: tuple[Path, Path], pool_id: str | None) -> dict | None:
     }
 
 
-def statuses() -> list[dict]:
-    """List all live agents, including agents started by an older CLI."""
+def _running_with_paths() -> list[tuple[dict, tuple[Path, Path]]]:
+    """Find every tracked agent, retaining its files for targeted shutdown."""
     directory = profile.config_dir()
     running = []
     known_pids = set()
@@ -128,13 +128,19 @@ def statuses() -> list[dict]:
         paths = (pid_path, directory / f"relay-agent.{pool_id}.state.json")
         state = _read_running(paths, pool_id)
         if state is not None:
-            running.append(state)
+            running.append((state, paths))
             known_pids.add(state["pid"])
 
-    old = _read_running(_legacy_tracking_paths(), None)
+    old_paths = _legacy_tracking_paths()
+    old = _read_running(old_paths, None)
     if old is not None and old["pid"] not in known_pids:
-        running.append(old)
+        running.append((old, old_paths))
     return running
+
+
+def statuses() -> list[dict]:
+    """List all live agents, including agents started by an older CLI."""
+    return [state for state, _ in _running_with_paths()]
 
 
 def _find_running(pool_id: str) -> tuple[dict | None, tuple[Path, Path]]:
@@ -162,16 +168,8 @@ def status(pool_id: str | None = None) -> dict | None:
     return running
 
 
-def stop(pool_id: str | None = None) -> dict | None:
-    """Stop only the current (or selected) pool's agent."""
-    if pool_id is None:
-        pool_id = profile.load().get("pool_id")
-    if not pool_id:
-        return None
-    running, paths = _find_running(pool_id)
-    if running is None:
-        return None
-
+def _stop_running(running: dict, paths: tuple[Path, Path]) -> dict:
+    """Shut down one known agent without altering any other tracking files."""
     pid = running["pid"]
     # SIGTERM would force-kill a Windows process. Ctrl+Break reaches the
     # os.Interrupt handler already registered by the Go agent instead.
@@ -196,6 +194,30 @@ def stop(pool_id: str | None = None) -> dict | None:
 
     _clear_tracking(paths)
     return running
+
+
+def stop(pool_id: str | None = None) -> dict | None:
+    """Stop only the current (or selected) pool's agent."""
+    if pool_id is None:
+        pool_id = profile.load().get("pool_id")
+    if not pool_id:
+        return None
+    running, paths = _find_running(pool_id)
+    return _stop_running(running, paths) if running is not None else None
+
+
+def stop_all() -> list[dict]:
+    """Stop all tracked agents, continuing even if one fails to shut down."""
+    stopped = []
+    errors = []
+    for running, paths in _running_with_paths():
+        try:
+            stopped.append(_stop_running(running, paths))
+        except ContributionError as exc:
+            errors.append(str(exc))
+    if errors:
+        raise ContributionError("could not stop every agent: " + "; ".join(errors))
+    return stopped
 
 
 def start(prof: dict, scheduler: str) -> tuple[int, Path]:
