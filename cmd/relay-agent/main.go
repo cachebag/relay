@@ -35,7 +35,7 @@ func printStartup(w io.Writer, n store.Node, scheduler string) {
 	memGB := float64(n.MemBytes) / (1024 * 1024 * 1024)
 
 	logger.Printf(
-		"relay-agent %s: %s (%s/%s, %d CPUs, %.1f GB) joining %s as %s",
+		"relay-agent %s: %s (%s/%s, %d CPUs, %.1f GB) connecting to %s as %s",
 		Version,
 		n.Hostname,
 		n.OS,
