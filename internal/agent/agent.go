@@ -146,12 +146,6 @@ func (a *Agent) Tick(ctx context.Context) {
 				log.Printf("%s", store.RotatedTokenMsg)
 				a.rotatedWarned = true
 			}
-
-		case errors.Is(err, ErrBadToken):
-			log.Printf(
-				"pool token rejected; check it with your pool admin",
-			)
-
 		case errors.Is(err, ErrBadToken):
 			log.Printf(
 				"pool token rejected; check it with your pool admin",
