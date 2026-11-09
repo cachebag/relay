@@ -69,12 +69,9 @@ func TestRunStopsWhenRemoved(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatalf("expected Run to return nil so the agent exits 0, got %v", err)
+		if !errors.Is(err, ErrRemoved) {
+			t.Fatalf("expected Run to return ErrRemoved so the agent exits 1, got %v", err)
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run kept going after the scheduler said the machine was removed")
-	}
 
 	if n := heartbeats.Load(); n != 1 {
 		t.Errorf("expected exactly 1 heartbeat before stopping, got %d", n)
@@ -87,65 +84,101 @@ func TestRunStopsWhenRemoved(t *testing.T) {
 // TestRunRemovedStopsRunningJob verifies that a job still running when the
 // machine is removed is stopped and not reported, since the scheduler has
 // already put it back in the queue.
-func TestRunRemovedStopsRunningJob(t *testing.T) {
-	var gone atomic.Bool
-	var results atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(
-		func(w http.ResponseWriter, r *http.Request) {
-			switch {
-			case r.URL.Path == "/nodes/heartbeat" && gone.Load():
-				http.Error(w, "removed from pool by admin", http.StatusGone)
-			case r.URL.Path == "/nodes/heartbeat":
-				w.WriteHeader(http.StatusNoContent)
-			case r.URL.Path == "/nodes/n1/jobs/next":
-				w.Header().Set("Content-Type", "application/json")
-				w.Write([]byte(`{"id":"job1","command":["sleep"],"status":"running","node_id":"n1","attempts":1}`))
-			case strings.HasSuffix(r.URL.Path, "/result"):
-				results.Add(1)
-				w.WriteHeader(http.StatusNoContent)
-			default:
-				w.WriteHeader(http.StatusNoContent)
-			}
-		},
-	))
-	defer srv.Close()
+func TestRunRemovedStopsRunningJob(t *testing.T)
+	{
+		var gone atomic.Bool
+		var results atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/nodes/heartbeat" && gone.Load():
+					http.Error(w, "removed from pool by admin", http.StatusGone)
+				case r.URL.Path == "/nodes/heartbeat":
+					w.WriteHeader(http.StatusNoContent)
+				case r.URL.Path == "/nodes/n1/jobs/next":
+					w.Header().Set("Content-Type", "application/json")
+					w.Write([]byte(`{"id":"job1","command":["sleep"],"status":"running","node_id":"n1","attempts":1}`))
+				case strings.HasSuffix(r.URL.Path, "/result"):
+					results.Add(1)
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					w.WriteHeader(http.StatusNoContent)
+				}
+			},
+		))
+		defer srv.Close()
 
-	a := newAgent(srv.URL, "tok", store.Node{ID: "n1", Hostname: "n1"}, t.TempDir())
-	a.client = srv.Client()
+		a := newAgent(srv.URL, "tok", store.Node{ID: "n1", Hostname: "n1"}, t.TempDir())
+		a.client = srv.Client()
 
-	// A fake job that runs until it is cancelled. The admin removes the
-	// machine once the job has started.
-	started := make(chan struct{})
-	a.run = func(ctx context.Context, argv []string, dir string) Result {
-		close(started)
-		gone.Store(true)
-		<-ctx.Done()
-		return Result{ExitCode: -1}
-	}
-
-	originalOutput := log.Writer()
-	log.SetOutput(&bytes.Buffer{})
-	defer log.SetOutput(originalOutput)
-
-	done := make(chan error, 1)
-	go func() { done <- a.Run(context.Background(), 10*time.Millisecond) }()
-
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		t.Fatal("job never started")
-	}
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("expected Run to return nil, got %v", err)
+		// A fake job that runs until it is cancelled. The admin removes the
+		// machine once the job has started.
+		started := make(chan struct{})
+		a.run = func(ctx context.Context, argv []string, dir string) Result {
+			close(started)
+			gone.Store(true)
+			<-ctx.Done()
+			return Result{ExitCode: -1}
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run didn't stop the running job after the machine was removed")
+
+		originalOutput := log.Writer()
+		log.SetOutput(&bytes.Buffer{})
+		defer log.SetOutput(originalOutput)
+
+		done := make(chan error, 1)
+		go func() { done <- a.Run(context.Background(), 10*time.Millisecond) }()
+
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("job never started")
+		}
+
+		select {
+		case err := <-done:
+			if !errors.Is(err, ErrRemoved) {
+				t.Fatalf("expected Run to return ErrRemoved so the agent exits 1, got %v", err)
+			}
+			if n := results.Load(); n != 0 {
+				t.Errorf("expected no result to be reported for the requeued job, got %d", n)
+			}
+		}
+		func TestRunStopsWhenTokenRejected(t *testing.T) {
+		var heartbeats atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/nodes/heartbeat" {
+					heartbeats.Add(1)
+					http.Error(w, "invalid pool token", http.StatusForbidden)
+					return
+				}
+				w.WriteHeader(http.StatusNoContent)
+			},
+		))
+		defer srv.Close()
+
+		a := newAgent(srv.URL, "bad", store.Node{ID: "n1", Hostname: "n1"}, t.TempDir())
+		a.client = srv.Client()
+
+		originalOutput := log.Writer()
+		log.SetOutput(&bytes.Buffer{})
+		defer log.SetOutput(originalOutput)
+
+		done := make(chan error, 1)
+		go func() { done <- a.Run(context.Background(), 10*time.Millisecond) }()
+
+		select {
+		case err := <-done:
+			if !errors.Is(err, ErrBadToken) {
+				t.Fatalf("expected Run to return ErrBadToken, got %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Run kept going after the scheduler rejected the pool token")
+		}
+
+		if n := heartbeats.Load(); n != 1 {
+			t.Errorf("expected exactly 1 heartbeat before stopping, got %d", n)
+		}
 	}
 
-	if n := results.Load(); n != 0 {
-		t.Errorf("expected no result to be reported for the requeued job, got %d", n)
 	}
-}

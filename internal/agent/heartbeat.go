@@ -29,6 +29,9 @@ var ErrPoolConflict = errors.New(
 // retrying will never succeed, so the agent stops.
 var ErrRemoved = errors.New("removed from pool by admin")
 
+const RemovedExitMsg = "relay-agent: removed from this pool by the admin; ask for a new invite after the token is rotated"
+const RejectedExitMsg = "relay-agent: pool token rejected; check it with your pool admin"
+
 // heartbeat contains the node information and pool token
 // that are sent to the scheduler with each heartbeat.
 type heartbeat struct {

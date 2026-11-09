@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -45,6 +46,19 @@ func printStartup(w io.Writer, n store.Node, scheduler string) {
 		scheduler,
 		n.Owner,
 	)
+}
+func reportExit(w io.Writer, err error) bool {
+	var msg string
+	switch {
+	case errors.Is(err, agent.ErrRemoved):
+		msg = agent.RemovedExitMsg
+	case errors.Is(err, agent.ErrBadToken):
+		msg = agent.RejectedExitMsg
+	default:
+		return false
+	}
+	fmt.Fprintln(w, msg)
+	return true
 }
 
 // Returns RELAY_SCHEDULER if set, otherwise uses the default scheduler URL.
@@ -206,6 +220,9 @@ func main() {
 		a.KeepWorkdir()
 	}
 	if err := a.Run(ctx, 10*time.Second); err != nil && ctx.Err() == nil {
+		if reportExit(os.Stderr, err) {
+			os.Exit(1)
+		}
 		log.Fatal(err)
 	}
 }
