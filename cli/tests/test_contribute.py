@@ -404,20 +404,29 @@ def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
     state = {"running": False}
     calls = []
 
-    def fake_status():
-        return {"pid": 4321, "pool_name": "lab"} if state["running"] else None
+    def fake_status(pool_id):
+        assert pool_id == "p1"
+        return (
+            {"pid": 4321, "pool_id": "p1", "pool_name": "lab"}
+            if state["running"]
+            else None
+        )
+
+    def fake_statuses():
+        return [fake_status("p1")] if state["running"] else []
 
     def fake_start(prof, scheduler):
         calls.append(("start", prof["pool_token"], scheduler))
         state["running"] = True
         return 4321, cfg / "relay-agent.log"
 
-    def fake_stop():
-        calls.append(("stop",))
+    def fake_stop(pool_id):
+        calls.append(("stop", pool_id))
         state["running"] = False
         return {"pid": 4321, "pool_name": "lab"}
 
     monkeypatch.setattr(contribution, "status", fake_status)
+    monkeypatch.setattr(contribution, "statuses", fake_statuses)
     monkeypatch.setattr(contribution, "start", fake_start)
     monkeypatch.setattr(contribution, "stop", fake_stop)
 
@@ -445,7 +454,76 @@ def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
             assert not indicator.has_class("running")
 
     asyncio.run(run())
-    assert calls == [("start", "tok", SCHED), ("stop",)]
+    assert calls == [("start", "tok", SCHED), ("stop", "p1")]
+
+
+def test_dashboard_a_only_controls_selected_pool_and_shows_total(cfg, monkeypatch):
+    profile.save(SAVED)
+    profile.save(SECOND)
+    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token: [])
+    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token: [])
+
+    # Pool A is already contributing when the dashboard opens on pool B.
+    running = {"p1": {"pid": 4321, "pool_id": "p1", "pool_name": "lab"}}
+    calls = []
+
+    def fake_status(pool_id):
+        return running.get(pool_id)
+
+    def fake_start(prof, scheduler):
+        pool_id = prof["pool_id"]
+        calls.append(("start", pool_id, scheduler))
+        running[pool_id] = {
+            "pid": 5678,
+            "pool_id": pool_id,
+            "pool_name": prof["pool_name"],
+        }
+        return 5678, cfg / f"relay-agent.{pool_id}.log"
+
+    def fake_stop(pool_id):
+        calls.append(("stop", pool_id))
+        return running.pop(pool_id)
+
+    monkeypatch.setattr(contribution, "statuses", lambda: list(running.values()))
+    monkeypatch.setattr(contribution, "status", fake_status)
+    monkeypatch.setattr(contribution, "start", fake_start)
+    monkeypatch.setattr(contribution, "stop", fake_stop)
+
+    app = DashApp(SECOND["scheduler"])
+
+    async def run():
+        async with app.run_test(size=(180, 40)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            indicator = app.query_one("#contribution", Static)
+            assert "1 other pool active" in str(indicator.render())
+
+            # A starts B, leaving A alone; the top bar now counts both.
+            await pilot.press("a")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert set(running) == {"p1", "p2"}
+            assert "contributing to 2 pools" in str(indicator.render())
+
+            # Switching to A then pressing A must stop A, not the former B.
+            app.use_profile(profile.use("p1"))
+            await pilot.pause()
+            await pilot.press("a")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert set(running) == {"p2"}
+            assert "1 other pool active" in str(indicator.render())
+
+            # The remaining pool is still correctly shown when selected.
+            app.use_profile(profile.use("p2"))
+            await pilot.pause()
+            assert "this machine: contributing" in str(indicator.render())
+
+    asyncio.run(run())
+    assert calls == [
+        ("start", "p2", SECOND["scheduler"]),
+        ("stop", "p1"),
+    ]
 
 
 def test_dashboard_ignores_toggle_while_busy(cfg, monkeypatch):
@@ -453,7 +531,8 @@ def test_dashboard_ignores_toggle_while_busy(cfg, monkeypatch):
     monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token: [])
     monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token: [])
     calls = []
-    monkeypatch.setattr(contribution, "status", lambda: None)
+    monkeypatch.setattr(contribution, "status", lambda pool_id: None)
+    monkeypatch.setattr(contribution, "statuses", list)
     monkeypatch.setattr(contribution, "start", lambda *args: calls.append("start"))
 
     app = DashApp(SCHED)
