@@ -17,8 +17,10 @@ STOP_SECONDS = 10
 class ContributionError(RuntimeError):
     """A user-facing error while starting or managing the agent."""
 
+
 class AgentExitedError(ContributionError):
     """relay-agent exited during startup; ``line`` is the last thing it printed."""
+
 
 def __init__(self, line: str) -> None:
     super().__init__(f"relay-agent exited during startup: {line}")

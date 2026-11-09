@@ -298,6 +298,7 @@ def test_pid_alive_reaps_an_exited_child():
     assert contribution._pid_alive(proc.pid) is False
     assert contribution._pid_alive(proc.pid) is False  # and stays dead
 
+
 REMOVED_LINE = "relay-agent: removed from this pool by the admin; ask for a new invite after the token is rotated"
 
 
