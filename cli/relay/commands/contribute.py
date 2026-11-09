@@ -47,6 +47,10 @@ def run_start(args) -> None:
     # Start the background agent and report any errors without displaying a Python traceback to the user.
     try:
         pid, log_path = contribution.start(prof, args.scheduler)
+    except contribution.AgentExitedError as exc:
+        print("relay contribute: relay-agent exited during startup", file=sys.stderr)
+        print(exc.line, file=sys.stderr)
+        raise SystemExit(1) from None
     except contribution.ContributionError as exc:
         print(f"relay contribute: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
