@@ -105,7 +105,7 @@ def _read_running(paths: tuple[Path, Path], pool_id: str | None) -> dict | None:
 
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
-    except OSError, ValueError:
+    except (OSError, ValueError):
         state = {}
     if not isinstance(state, dict) or state.get("pid") != pid:
         state = {}
