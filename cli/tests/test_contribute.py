@@ -228,6 +228,69 @@ def test_stopping_one_pool_keeps_the_other(cfg, monkeypatch):
     assert (cfg / "relay-agent.p2.pid").exists()
 
 
+def test_stale_pool_tracking_does_not_clear_other_pools(cfg, monkeypatch):
+    tracked_agent(cfg, pid=4321)
+    tracked_agent(cfg, pid=5678, pool_id="p2", pool_name="second")
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid == 5678)
+
+    assert [agent["pool_id"] for agent in contribution.statuses()] == ["p2"]
+    assert not (cfg / "relay-agent.p1.pid").exists()
+    assert not (cfg / "relay-agent.p1.state.json").exists()
+    assert (cfg / "relay-agent.p2.pid").exists()
+
+
+def test_stop_all_attempts_other_pools_if_one_stop_fails(cfg, monkeypatch):
+    tracked_agent(cfg, pid=4321)
+    tracked_agent(cfg, pid=5678, pool_id="p2", pool_name="second")
+    stopped = set()
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid not in stopped)
+
+    def fake_kill(pid, sig):
+        if pid == 4321:
+            raise PermissionError("permission denied")
+        stopped.add(pid)
+
+    monkeypatch.setattr(contribution.os, "kill", fake_kill)
+
+    with pytest.raises(
+        contribution.ContributionError, match="could not stop every agent"
+    ):
+        contribution.stop_all()
+
+    assert stopped == {5678}
+    assert [agent["pool_id"] for agent in contribution.statuses()] == ["p1"]
+
+
+def test_scheduler_refusal_is_reported_without_stopping_other_pool(cfg, monkeypatch):
+    tracked_agent(cfg, pid=4321)
+    second = {**SECOND, "scheduler": SCHED}  # same scheduler, different pool
+
+    class RefusedProcess:
+        pid = 5678
+
+        def poll(self):
+            return 1
+
+    def fake_popen(argv, **options):
+        options["stdout"].write("cannot join two pools on this scheduler\n")
+        options["stdout"].flush()
+        return RefusedProcess()
+
+    monkeypatch.setattr(contribution.binaries, "find", lambda name: "relay-agent-test")
+    monkeypatch.setattr(contribution.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid == 4321)
+
+    with pytest.raises(
+        contribution.ContributionError,
+        match="cannot join two pools on this scheduler",
+    ):
+        contribution.start(second, SCHED)
+
+    assert contribution.status("p1")["pid"] == 4321
+    assert contribution.status("p2") is None
+    assert not (cfg / "relay-agent.p2.pid").exists()
+
+
 def test_older_single_agent_remains_visible_and_stoppable(cfg, monkeypatch):
     tracked_agent(cfg, legacy=True)
     stopped_pids = set()
