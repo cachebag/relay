@@ -1,13 +1,27 @@
 import argparse
+import io
+import json
 import re
 import sys
+import tarfile
 import time
 from decimal import ROUND_CEILING, Decimal
+from pathlib import Path
 
 import httpx
 
 from relay import profile
 from relay.commands import logs, status
+
+# The scheduler refuses a bigger bundle with 413, so say so before uploading.
+MAX_BUNDLE_BYTES = 50 * 1024 * 1024
+
+# What the agent runs when --entry isn't given: run.sh on Linux and macOS,
+# run.ps1 or run.cmd on Windows. The folder needs at least one of them.
+DEFAULT_ENTRIES = ("run.sh", "run.ps1", "run.cmd")
+
+# Folders that are never worth sending with a job.
+SKIP_DIRS = {".git", "__pycache__", ".venv", "node_modules"}
 
 _DURATION_PART = re.compile(r"(\d+(?:\.\d*)?|\.\d+)(s|m|h)")
 
@@ -86,8 +100,98 @@ def register(sub) -> None:
         help="required operating system for the job",
     )
 
-    p.add_argument("command", nargs="+", help="command to run, after --")
+    # A job can carry its own files: a whole folder, or one script.
+    p.add_argument(
+        "--dir",
+        metavar="FOLDER",
+        help="send this folder with the job and run its run.sh, run.ps1 or run.cmd (or --entry)",
+    )
+    p.add_argument(
+        "--file",
+        metavar="SCRIPT",
+        help="send this one file with the job and run it",
+    )
+    p.add_argument(
+        "--entry",
+        metavar="NAME",
+        help="the file inside --dir to run, such as crunch.py",
+    )
+
+    p.add_argument(
+        "command",
+        nargs="*",
+        help="command to run, after --; with --dir or --file, the arguments to pass",
+    )
     p.set_defaults(func=run)
+
+
+def build_bundle(root: Path, only: Path | None = None) -> bytes:
+    """Gzipped tar of root's contents, with paths relative to root and
+    forward slashes. With only, just that one file at the top level."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        if only is not None:
+            tar.add(only, arcname=only.name)
+        else:
+            for path in sorted(root.rglob("*")):
+                rel = path.relative_to(root)
+                if any(part in SKIP_DIRS for part in rel.parts):
+                    continue
+                if path.is_symlink() or not (path.is_file() or path.is_dir()):
+                    continue
+                tar.add(path, arcname=rel.as_posix(), recursive=False)
+    return buf.getvalue()
+
+
+def bundle_from_args(args) -> tuple[bytes | None, str | None]:
+    """The bundle and entry for --dir or --file, or (None, None). Exits with a
+    message on a bad combination, a missing file or a bundle over the cap."""
+    dir_arg = getattr(args, "dir", None)
+    file_arg = getattr(args, "file", None)
+    entry = getattr(args, "entry", None)
+
+    if dir_arg and file_arg:
+        print("relay: use --dir or --file, not both", file=sys.stderr)
+        sys.exit(2)
+    if entry and not dir_arg:
+        print("relay: --entry needs --dir", file=sys.stderr)
+        sys.exit(2)
+    if not dir_arg and not file_arg:
+        return None, None
+
+    if file_arg:
+        script = Path(file_arg)
+        if not script.is_file():
+            print(f"relay: {file_arg} is not a file", file=sys.stderr)
+            sys.exit(2)
+        bundle = build_bundle(script.parent, only=script)
+        entry = script.name
+    else:
+        root = Path(dir_arg)
+        if not root.is_dir():
+            print(f"relay: {dir_arg} is not a folder", file=sys.stderr)
+            sys.exit(2)
+        if entry:
+            if not (root / entry).is_file():
+                print(f"relay: {entry} is not in {dir_arg}", file=sys.stderr)
+                sys.exit(2)
+        elif not any((root / name).is_file() for name in DEFAULT_ENTRIES):
+            print(
+                f"relay: {dir_arg} has no run.sh, run.ps1 or run.cmd; "
+                "name the file to run with --entry",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        bundle = build_bundle(root)
+
+    if len(bundle) > MAX_BUNDLE_BYTES:
+        print(
+            f"relay: job files are {len(bundle) / (1024 * 1024):.1f} MB packed, "
+            f"the limit is {MAX_BUNDLE_BYTES // (1024 * 1024)} MB",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    return bundle, entry
 
 
 def submit(
@@ -98,9 +202,14 @@ def submit(
     client: httpx.Client | None = None,
     os: str | None = None,
     timeout_seconds: int | None = None,
+    bundle: bytes | None = None,
+    entry: str | None = None,
 ) -> dict:
-    """Submit a job using the logged-in pool token and user name."""
-    client = client or httpx.Client(timeout=5)
+    """Submit a job using the logged-in pool token and user name. With a
+    bundle, the job's files go along as a multipart upload and command is
+    the arguments for the entry."""
+    # Uploads can be 50 MB, so give them longer than a plain request.
+    client = client or httpx.Client(timeout=5 if bundle is None else 300)
 
     body = {
         "command": command,
@@ -113,11 +222,20 @@ def submit(
     if timeout_seconds is not None:
         body["timeout_seconds"] = timeout_seconds
 
-    r = client.post(
-        f"{scheduler.rstrip('/')}/jobs",
-        headers={"Authorization": f"Bearer {token}"},
-        json=body,
-    )
+    if entry:
+        body["entry"] = entry
+
+    url = f"{scheduler.rstrip('/')}/jobs"
+    headers = {"Authorization": f"Bearer {token}"}
+    if bundle is None:
+        r = client.post(url, headers=headers, json=body)
+    else:
+        r = client.post(
+            url,
+            headers=headers,
+            data={"job": json.dumps(body)},
+            files={"bundle": ("job.tgz", bundle, "application/gzip")},
+        )
 
     r.raise_for_status()
     return r.json()
@@ -231,6 +349,11 @@ def run(args) -> None:
             )
             sys.exit(2)
 
+    bundle, entry = bundle_from_args(args)
+    if bundle is None and not args.command:
+        print("relay: command is required, after --", file=sys.stderr)
+        sys.exit(2)
+
     prof = profile.load()
 
     token = prof.get("pool_token")
@@ -254,6 +377,8 @@ def run(args) -> None:
             name,
             os=getattr(args, "os", None),
             timeout_seconds=timeout_seconds,
+            bundle=bundle,
+            entry=entry,
         )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 403:
@@ -261,6 +386,9 @@ def run(args) -> None:
                 "relay: invalid pool token. Run 'relay login' again.",
                 file=sys.stderr,
             )
+        elif exc.response.status_code in (400, 413, 503):
+            # The scheduler says what was wrong with the files.
+            print(f"relay: {exc.response.text.strip()}", file=sys.stderr)
         else:
             print(f"relay: job submission failed: {exc}", file=sys.stderr)
         sys.exit(1)

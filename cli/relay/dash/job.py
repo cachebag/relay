@@ -68,7 +68,7 @@ class JobModal(ModalScreen[None]):
         node = job.get("node_id") or ""
         ran = status_cmd.runtime(job)
         lines = [
-            f"[b]{' '.join(job['command'])}[/b]",
+            f"[b]{status_cmd.describe(job)}[/b]",
             "",
             f"status     [{JOB_STYLES.get(state, '')}]{state}[/]",
             f"node       {self.hostnames.get(node, node) or '-'}",
@@ -85,6 +85,12 @@ class JobModal(ModalScreen[None]):
             lines.append(f"time left  {status_cmd.time_left(job) or '-'}")
         if out is not None:
             lines.append(f"exit code  {out.get('exit_code', 0)}")
+        # Files the job sent back, for relay fetch.
+        files = job.get("output_files") or []
+        if files:
+            lines.append("")
+            lines.append(f"output files ({len(files)})")
+            lines.extend(f"  {f['path']}  {f['bytes']} bytes" for f in files)
         self.query_one("#job-summary", Static).update("\n".join(lines))
 
         stdout = self.query_one("#job-stdout", Static)

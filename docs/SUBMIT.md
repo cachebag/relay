@@ -72,6 +72,54 @@ relay submit --timeout 10m -- uname -n
 Jobs that exceed their limit are killed and marked `failed`. The timeout
 message (for example, `relay: job timed out after 10m`) appears in `relay logs`.
 
+## Send files with a job
+
+A job can carry its own files, so the machine that runs it doesn't need anything installed up front except the interpreter. Put what the job needs in a folder with a `run.sh` (Linux and macOS) or `run.ps1` or `run.cmd` (Windows) at the top, and submit the folder:
+
+```text
+crunch/
+  run.sh
+  crunch.py
+  data.csv
+```
+
+```sh
+# run.sh
+python3 crunch.py data.csv "$@"
+```
+
+```python
+# crunch.py: add up the numbers in a CSV, scaled by the first argument
+import csv, os, sys
+
+rows = list(csv.reader(open(sys.argv[1])))
+total = sum(int(x) for row in rows for x in row) * int(sys.argv[2])
+os.makedirs("out", exist_ok=True)
+with open("out/result.csv", "w") as f:
+    f.write(f"total,{total}\n")
+print("wrote out/result.csv")
+```
+
+```sh
+relay submit --wait --dir ./crunch -- 10
+```
+
+The folder is packed, sent with the job, and unpacked into the job's own empty folder on the node. `run.sh` runs there with the arguments after `--`. Anything the job writes to `out/` comes back with the result: `relay status` and the dashboard list the files, and `relay fetch` (coming in #141) downloads them. Folders are capped at 50 MB packed, and `.git`, `__pycache__`, `.venv` and `node_modules` are left out.
+
+For one script, `--file` sends just that file and runs it:
+
+```sh
+relay submit --wait --file crunch.py -- data.csv 10
+```
+
+To run something other than `run.*`, name it with `--entry`:
+
+```sh
+relay submit --dir ./crunch --entry crunch.py -- data.csv 10
+```
+
+The node picks the interpreter from the file's extension: `.sh` with `sh`, `.py` with `python3` (`python` on Windows), `.ps1` with PowerShell, `.cmd` with `cmd`, and anything else is run as a program. Add `--os linux` if the job only works on one operating system.
+
 ## See what's in the pool
 
 ```sh

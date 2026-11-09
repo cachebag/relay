@@ -23,6 +23,7 @@ The API currently supports:
 - Handing a node its next job
 - Accepting job results
 - Serving job output
+- Job files: a folder sent with a job, and the files it writes to `out/`
 
 ## Health Check
 
@@ -705,6 +706,33 @@ Example body:
 | `requires` | Optional. `{"os": "linux"}`, `darwin` or `windows`. When set, the job only runs on a node with that OS |
 | `timeout_seconds` | Optional integer execution limit per attempt, from `1` to `86400` seconds (24 hours). Defaults to `3600` seconds (1 hour) if omitted |
 
+#### Sending files with the job
+
+A job can carry its own files: a script or a whole folder, up to 50 MB as a gzipped tar. Send the request as a multipart form instead of JSON, with the JSON above in a part named `job` and the tar in a part named `bundle`:
+
+```http
+POST /jobs
+Authorization: Bearer <pool-join-token>
+Content-Type: multipart/form-data; boundary=...
+
+--...
+Content-Disposition: form-data; name="job"
+
+{"command": ["10"], "submitter": "alice", "entry": "run.sh"}
+--...
+Content-Disposition: form-data; name="bundle"; filename="job.tgz"
+Content-Type: application/gzip
+
+<gzipped tar>
+--...--
+```
+
+With a bundle, `command` is the arguments passed to the entry point and may be empty. `entry` names the file inside the tar to run, as a relative path such as `run.sh` or `bin/crunch.py`. Leave it out and the node runs `run.sh` on Linux and macOS, or `run.ps1` or `run.cmd` on Windows; the tar must then hold at least one of those. The node picks the interpreter from the entry's extension: `.sh` with `sh`, `.py` with `python3` (`python` on Windows), `.ps1` with PowerShell, `.cmd` and `.bat` with `cmd`, anything else is run as a program.
+
+The tar is unpacked into the job's own empty folder on the node and the entry runs there. Whatever the job writes to `out/` in that folder comes back with its result (see `POST /jobs/{id}/result`) and is listed on the job as `output_files`.
+
+`relay submit --dir <folder>` and `relay submit --file <script>` build this request.
+
 The client does not select the job's `pool_id`.
 
 Instead, the server looks up the pool associated with the authenticated join token and assigns the pool's ID to the job.
@@ -736,16 +764,31 @@ The scheduler can only assign the job to an online node belonging to the same po
 
 #### Error Responses
 
-If the JSON request is malformed, the command is empty, the submitter is missing or blank, `requires.os` is not `linux`, `darwin`, `windows` or empty, or `timeout_seconds` is `0`, negative, or greater than `86400`:
+If the JSON request is malformed, the command is empty (and there is no bundle), the submitter is missing or blank, `requires.os` is not `linux`, `darwin`, `windows` or empty, or `timeout_seconds` is `0`, negative, or greater than `86400`:
 
 ```text
 400 Bad Request
 ```
 
+With a bundle, the same status and a message saying which: the bundle is not a gzipped tar, `entry` is not in it, `entry` is not a relative path inside it, no `entry` was given and the tar has no `run.sh`, `run.ps1` or `run.cmd`, or `entry` was given without a bundle.
+
 If the authorization header is missing, is not a Bearer token, or contains an unknown pool join token:
 
 ```text
 403 Forbidden
+```
+
+If the bundle is bigger than 50 MB:
+
+```text
+413 Request Entity Too Large
+job files must be 50 MB or less
+```
+
+If this relayd was started without a place to keep job files:
+
+```text
+503 Service Unavailable
 ```
 
 If the pool or job cannot be retrieved or stored:
@@ -794,9 +837,28 @@ Example response:
   "pool_id": "pool-id",
   "submitter": "alice",
   "attempts": 0,
-  "created_at": "2026-09-23T15:01:03.320292Z"
+  "created_at": "2026-09-23T15:01:03.320292Z",
+  "bundle_bytes": 0,
+  "output_bytes": 0
 }
 ```
+
+A job that was sent with files also shows them. `entry` is the file the node runs, left out when the node picks the default `run.*` file. `output_files` appears once the result has arrived, listing what the job wrote to `out/`:
+
+```json
+{
+  "id": "866e999201b2",
+  "command": ["10"],
+  "entry": "run.sh",
+  "bundle_bytes": 555,
+  "output_bytes": 114,
+  "output_files": [{"path": "result.csv", "bytes": 10}],
+  "status": "done",
+  ...
+}
+```
+
+`bundle_bytes` is the size of the gzipped tar sent with the job, `0` without one. `output_bytes` is the size of the tar of `out/` that came back with the result, `0` when the job wrote nothing there. `GET /jobs/{id}/output/files` serves that tar.
 
 `pool_id` identifies the pool that owns the job. The server determines this value from the join token used during submission.
 
@@ -997,6 +1059,10 @@ Example body:
 
 The body may be at most 16 MiB.
 
+#### Sending the job's output files
+
+If the job wrote anything to `out/` in its folder, the node sends the result as a multipart form instead: the JSON above in a part named `result` and a gzipped tar of `out/` in a part named `output`, at most 50 MB. The tar's paths are relative to `out/`, so `out/result.csv` is `result.csv`. The scheduler stores the tar beside the job's input bundle, records its size as `output_bytes`, and lists its files as `output_files` on the job.
+
 #### Success Response
 
 Status:
@@ -1031,10 +1097,16 @@ If the requested job does not exist:
 404 Not Found
 ```
 
-If the request body is larger than 16 MiB:
+If the request body is larger than 16 MiB, or the output tar is larger than 50 MB:
 
 ```text
 413 Request Entity Too Large
+```
+
+If the output part is not a gzipped tar:
+
+```text
+400 Bad Request
 ```
 
 If the result is stale:
@@ -1126,6 +1198,51 @@ If the jobs cannot be retrieved or updated:
 500 Internal Server Error
 ```
 
+## Get a Job's Files
+
+### GET /jobs/{id}/bundle
+
+Serves the gzipped tar sent with a job to the node the job is on. The agent calls this when it picks the job up, unpacks it into the job's folder, and runs the entry there.
+
+#### Request
+
+```http
+GET /jobs/40ca4109f082/bundle?node=<node id>
+Authorization: Bearer <join-token>
+```
+
+`node` is the ID of the node asking. Only the node the job is currently `assigned` to or `running` on gets the download.
+
+#### Success Response
+
+```text
+200 OK
+Content-Type: application/gzip
+```
+
+The body is the tar exactly as it was uploaded.
+
+#### Error Responses
+
+If the join token is missing or does not match any pool:
+
+```text
+403 Forbidden
+```
+
+If `node` is missing, is not the job's node, or the job is not `assigned` or `running`:
+
+```text
+403 Forbidden
+job is not assigned to this node
+```
+
+If the job does not exist, belongs to another pool, or was sent without files:
+
+```text
+404 Not Found
+```
+
 ## Get Job Output
 
 ### GET /jobs/{id}/output
@@ -1193,6 +1310,42 @@ If the job cannot be retrieved:
 
 ```text
 500 Internal Server Error
+```
+
+## Get a Job's Output Files
+
+### GET /jobs/{id}/output/files
+
+Serves the gzipped tar of what a finished job wrote to `out/`. `relay fetch` will call this; until then the dashboard lists the files from `output_files` on the job.
+
+#### Request
+
+```http
+GET /jobs/40ca4109f082/output/files
+Authorization: Bearer <join-token>
+```
+
+#### Success Response
+
+```text
+200 OK
+Content-Type: application/gzip
+```
+
+The paths inside the tar are relative to `out/`.
+
+#### Error Responses
+
+If the join token is missing or does not match any pool:
+
+```text
+403 Forbidden
+```
+
+If the job does not exist, belongs to another pool, or wrote nothing to `out/`:
+
+```text
+404 Not Found
 ```
 
 ## Manual Job Endpoint Testing
