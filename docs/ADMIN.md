@@ -24,6 +24,59 @@ curl -L https://github.com/cachebag/relay/releases/latest/download/relayd-linux-
 
 The first time it starts, `relayd` prints a server admin token. Save it. It is the only thing that can create pools on this scheduler, so strangers can't make pools on your server once it is reachable from the internet. If you lose it, `./relayd --new-admin-token` prints a new one and exits. `relayd` keeps its database, `relay.db`, in the folder you start it from; `relay scheduler start` always uses the config folder.
 
+## Keep it running
+
+Install a boot service to start the scheduler now and after a reboot, and to
+retry if it exits:
+
+```sh
+relay scheduler start --service --public
+relay scheduler status
+```
+
+Omit `--public` for a local-only scheduler. `--port` and `--name` work as with
+ordinary `start`. Public mode uses the saved Tailscale auth key, or prompts for
+one; an environment-supplied `TS_AUTHKEY` is also saved for the service. Use a
+reusable key and complete the Funnel setup described below.
+
+The service uses the same `relay.db`, Tailscale state, and `relayd.log` as a
+normal scheduler start. If a normal scheduler is already running, stop it
+before installing the service. Once installed, plain `start` does not start a
+second copy. Plain `stop` stops the service temporarily, but it will start
+again at boot; use `start --service` to resume it sooner with its existing
+options. To remove the registration, or to change its options, run:
+
+```sh
+relay scheduler stop --service
+relay scheduler start --service --public  # optional: reinstall with new options
+```
+
+Removing the service does not delete the database, settings, or log.
+
+- **Linux:** Relay installs a systemd user unit and enables user lingering so
+  the service can run without a login. Enabling lingering may require
+  authorization. Check `systemctl --user status relayd.service` if it fails.
+- **macOS:** Relay installs a system LaunchDaemon that runs as the scheduler
+  owner. Unlike a LaunchAgent, it can start before login. Installation,
+  status, and removal request administrator authorization through `sudo`;
+  run the `relay` command as the owner, not as `root`. Check
+  `sudo launchctl print system/relay.relayd` if it fails.
+- **Windows:** Run service installation and removal in an elevated
+  Administrator terminal for the scheduler owner. Relay registers a
+  boot-triggered Scheduled Task running as SYSTEM. Its executable and launch
+  files are protected for SYSTEM and administrators; Relay refuses unsafe
+  owner-state permissions or reparse points. After updating `relayd`, remove
+  and reinstall the service to update its protected copy. If status or stop
+  reports access denied, use the same elevated terminal. Task Scheduler and
+  `relayd.log` show failures.
+
+Service registration contains the Tailscale key or a protected copy of it;
+the log can contain the initial admin token. Keep the service configuration,
+Relay config directory, and logs private. A boot service cannot run while the
+machine is asleep, powered off, or waiting for an encrypted disk to be
+unlocked. Check `relay scheduler status` and the log if the public address
+doesn't answer; network or Tailscale setup failures are retried.
+
 ## Create a pool
 
 ```sh

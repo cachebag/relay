@@ -2,13 +2,15 @@ import argparse
 
 import pytest
 
-from relay import procs, profile
+from relay import procs, profile, services
+
 from relay.commands import pool, scheduler
 
 
 @pytest.fixture
 def cfg(tmp_path, monkeypatch):
     monkeypatch.setattr(profile, "config_dir", lambda: tmp_path / "relay")
+    monkeypatch.setattr(services, "installed", lambda: False)
     (tmp_path / "relay").mkdir()
     monkeypatch.setenv("RELAYD", str(tmp_path / "relayd"))
     monkeypatch.delenv("RELAY_ADMIN_TOKEN", raising=False)
@@ -55,6 +57,15 @@ def ns(**kw):
     base = {"public": False, "port": 8080, "name": "relay"}
     base.update(kw)
     return argparse.Namespace(**base)
+
+
+def test_service_flags_are_registered():
+    parser = argparse.ArgumentParser()
+    scheduler.register(parser.add_subparsers(dest="command", required=True))
+    start = parser.parse_args(["scheduler", "start", "--service", "--public"])
+    stop = parser.parse_args(["scheduler", "stop", "--service"])
+    assert start.service and start.public and start.func is scheduler.run_start
+    assert stop.service and stop.func is scheduler.run_stop
 
 
 def test_start_saves_token_and_addresses(cfg, fake_relayd, capsys):
@@ -217,3 +228,111 @@ def test_status_reads_a_new_public_address_from_the_log(
     out = capsys.readouterr().out
     assert "https://relay.tail1234.ts.net" in out and "relay-1" not in out
     assert profile.server()["public_url"] == "https://relay.tail1234.ts.net"
+
+
+def test_service_lifecycle_saves_settings_and_keeps_registration(
+    cfg, monkeypatch, capsys
+):
+    binary = cfg / "relayd"
+    binary.write_text("fake binary")
+    monkeypatch.setenv("RELAYD", str(binary))
+    monkeypatch.setenv("TS_AUTHKEY", "tskey-auth-service")
+    monkeypatch.setattr(procs, "running", lambda name: None)
+    service = {"installed": False, "state": "inactive", "argv": [], "calls": []}
+
+    def append_log(first):
+        lines = [
+            "relayd listening on :9123",
+            "relayd public address: https://new.example",
+        ]
+        if first:
+            lines.insert(0, "server admin token: service-token")
+        with procs.log_path("relayd").open("a") as log:
+            log.write("\n".join(lines) + "\n")
+
+    def install(argv, key):
+        service["calls"].append(("install", argv, key))
+        service.update(installed=True, state="active", argv=argv)
+        append_log(True)
+
+    def start():
+        service["calls"].append(("start",))
+        service["state"] = "active"
+        append_log(False)
+
+    def stop():
+        service["state"] = "inactive"
+        service["calls"].append(("stop",))
+        return True
+
+    def remove():
+        service["installed"] = False
+        service["state"] = "inactive"
+        service["calls"].append(("remove",))
+
+    monkeypatch.setattr(services, "installed", lambda: service["installed"])
+    monkeypatch.setattr(services, "install", install)
+    monkeypatch.setattr(services, "state", lambda: service["state"])
+    monkeypatch.setattr(services, "configuration", lambda: service["argv"])
+    monkeypatch.setattr(services, "log_offset", lambda: 0)
+    monkeypatch.setattr(services, "token_was_captured", lambda token: False)
+    monkeypatch.setattr(services, "remember_captured_token", lambda token: None)
+    monkeypatch.setattr(services, "start", start)
+    monkeypatch.setattr(services, "stop", stop)
+    monkeypatch.setattr(services, "remove", remove)
+
+    scheduler.run_start(ns(service=True, public=True, port=9123, name="server"))
+    out = capsys.readouterr().out
+    assert "service installed" in out and "https://new.example" in out
+    assert "tskey-auth-service" not in out and "service-token" not in out
+    assert service["calls"][0][1:] == (
+        [str(binary), "--port", "9123", "--public", "--name", "server"],
+        "tskey-auth-service",
+    )
+    assert profile.server() == {
+        "ts_authkey": "tskey-auth-service",
+        "address": "http://localhost:9123",
+        "admin_token": "service-token",
+        "public_url": "https://new.example",
+    }
+
+    scheduler.run_start(ns())
+    assert "installed as a service" in capsys.readouterr().out
+    assert len(service["calls"]) == 1
+    scheduler.run_status(ns())
+    assert "service running (installed for boot)" in capsys.readouterr().out
+
+    scheduler.run_stop(ns())
+    assert "remains registered" in capsys.readouterr().out
+    assert service["installed"]
+    scheduler.run_status(ns())
+    assert "service stopped (installed for boot)" in capsys.readouterr().out
+    scheduler.run_start(ns(service=True))
+    assert "saved configuration" in capsys.readouterr().out
+    assert profile.server()["address"] == "http://localhost:9123"
+    assert service["calls"][-1] == ("start",)
+
+    scheduler.run_stop(ns(service=True))
+    assert "service stopped and removed" in capsys.readouterr().out
+    assert not service["installed"]
+
+
+def test_service_install_refuses_a_manual_scheduler(cfg, monkeypatch):
+    monkeypatch.setattr(procs, "running", lambda name: 42)
+    monkeypatch.setattr(services, "install", lambda *args: pytest.fail("installed"))
+    with pytest.raises(SystemExit, match="stop before installing"):
+        scheduler.run_start(ns(service=True))
+
+
+def test_service_install_error_is_reported(cfg, monkeypatch):
+    binary = cfg / "relayd"
+    binary.write_text("fake binary")
+    monkeypatch.setenv("RELAYD", str(binary))
+    monkeypatch.setattr(procs, "running", lambda name: None)
+
+    def fail(*args):
+        raise services.ServiceError("manager unavailable")
+
+    monkeypatch.setattr(services, "install", fail)
+    with pytest.raises(SystemExit, match="manager unavailable"):
+        scheduler.run_start(ns(service=True))
