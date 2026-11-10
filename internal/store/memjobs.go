@@ -27,9 +27,15 @@ func (m *MemJobs) Create(_ context.Context, j Job) error {
 	}
 	// Clone so the store owns its copy: Command is a slice, and without this the
 	// caller keeps a reference into the stored job and can mutate it from outside.
-	j.Command = slices.Clone(j.Command)
-	m.jobs[j.ID] = j
+	m.jobs[j.ID] = cloneJob(j)
 	return nil
+}
+
+// cloneJob copies a job's slices so neither side can reach into the other.
+func cloneJob(j Job) Job {
+	j.Command = slices.Clone(j.Command)
+	j.OutputFiles = slices.Clone(j.OutputFiles)
+	return j
 }
 
 func (m *MemJobs) Get(_ context.Context, id string) (Job, error) {
@@ -40,8 +46,7 @@ func (m *MemJobs) Get(_ context.Context, id string) (Job, error) {
 		return Job{}, ErrNotFound
 	}
 	// Hand back a copy for the same reason Create takes one.
-	j.Command = slices.Clone(j.Command)
-	return j, nil
+	return cloneJob(j), nil
 }
 
 func (m *MemJobs) List(_ context.Context) ([]Job, error) {
@@ -49,8 +54,7 @@ func (m *MemJobs) List(_ context.Context) ([]Job, error) {
 	defer m.mu.RUnlock()
 	out := make([]Job, 0, len(m.jobs))
 	for _, j := range m.jobs {
-		j.Command = slices.Clone(j.Command)
-		out = append(out, j)
+		out = append(out, cloneJob(j))
 	}
 	// Map iteration order is randomized, so List must sort to keep the stable
 	// ordering callers expect. CreatedAt alone isn't enough: two jobs created in
@@ -73,7 +77,6 @@ func (m *MemJobs) Update(_ context.Context, j Job) error {
 	if _, ok := m.jobs[j.ID]; !ok {
 		return ErrNotFound
 	}
-	j.Command = slices.Clone(j.Command)
-	m.jobs[j.ID] = j
+	m.jobs[j.ID] = cloneJob(j)
 	return nil
 }

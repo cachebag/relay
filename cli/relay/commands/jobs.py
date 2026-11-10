@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import httpx
 
 from relay import profile
-from relay.commands.status import requires, runtime
+from relay.commands.status import describe, requires, runtime
 
 
 def register(sub) -> None:
@@ -60,7 +60,7 @@ def run(args) -> None:
     )
 
     for job in rows:
-        command = " ".join(job["command"])
+        command = describe(job)
 
         # Older jobs may not have submitter information.
         submitter = job.get("submitter") or "-"

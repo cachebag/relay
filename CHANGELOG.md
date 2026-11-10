@@ -9,6 +9,68 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-11-09
+
+### Added
+
+- **Jobs carry their own files.** `relay submit --dir ./crunch -- <args>`
+  packs the folder (50 MB cap, `.git` and the like left out), sends it with
+  the job, and the node unpacks it into the job's own folder and runs its
+  `run.sh`, `run.ps1` or `run.cmd` there, or the file named with `--entry`.
+  `--file script.py` sends one script and runs it. Interpreters come from
+  the extension (`.sh`, `.py`, `.ps1`, `.cmd`). Whatever the job writes to
+  `out/` comes back with the result, is listed on the job as `output_files`,
+  and is served by `GET /jobs/{id}/output/files` for `relay fetch` (#141).
+  relayd keeps the bundles in `bundles/` beside `relay.db`; `POST /jobs` and
+  `POST /jobs/{id}/result` take a multipart form with the tar, and
+  `GET /jobs/{id}/bundle` hands it to the job's node. `relay status`,
+  `relay jobs` and the dash show the entry in place of the command, and the
+  dash's job view lists the output files.
+  ([#161](https://github.com/cachebag/relay/pull/161))
+- **Every job has a time limit.** One hour by default, up to 24 hours, set
+  with `relay submit --timeout 10m`. The agent kills a job that runs over
+  and reports it failed with exit code -1 and `relay: job timed out after
+  10m` on stderr. `relay status` shows the limit and, while running, the
+  time left. A timed-out job is charged for the time it ran.
+  ([#155](https://github.com/cachebag/relay/pull/155))
+- **Each job runs in its own empty folder.** `relay/jobs/<job id>` under
+  the agent's cache folder, with `HOME` and the temp folder pointed inside
+  it, deleted once the result is accepted. Folders left by a crash are
+  cleared when the agent next starts. `relay-agent --keep-workdir` keeps
+  them for debugging. ([#156](https://github.com/cachebag/relay/pull/156))
+- **Linux and macOS release binaries ship as tarballs.** `relay install`
+  extracts them and marks them executable, so there is no `chmod` step. The
+  Windows `.exe` is unchanged.
+  ([#154](https://github.com/cachebag/relay/pull/154))
+
+### Fixed
+
+- **A rotated join token says so.** After `relay pool rotate-token`, an
+  agent or command still using the old token gets `pool token was rotated;
+  ask the admin for the new invite` instead of `invalid pool token`. The
+  agent prints it once and keeps heartbeating, so pasting the new invite is
+  the only fix. A token that never existed still gets the old message.
+  ([#152](https://github.com/cachebag/relay/pull/152))
+- **A removed node can rejoin with a new invite.** Removing a node now
+  remembers the join token that was current at the time. The node is
+  refused only while that token is still valid and for at most 30 days;
+  a heartbeat with a token issued by a later rotate is accepted and the
+  record is cleared. ([#160](https://github.com/cachebag/relay/pull/160))
+- **Creating a pool uses this machine's scheduler.** `relay pool create`
+  and the dash's `n` went to the scheduler you were logged in to, so
+  creating a pool while logged in to a friend's pool sent your admin token
+  to their server and got it rejected. Both now use the saved server
+  settings (public address first), or `--scheduler`, and the dash says
+  which server it is creating on.
+  ([#158](https://github.com/cachebag/relay/pull/158))
+- **A trailing slash on the scheduler address no longer breaks the CLI.**
+  `--scheduler`, `RELAY_SCHEDULER` and saved addresses are normalised, so
+  the slash chat apps add to links is harmless.
+  ([#159](https://github.com/cachebag/relay/pull/159))
+- **The dash no longer crashes on exit.** The redraw timer could fire after
+  the main screen was gone and raise out of the app; it now returns
+  quietly. ([#157](https://github.com/cachebag/relay/pull/157))
+
 ## [0.2.9] - 2026-10-28
 
 ### Fixed
@@ -433,7 +495,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.9...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.10...HEAD
+[0.2.10]: https://github.com/cachebag/relay/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/cachebag/relay/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/cachebag/relay/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/cachebag/relay/compare/v0.2.6...v0.2.7
