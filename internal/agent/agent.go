@@ -64,6 +64,7 @@ type Agent struct {
 	// this machine. Run then stops instead of retrying forever.
 	removed       bool
 	rotatedWarned bool
+	rejected      bool
 }
 
 // New returns an Agent for node n that talks to the scheduler at schedulerURL
@@ -148,11 +149,15 @@ func (a *Agent) Tick(ctx context.Context) {
 				log.Printf("%s", store.RotatedTokenMsg)
 				a.rotatedWarned = true
 			}
-
 		case errors.Is(err, ErrBadToken):
 			log.Printf(
 				"pool token rejected; check it with your pool admin",
 			)
+			// A rotated token is caught by the ErrTokenRotated case above and
+			// never sets this, so a contributor whose admin rotated the invite
+			// keeps heartbeating (#122) while a plain wrong token exits. Keep
+			// that case above this one.
+			a.rejected = true
 
 		case isConnectionError(err):
 			log.Printf(
@@ -359,13 +364,19 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 
 	for {
 		a.Tick(ctx)
-		// Removed by the pool admin: stop the job and return nil, so
-		// relay-agent exits 0 instead of retrying a heartbeat that will
-		// never be accepted. The deferred wg.Wait lets the job wind down.
-		if a.removed {
+		// Removed by the pool admin: stop the job and return ErrRemoved, so
+		// relay-agent exits 1 with a clear reason instead of retrying a
+		// heartbeat that will never be accepted. The deferred wg.Wait lets
+		// the job wind down. A rejected token stops the same way with
+		// ErrBadToken.
+		if a.removed || a.rejected {
 			stopJob()
-			return nil
+			if a.removed {
+				return ErrRemoved
+			}
+			return ErrBadToken
 		}
+
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
