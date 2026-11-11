@@ -83,8 +83,7 @@ def _stop_pool_id(pool: str) -> str:
 
 
 def run_start(args) -> None:
-    # A named pool has its own scheduler and credentials; 
-    # selecting it does not change the current login used by other commands.
+    # Use the selected pool's scheduler and credentials without switching logins.
     try:
         requested = getattr(args, "pool", None)
         prof = _saved_login(requested) if requested else profile.require_login()
@@ -113,8 +112,7 @@ def run_start(args) -> None:
 
 
 def run_stop(args) -> None:
-    # No pool means the current login; 
-    # --all includes other logins and even agents whose logins were removed after they were started.
+    # Use the current pool by default, or --all to stop every tracked agent.
     try:
         if getattr(args, "all", False):
             stopped_agents = contribution.stop_all()
