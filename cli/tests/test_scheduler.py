@@ -53,7 +53,7 @@ def fake_relayd(monkeypatch):
 
 
 def ns(**kw):
-    base = {"public": False, "port": 8080, "name": "relay"}
+    base = {"public": None, "port": None, "name": None}
     base.update(kw)
     return argparse.Namespace(**base)
 
@@ -299,13 +299,13 @@ def test_service_lifecycle_saves_settings_and_keeps_registration(
     assert "installed as a service" in capsys.readouterr().out
     assert len(service["calls"]) == 1
     scheduler.run_status(ns())
-    assert "service running (installed for boot)" in capsys.readouterr().out
+    assert "service running (installed for startup)" in capsys.readouterr().out
 
     scheduler.run_stop(ns())
     assert "remains registered" in capsys.readouterr().out
     assert service["installed"]
     scheduler.run_status(ns())
-    assert "service stopped (installed for boot)" in capsys.readouterr().out
+    assert "service stopped (installed for startup)" in capsys.readouterr().out
     scheduler.run_start(ns(service=True))
     assert "saved configuration" in capsys.readouterr().out
     assert profile.server()["address"] == "http://localhost:9123"
@@ -335,3 +335,70 @@ def test_service_install_error_is_reported(cfg, monkeypatch):
     monkeypatch.setattr(services, "install", fail)
     with pytest.raises(SystemExit, match="manager unavailable"):
         scheduler.run_start(ns(service=True))
+
+
+@pytest.mark.parametrize(
+    "saved, options",
+    [
+        (["relayd", "--port", "8080"], ["--public"]),
+        (["relayd", "--port", "8080"], ["--port", "9123"]),
+        (["relayd", "--port", "9123"], ["--port", "8080"]),
+        (
+            ["relayd", "--port", "8080", "--public", "--name", "server"],
+            ["--name", "another"],
+        ),
+        (
+            ["relayd", "--port", "8080", "--public", "--name", "server"],
+            ["--name", "relay"],
+        ),
+    ],
+)
+def test_existing_service_rejects_conflicting_explicit_flags(
+    cfg, monkeypatch, saved, options
+):
+    parser = argparse.ArgumentParser()
+    scheduler.register(parser.add_subparsers(dest="command", required=True))
+    args = parser.parse_args(["scheduler", "start", "--service", *options])
+    monkeypatch.setattr(services, "installed", lambda: True)
+    monkeypatch.setattr(services, "configuration", lambda: saved)
+    monkeypatch.setattr(
+        services, "state", lambda: pytest.fail("queried before checking flags")
+    )
+    monkeypatch.setattr(services, "start", lambda: pytest.fail("started service"))
+    with pytest.raises(SystemExit) as exc:
+        scheduler.run_start(args)
+    assert "installed with " + " ".join(saved[1:]) in str(exc.value)
+    assert "run relay scheduler stop --service first to change them" in str(exc.value)
+
+
+@pytest.mark.parametrize("initial_state", ["active", "inactive"])
+@pytest.mark.parametrize(
+    "options", [[], ["--port", "9123", "--public", "--name", "server"]]
+)
+def test_existing_service_accepts_omitted_or_matching_flags(
+    cfg, monkeypatch, capsys, initial_state, options
+):
+    parser = argparse.ArgumentParser()
+    scheduler.register(parser.add_subparsers(dest="command", required=True))
+    args = parser.parse_args(["scheduler", "start", "--service", *options])
+    saved = ["relayd", "--port", "9123", "--public", "--name", "server"]
+    service = {"state": initial_state, "starts": 0}
+
+    def start():
+        service["state"] = "active"
+        service["starts"] += 1
+
+    monkeypatch.setattr(services, "installed", lambda: True)
+    monkeypatch.setattr(services, "configuration", lambda: saved)
+    monkeypatch.setattr(services, "state", lambda: service["state"])
+    monkeypatch.setattr(services, "start", start)
+    monkeypatch.setattr(scheduler, "run_status", lambda args: None)
+    monkeypatch.setattr(scheduler, "capture_service_output", lambda *args: None)
+    monkeypatch.setattr(
+        procs, "wait_for", lambda *args, **kwargs: {"relayd listening on": "ready"}
+    )
+    scheduler.run_start(args)
+    assert service["starts"] == (1 if initial_state == "inactive" else 0)
+    assert "saved configuration" in capsys.readouterr().out
+    if initial_state == "inactive":
+        assert profile.server()["address"] == "http://localhost:9123"

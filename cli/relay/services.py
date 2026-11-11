@@ -1,16 +1,13 @@
-"""Install and control the scheduler's boot service."""
+"""Install and control the scheduler's startup service."""
 
-import ctypes
 import hashlib
 import json
 import os
 import plistlib
-import shutil
 import subprocess
 import sys
 import tempfile
 import time
-import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -20,7 +17,6 @@ NAME = "relayd"
 LABEL = "relay.relayd"
 MARKER = "relayd-service.json"
 LINUX_MARKER = "# Managed by relay scheduler"
-_macos_authorized = False
 
 
 class ServiceError(Exception):
@@ -52,7 +48,11 @@ def _unit() -> Path:
 
 
 def _plist() -> Path:
-    return Path("/Library/LaunchDaemons/relay.relayd.plist")
+    return Path.home() / "Library" / "LaunchAgents" / "relay.relayd.plist"
+
+
+def _macos_domain() -> str:
+    return f"gui/{os.getuid()}"
 
 
 def _windows_id() -> str:
@@ -62,37 +62,6 @@ def _windows_id() -> str:
 
 def _task_name() -> str:
     return f"Relay-relayd-{_windows_id()}"
-
-
-def _windows_dir() -> Path:
-    from ctypes import wintypes
-
-    folder_id = ctypes.create_string_buffer(
-        uuid.UUID("62ab5d82-fdc1-4dc3-a9dd-070d1d495d97").bytes_le
-    )
-    path = wintypes.LPWSTR()
-    shell = ctypes.WinDLL("shell32", use_last_error=True)
-    get_folder = shell.SHGetKnownFolderPath
-    get_folder.argtypes = [
-        wintypes.LPVOID,
-        wintypes.DWORD,
-        wintypes.HANDLE,
-        ctypes.POINTER(wintypes.LPWSTR),
-    ]
-    get_folder.restype = ctypes.c_long
-    result = get_folder(ctypes.byref(folder_id), 0, None, ctypes.byref(path))
-    if result:
-        raise ServiceError(f"cannot determine ProgramData directory: {result:#x}")
-    try:
-        return Path(path.value) / _task_name()
-    finally:
-        ole = ctypes.WinDLL("ole32")
-        ole.CoTaskMemFree.argtypes = [wintypes.LPVOID]
-        ole.CoTaskMemFree(ctypes.cast(path, wintypes.LPVOID))
-
-
-def _windows_runtime_state() -> Path:
-    return profile.config_dir() / "relayd-service-state"
 
 
 def _run(argv: list[str], *, env: dict | None = None) -> str:
@@ -106,25 +75,6 @@ def _run(argv: list[str], *, env: dict | None = None) -> str:
         detail = result.stderr.strip() or result.stdout.strip()
         raise ServiceError(f"{argv[0]} failed: {detail or result.returncode}")
     return result.stdout.strip()
-
-
-def _privileged(argv: list[str]) -> str:
-    if getattr(os, "geteuid", lambda: 1)() == 0:
-        return _run(argv)
-    return _run(["sudo", "-n", *argv])
-
-
-def _authorize_macos() -> None:
-    global _macos_authorized
-    if getattr(os, "geteuid", lambda: 1)() == 0 or _macos_authorized:
-        return
-    try:
-        result = subprocess.run(["sudo", "-v"], check=False)
-    except OSError as exc:
-        raise ServiceError(f"administrator authorization failed: {exc}") from exc
-    if result.returncode:
-        raise ServiceError("administrator authorization failed")
-    _macos_authorized = True
 
 
 def _write_private(path: Path, content: bytes) -> None:
@@ -153,7 +103,7 @@ def _metadata() -> dict:
 def installed() -> bool:
     platform = _platform()
     if _marker().exists():
-        data = _metadata()
+        _metadata()
         if platform == "linux":
             try:
                 first_line = _unit().read_text(encoding="utf-8").splitlines()[0]
@@ -169,19 +119,20 @@ def installed() -> bool:
                 raise ServiceError(f"service registration was replaced: {_unit()}")
         if platform == "darwin" and not _plist().exists():
             raise ServiceError(f"service registration is missing: {_plist()}")
-        if platform == "win32":
-            if data.get("service_dir") != str(_windows_dir()):
-                raise ServiceError("the Windows service directory has changed")
-            if _windows_state() == "missing":
-                raise ServiceError("the registered Windows task is missing")
+        if platform == "win32" and _windows_state() == "missing":
+            raise ServiceError("the registered Windows task is missing")
         return True
     if platform == "linux" and _unit().exists():
         raise ServiceError(
-            f"existing service is not managed by this Relay profile: {_unit()}"
+            f"existing service is not managed by this Relay profile: {_unit()}; "
+            f"to remove it, run systemctl --user disable --now relayd.service, "
+            f"delete {_unit()}, then run systemctl --user daemon-reload"
         )
     if platform == "darwin" and _plist().exists():
         raise ServiceError(
-            f"existing service is not managed by this Relay profile: {_plist()}"
+            f"existing service is not managed by this Relay profile: {_plist()}; "
+            f"to remove it, run launchctl bootout {_macos_domain()}/{LABEL}, "
+            f"then delete {_plist()}"
         )
     return False
 
@@ -196,9 +147,6 @@ def _environment(key: str | None) -> dict[str, str]:
     env = {"HOME": str(Path.home())}
     if _platform() == "linux":
         env["XDG_CONFIG_HOME"] = str(profile.config_dir().parent.resolve())
-    elif _platform() == "win32":
-        env["USERPROFILE"] = str(Path.home())
-        env["APPDATA"] = str(profile.config_dir().parent.resolve())
     if key is not None:
         env["TS_AUTHKEY"] = key
     return env
@@ -239,7 +187,6 @@ def _linux_unit(argv: list[str], env: dict[str, str]) -> bytes:
 def _macos_plist(argv: list[str], env: dict[str, str]) -> bytes:
     data = {
         "Label": LABEL,
-        "UserName": _owner(),
         "ProgramArguments": argv,
         "WorkingDirectory": str(profile.config_dir().resolve()),
         "EnvironmentVariables": env,
@@ -285,238 +232,16 @@ try {
     return state
 
 
-def _windows_check_state() -> None:
-    config = profile.config_dir().absolute()
-    home = Path.home().absolute()
-    if not config.is_relative_to(home):
-        raise ServiceError(
-            "the SYSTEM service requires the Relay config directory inside the user's profile"
-        )
-    script = r"""
-$ErrorActionPreference = 'Stop'
-$ownerHome = [IO.Path]::GetFullPath($env:RELAY_OWNER_HOME).TrimEnd('\')
-$config = [IO.Path]::GetFullPath($env:RELAY_CONFIG_DIR).TrimEnd('\')
-$owner = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$trusted = @($owner, 'S-1-5-18', 'S-1-5-32-544')
-$unsafe = [Security.AccessControl.FileSystemRights]::Write -bor
-    [Security.AccessControl.FileSystemRights]::Delete -bor
-    [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
-    [Security.AccessControl.FileSystemRights]::ChangePermissions -bor
-    [Security.AccessControl.FileSystemRights]::TakeOwnership
-function Check-Path([string]$path) {
-    $attributes = [IO.File]::GetAttributes($path)
-    if ($attributes -band [IO.FileAttributes]::ReparsePoint) {
-        throw "Reparse points are not allowed in Relay service state: $path"
-    }
-    if ($attributes -band [IO.FileAttributes]::Directory) {
-        $acl = [IO.Directory]::GetAccessControl($path)
-    } else {
-        $acl = [IO.File]::GetAccessControl($path)
-    }
-    $ownerSid = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
-    if ($ownerSid -notin $trusted) { throw "Untrusted owner on $path" }
-    $rules = $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
-    foreach ($rule in $rules) {
-        if ($rule.AccessControlType -ne 'Allow') { continue }
-        $sid = $rule.IdentityReference.Value
-        if ($sid -notin $trusted -and ($rule.FileSystemRights -band $unsafe)) {
-            throw "Untrusted account $sid has write access to $path"
-        }
-    }
-    return $attributes
-}
-$path = $config
-while ($true) {
-    $null = Check-Path $path
-    if ($path -eq $ownerHome) { break }
-    $path = [IO.Path]::GetDirectoryName($path)
-    if (-not $path) { throw 'Config directory is outside the user profile' }
-}
-$pending = [Collections.Generic.Stack[string]]::new()
-$pending.Push($config)
-while ($pending.Count -gt 0) {
-    $directory = $pending.Pop()
-    foreach ($child in [IO.Directory]::EnumerateFileSystemEntries($directory)) {
-        $attributes = Check-Path $child
-        if ($attributes -band [IO.FileAttributes]::Directory) { $pending.Push($child) }
-    }
-}
-"""
-    _powershell(
-        script,
-        {"RELAY_OWNER_HOME": str(home), "RELAY_CONFIG_DIR": str(config)},
-    )
-
-
-def _windows_private_dir(path: Path) -> None:
-    if sys.platform != "win32":
-        raise ServiceError("Windows service registration requires Windows")
-    from ctypes import wintypes
-
-    class SecurityAttributes(ctypes.Structure):
-        _fields_ = [
-            ("nLength", wintypes.DWORD),
-            ("lpSecurityDescriptor", wintypes.LPVOID),
-            ("bInheritHandle", wintypes.BOOL),
-        ]
-
-    descriptor = wintypes.LPVOID()
-    advapi = ctypes.WinDLL("advapi32", use_last_error=True)
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    convert = advapi.ConvertStringSecurityDescriptorToSecurityDescriptorW
-    convert.argtypes = [
-        wintypes.LPCWSTR,
-        wintypes.DWORD,
-        ctypes.POINTER(wintypes.LPVOID),
-        wintypes.LPVOID,
-    ]
-    convert.restype = wintypes.BOOL
-    create = kernel.CreateDirectoryW
-    create.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(SecurityAttributes)]
-    create.restype = wintypes.BOOL
-    kernel.LocalFree.argtypes = [wintypes.LPVOID]
-    kernel.LocalFree.restype = wintypes.LPVOID
-    if not convert(
-        "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)", 1, ctypes.byref(descriptor), None
+def _windows_owner() -> str:
+    sid = _powershell("[Security.Principal.WindowsIdentity]::GetCurrent().User.Value")
+    if not sid.startswith("S-1-") or not all(
+        part.isdigit() for part in sid[2:].split("-")
     ):
-        raise ServiceError(
-            f"cannot create service security descriptor: {ctypes.get_last_error()}"
-        )
-    try:
-        attrs = SecurityAttributes(ctypes.sizeof(SecurityAttributes), descriptor, False)
-        if not create(str(path), ctypes.byref(attrs)):
-            raise ServiceError(
-                f"cannot create protected service directory {path}: {ctypes.get_last_error()}"
-            )
-    finally:
-        kernel.LocalFree(descriptor)
+        raise ServiceError("cannot determine the current Windows account")
+    return sid
 
 
-def _authorize_windows() -> None:
-    if not ctypes.windll.shell32.IsUserAnAdmin():
-        raise ServiceError(
-            "start --service requires an elevated Administrator terminal on Windows"
-        )
-
-
-WINDOWS_SUPERVISOR = r"""$ErrorActionPreference = 'Stop'
-$config = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'launch.json') | ConvertFrom-Json
-[IO.File]::WriteAllText($config.runtimeState, 'starting')
-try {
-Add-Type -TypeDefinition @'
-using System;
-using System.Diagnostics;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
-public static class RelayJob {
-    [StructLayout(LayoutKind.Sequential)]
-    struct BasicLimits {
-        public long ProcessTime, JobTime;
-        public uint Flags;
-        public UIntPtr MinWorkingSet, MaxWorkingSet;
-        public uint ActiveProcesses;
-        public UIntPtr Affinity;
-        public uint PriorityClass, SchedulingClass;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    struct IoCounters { public ulong A, B, C, D, E, F; }
-    [StructLayout(LayoutKind.Sequential)]
-    struct ExtendedLimits {
-        public BasicLimits Basic;
-        public IoCounters Io;
-        public UIntPtr ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory;
-    }
-    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
-    static extern IntPtr CreateJobObject(IntPtr attributes, string name);
-    [DllImport("kernel32.dll", SetLastError=true)]
-    static extern bool SetInformationJobObject(IntPtr job, int type, ref ExtendedLimits info, uint size);
-    [DllImport("kernel32.dll", SetLastError=true)]
-    static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
-    static IntPtr job;
-    public static void Protect() {
-        job = CreateJobObject(IntPtr.Zero, null);
-        if (job == IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
-        ExtendedLimits limits = new ExtendedLimits();
-        limits.Basic.Flags = 0x2000;
-        if (!SetInformationJobObject(job, 9, ref limits, (uint)Marshal.SizeOf(limits)) ||
-            !AssignProcessToJobObject(job, System.Diagnostics.Process.GetCurrentProcess().Handle))
-            throw new System.ComponentModel.Win32Exception();
-    }
-    static string Quote(string value) {
-        StringBuilder result = new StringBuilder("\"");
-        int slashes = 0;
-        foreach (char c in value) {
-            if (c == '\\') { slashes++; continue; }
-            if (c == '"') {
-                result.Append('\\', slashes * 2 + 1);
-                result.Append('"');
-            } else {
-                result.Append('\\', slashes);
-                result.Append(c);
-            }
-            slashes = 0;
-        }
-        result.Append('\\', slashes * 2);
-        return result.Append('"').ToString();
-    }
-    public static void Run(string binary, string[] arguments, string workingDirectory,
-                           string log, string runtimeState) {
-        string[] quoted = Array.ConvertAll(arguments, Quote);
-        ProcessStartInfo info = new ProcessStartInfo(binary, String.Join(" ", quoted));
-        info.WorkingDirectory = workingDirectory;
-        info.UseShellExecute = false;
-        info.CreateNoWindow = true;
-        info.RedirectStandardOutput = true;
-        info.RedirectStandardError = true;
-        info.StandardOutputEncoding = Encoding.UTF8;
-        info.StandardErrorEncoding = Encoding.UTF8;
-        object gate = new object();
-        DataReceivedEventHandler write = (sender, args) => {
-            if (args.Data == null) return;
-            lock (gate) {
-                File.AppendAllText(log, args.Data + Environment.NewLine);
-                if (args.Data.Contains("relayd listening on"))
-                    File.WriteAllText(runtimeState, "running");
-            }
-        };
-        using (Process process = new Process()) {
-            process.StartInfo = info;
-            process.OutputDataReceived += write;
-            process.ErrorDataReceived += write;
-            process.Start();
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            process.WaitForExit();
-        }
-    }
-}
-'@
-[RelayJob]::Protect()
-} catch {
-    [IO.File]::AppendAllText($config.log, "relayd supervisor: $($_)`r`n")
-    throw
-}
-foreach ($property in $config.environment.PSObject.Properties) {
-    [Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value, 'Process')
-}
-Set-Location -LiteralPath $config.workingDirectory
-$arguments = [string[]]@($config.arguments)
-while ($true) {
-    try {
-        [IO.File]::WriteAllText($config.runtimeState, 'starting')
-        [RelayJob]::Run($config.binary, $arguments, $config.workingDirectory,
-                        $config.log, $config.runtimeState)
-    } catch {
-        [IO.File]::AppendAllText($config.log, "relayd supervisor: $($_)`r`n")
-    }
-    [IO.File]::WriteAllText($config.runtimeState, 'starting')
-    Start-Sleep -Seconds 10
-}
-"""
-
-
-def _windows_xml(script: Path) -> bytes:
+def _windows_xml(argv: list[str], owner: str) -> bytes:
     ns = "http://schemas.microsoft.com/windows/2004/02/mit/task"
     ET.register_namespace("", ns)
     task = ET.Element(f"{{{ns}}}Task", version="1.3")
@@ -529,12 +254,14 @@ def _windows_xml(script: Path) -> bytes:
     registration = child(task, "RegistrationInfo")
     child(registration, "Author", "Relay scheduler")
     triggers = child(task, "Triggers")
-    trigger = child(triggers, "BootTrigger")
+    trigger = child(triggers, "LogonTrigger")
     child(trigger, "Enabled", "true")
-    child(trigger, "ExecutionTimeLimit", "PT0S")
+    child(trigger, "UserId", owner)
     principals = child(task, "Principals")
-    principal = child(principals, "Principal", id="System")
-    child(principal, "UserId", "S-1-5-18")
+    principal = child(principals, "Principal", id="RelayUser")
+    child(principal, "UserId", owner)
+    child(principal, "LogonType", "InteractiveToken")
+    child(principal, "RunLevel", "LeastPrivilege")
     settings = child(task, "Settings")
     for name, value in (
         ("MultipleInstancesPolicy", "IgnoreNew"),
@@ -550,25 +277,21 @@ def _windows_xml(script: Path) -> bytes:
     restart = child(settings, "RestartOnFailure")
     child(restart, "Interval", "PT1M")
     child(restart, "Count", "255")
-    actions = child(task, "Actions", Context="System")
+    actions = child(task, "Actions", Context="RelayUser")
     action = child(actions, "Exec")
-    system_root = os.environ.get("SystemRoot", r"C:\Windows")
-    child(
-        action,
-        "Command",
-        str(
-            Path(system_root)
-            / "System32"
-            / "WindowsPowerShell"
-            / "v1.0"
-            / "powershell.exe"
-        ),
-    )
+    child(action, "Command", argv[0])
     child(
         action,
         "Arguments",
-        "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "
-        + subprocess.list2cmdline([str(script)]),
+        subprocess.list2cmdline(
+            [
+                *argv[1:],
+                "--config-dir",
+                str(profile.config_dir().resolve()),
+                "--log-file",
+                str(procs.log_path(NAME).resolve()),
+            ]
+        ),
     )
     child(action, "WorkingDirectory", str(profile.config_dir().resolve()))
     return ET.tostring(task, encoding="utf-16", xml_declaration=True)
@@ -591,23 +314,21 @@ def install(argv: list[str], key: str | None) -> None:
         raise ServiceError(f"relayd binary does not exist: {argv[0]}")
     argv = [str(Path(argv[0]).resolve()), *argv[1:]]
     profile.config_dir().mkdir(parents=True, exist_ok=True)
-    if platform == "win32":
-        _authorize_windows()
-        if _windows_state() != "missing":
-            raise ServiceError(
-                f"existing task is not managed by this Relay profile: {_task_name()}"
-            )
-        _windows_check_state()
+    if platform == "win32" and _windows_state() != "missing":
+        raise ServiceError(
+            f"existing task is not managed by this Relay profile: {_task_name()}; "
+            f"to remove it, end it in Task Scheduler and delete task {_task_name()}"
+        )
     _prepare_log()
     log_offset = procs.log_path(NAME).stat().st_size
     env = _environment(key)
-    metadata_data = {"platform": platform, "argv": argv, "log_offset": log_offset}
-    if platform == "win32":
-        metadata_data["service_dir"] = str(_windows_dir())
-    metadata = json.dumps(metadata_data).encode()
+    metadata = json.dumps(
+        {"platform": platform, "argv": argv, "log_offset": log_offset}
+    ).encode()
     created = False
     registered = False
     marked = False
+    temporary = None
     try:
         if platform == "linux":
             _write_private(_unit(), _linux_unit(argv, env))
@@ -619,55 +340,27 @@ def install(argv: list[str], key: str | None) -> None:
             registered = True
             _run(["systemctl", "--user", "enable", "--now", "relayd.service"])
         elif platform == "darwin":
-            _authorize_macos()
-            with tempfile.NamedTemporaryFile(
-                dir=profile.config_dir(), delete=False
-            ) as file:
-                temporary = Path(file.name)
-                file.write(_macos_plist(argv, env))
-            try:
-                _privileged(
-                    [
-                        "/usr/bin/install",
-                        "-o",
-                        "root",
-                        "-g",
-                        "wheel",
-                        "-m",
-                        "600",
-                        str(temporary),
-                        str(_plist()),
-                    ]
-                )
-            finally:
-                temporary.unlink(missing_ok=True)
+            _write_private(_plist(), _macos_plist(argv, env))
             created = True
             _write_private(_marker(), metadata)
             marked = True
-            _privileged(["/bin/launchctl", "bootstrap", "system", str(_plist())])
+            _run(["/bin/launchctl", "bootstrap", _macos_domain(), str(_plist())])
             registered = True
         else:
-            directory = _windows_dir()
-            _windows_private_dir(directory)
-            created = True
-            binary = directory / "relayd.exe"
-            shutil.copyfile(argv[0], binary)
-            launch = {
-                "binary": str(binary),
-                "arguments": argv[1:],
-                "workingDirectory": str(profile.config_dir().resolve()),
-                "environment": env,
-                "log": str(procs.log_path(NAME).resolve()),
-                "runtimeState": str(_windows_runtime_state().resolve()),
-            }
-            _write_private(directory / "launch.json", json.dumps(launch).encode())
-            script = directory / "supervisor.ps1"
-            _write_private(script, WINDOWS_SUPERVISOR.encode())
-            xml = directory / "task.xml"
-            _write_private(xml, _windows_xml(script))
+            # The task runs as this user, so relayd reads their saved key from cli.json.
+            if key is not None:
+                profile.save_server(ts_authkey=key)
+            xml = _windows_xml(argv, _windows_owner())
+            with tempfile.NamedTemporaryFile(
+                dir=profile.config_dir(), suffix=".xml", delete=False
+            ) as file:
+                temporary = Path(file.name)
+                file.write(xml)
             _write_private(_marker(), metadata)
             marked = True
-            _run(["schtasks.exe", "/Create", "/TN", _task_name(), "/XML", str(xml)])
+            _run(
+                ["schtasks.exe", "/Create", "/TN", _task_name(), "/XML", str(temporary)]
+            )
             registered = True
             _run(["schtasks.exe", "/Run", "/TN", _task_name()])
     except (OSError, ServiceError) as exc:
@@ -677,7 +370,7 @@ def install(argv: list[str], key: str | None) -> None:
                 if platform == "linux":
                     _run(["systemctl", "--user", "disable", "--now", "relayd.service"])
                 elif platform == "darwin":
-                    _privileged(["/bin/launchctl", "bootout", "system", str(_plist())])
+                    _run(["/bin/launchctl", "bootout", _macos_domain(), str(_plist())])
                 else:
                     if _windows_state() in {"2", "4"}:
                         _run(["schtasks.exe", "/End", "/TN", _task_name()])
@@ -690,15 +383,16 @@ def install(argv: list[str], key: str | None) -> None:
                     _unit().unlink(missing_ok=True)
                     _run(["systemctl", "--user", "daemon-reload"])
                 elif platform == "darwin":
-                    _privileged(["/bin/rm", "-f", str(_plist())])
-                else:
-                    shutil.rmtree(_windows_dir())
+                    _plist().unlink(missing_ok=True)
             except (OSError, ServiceError) as rollback:
                 failures.append(str(rollback))
         if marked and not failures:
             _marker().unlink(missing_ok=True)
         detail = f"; cleanup failed: {'; '.join(failures)}" if failures else ""
         raise ServiceError(f"could not install service: {exc}{detail}") from exc
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def state() -> str:
@@ -725,9 +419,8 @@ def state() -> str:
             raise ServiceError(f"unexpected systemd service state: {result}")
         return result
     if platform == "darwin":
-        _authorize_macos()
         try:
-            output = _privileged(["/bin/launchctl", "print", f"system/{LABEL}"])
+            output = _run(["/bin/launchctl", "print", f"{_macos_domain()}/{LABEL}"])
         except ServiceError as exc:
             if "Could not find service" in str(exc):
                 return "inactive"
@@ -742,17 +435,7 @@ def state() -> str:
     if result == "missing":
         raise ServiceError("the registered Windows task is missing")
     if result == "4":
-        try:
-            runtime = _windows_runtime_state().read_text(encoding="utf-8").strip()
-        except FileNotFoundError:
-            return "activating"
-        except OSError as exc:
-            raise ServiceError(f"cannot read Windows service state: {exc}") from exc
-        if runtime == "running":
-            return "active"
-        if runtime in {"", "starting"}:
-            return "activating"
-        raise ServiceError("invalid Windows service runtime state")
+        return "active"
     if result == "2":
         return "activating"
     if result in {"1", "3"}:
@@ -767,8 +450,7 @@ def start() -> None:
     if platform == "linux":
         _run(["systemctl", "--user", "start", "relayd.service"])
     elif platform == "darwin":
-        _authorize_macos()
-        _privileged(["/bin/launchctl", "bootstrap", "system", str(_plist())])
+        _run(["/bin/launchctl", "bootstrap", _macos_domain(), str(_plist())])
     else:
         _run(["schtasks.exe", "/Run", "/TN", _task_name()])
 
@@ -780,8 +462,7 @@ def stop() -> bool:
     if platform == "linux":
         _run(["systemctl", "--user", "stop", "relayd.service"])
     elif platform == "darwin":
-        _authorize_macos()
-        _privileged(["/bin/launchctl", "bootout", "system", str(_plist())])
+        _run(["/bin/launchctl", "bootout", _macos_domain(), str(_plist())])
     else:
         _run(["schtasks.exe", "/End", "/TN", _task_name()])
         deadline = time.monotonic() + 10
@@ -806,13 +487,10 @@ def remove() -> None:
             _run(["systemctl", "--user", "daemon-reload"])
         elif platform == "darwin":
             stop()
-            _authorize_macos()
-            _privileged(["/bin/rm", str(_plist())])
+            _plist().unlink()
         else:
             stop()
             _run(["schtasks.exe", "/Delete", "/TN", _task_name(), "/F"])
-            shutil.rmtree(_windows_dir())
-            _windows_runtime_state().unlink(missing_ok=True)
         _marker().unlink()
     except OSError as exc:
         raise ServiceError(f"could not remove service files: {exc}") from exc

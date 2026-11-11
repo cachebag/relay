@@ -59,39 +59,65 @@ func main() {
 
 	// Public mode: an embedded Tailscale node serves the same handler over
 	// Funnel, so contributors anywhere can reach relayd without the admin
-	// opening a port. Needs TS_AUTHKEY. The plain --port listener stays up.
+	// opening a port. Uses TS_AUTHKEY or the CLI's saved key.
 	public := flag.Bool(
 		"public",
 		false,
-		"Also serve on a public https address through Tailscale Funnel (needs TS_AUTHKEY)",
+		"Also serve on a public https address through Tailscale Funnel (uses TS_AUTHKEY or the saved key)",
 	)
 	name := flag.String(
 		"name",
 		"relay",
 		"Hostname of the Tailscale node used by --public",
 	)
+	logPath := flag.String(
+		"log-file",
+		"",
+		"Append scheduler output to this file (used by the Windows startup task)",
+	)
+	configDir := flag.String(
+		"config-dir",
+		"",
+		"Relay directory for saved settings and Tailscale state (default: per-user config)",
+	)
 
 	// Makes the 'flag' package inspect cli arguments.
 	flag.Parse()
+	var output io.Writer = os.Stdout
+	var diagnostics io.Writer = os.Stderr
+	if *logPath != "" {
+		file, err := openSchedulerLog(*logPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "relayd:", err)
+			os.Exit(2)
+		}
+		defer file.Close()
+		log.SetOutput(file)
+		output, diagnostics = file, file
+	}
 
 	var pub publicConfig
 	if *public {
 		var err error
-		if pub, err = newPublicConfig(*name, os.Getenv("TS_AUTHKEY")); err != nil {
-			fmt.Fprintln(os.Stderr, "relayd:", err)
+		key, err := schedulerAuthKey(*configDir)
+		if err == nil {
+			pub, err = newPublicConfig(*name, key, *configDir)
+		}
+		if err != nil {
+			fmt.Fprintln(diagnostics, "relayd:", err)
 			os.Exit(2)
 		}
 	}
 
 	if err := validPort(*port); err != nil {
-		fmt.Fprintln(os.Stderr, "relayd:", err)
+		fmt.Fprintln(diagnostics, "relayd:", err)
 		os.Exit(2)
 	}
 
 	// Tells the printVersion function to print relayd's version number
 	// if the --version flag is passed while the program is running.
 	if *version {
-		printVersion(os.Stdout)
+		printVersion(output)
 		return
 	}
 
@@ -126,7 +152,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if _, err := ensureAdminToken(context.Background(), server, os.Stdout, *newAdminToken); err != nil {
+	if _, err := ensureAdminToken(context.Background(), server, output, *newAdminToken); err != nil {
 		log.Fatal(err)
 	}
 	if *newAdminToken {
@@ -159,7 +185,7 @@ func main() {
 			log.Fatal(err)
 		}
 		publicURL.Store(url)
-		fmt.Printf("relayd public address: %s\n", url)
+		fmt.Fprintf(output, "relayd public address: %s\n", url)
 		go func() {
 			if err := http.Serve(pln, handler); err != nil {
 				log.Fatal(err)

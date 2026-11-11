@@ -1,7 +1,5 @@
 import json
 import plistlib
-import shutil
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -21,20 +19,9 @@ def platform_service(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: home)
     monkeypatch.setattr(profile, "config_dir", lambda: config)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / "config"))
-    monkeypatch.setenv("PROGRAMDATA", str(tmp_path / "Program Data"))
-    monkeypatch.setattr(services, "_plist", lambda: tmp_path / "relay.relayd.plist")
-    monkeypatch.setattr(services, "_authorize_macos", lambda: None)
-    monkeypatch.setattr(services, "_authorize_windows", lambda: None)
+    monkeypatch.setattr(services, "_macos_domain", lambda: "gui/501")
     monkeypatch.setattr(services, "_owner", lambda: "scheduler-owner")
-    monkeypatch.setattr(services, "_windows_check_state", lambda: None)
-    monkeypatch.setattr(
-        services,
-        "_windows_dir",
-        lambda: tmp_path / "Program Data" / services._task_name(),
-    )
-    monkeypatch.setattr(
-        services, "_windows_private_dir", lambda path: path.mkdir(parents=True)
-    )
+    monkeypatch.setattr(services, "_windows_owner", lambda: "S-1-5-21-123-456-789-1001")
 
     calls = []
     current = {"platform": "", "state": "inactive", "task": False}
@@ -61,39 +48,27 @@ def platform_service(tmp_path, monkeypatch):
             if "stop" in argv or "disable" in argv:
                 current["state"] = "inactive"
         elif argv[0] == "/bin/launchctl":
-            if current["state"] == "inactive":
-                raise services.ServiceError("Could not find service")
-            return "state = running"
+            if "bootstrap" in argv:
+                current["state"] = "active"
+            elif "bootout" in argv:
+                current["state"] = "inactive"
+            elif "print" in argv:
+                if current["state"] == "inactive":
+                    raise services.ServiceError("Could not find service")
+                return "state = running"
         elif argv[0] == "schtasks.exe":
             if "/Create" in argv:
+                current["xml"] = Path(argv[-1]).read_bytes()
                 current["task"] = True
             if "/Run" in argv:
                 current["state"] = "active"
-                services._windows_runtime_state().write_text("running")
             if "/End" in argv:
                 current["state"] = "inactive"
             if "/Delete" in argv:
                 current["task"] = False
         return ""
 
-    def privileged(argv):
-        calls.append(argv)
-        if argv[0] == "/usr/bin/install":
-            shutil.copyfile(argv[-2], argv[-1])
-        elif argv[0] == "/bin/rm":
-            Path(argv[-1]).unlink(missing_ok="-f" in argv)
-        elif "bootstrap" in argv:
-            current["state"] = "active"
-        elif "bootout" in argv:
-            current["state"] = "inactive"
-        elif "print" in argv:
-            if current["state"] == "inactive":
-                raise services.ServiceError("Could not find service")
-            return "state = running"
-        return ""
-
     monkeypatch.setattr(services, "_run", run)
-    monkeypatch.setattr(services, "_privileged", privileged)
     return current, calls, binary, config
 
 
@@ -131,26 +106,69 @@ def test_install_start_stop_and_remove(platform_service, platform):
         assert plist["EnvironmentVariables"]["TS_AUTHKEY"] == key
         assert plist["WorkingDirectory"] == str(config.resolve())
         assert plist["RunAtLoad"] and plist["KeepAlive"]
-        assert any("bootstrap" in command for command in calls)
-    else:
-        directory = services._windows_dir()
-        launch = json.loads((directory / "launch.json").read_text())
-        assert launch["arguments"] == args[1:]
-        assert Path(launch["binary"]) == directory / "relayd.exe"
-        assert launch["environment"]["TS_AUTHKEY"] == key
-        assert launch["environment"]["APPDATA"] == str(config.parent.resolve())
-        assert launch["workingDirectory"] == str(config.resolve())
-        assert (directory / "relayd.exe").read_bytes() == binary.read_bytes()
-        assert "AssignProcessToJobObject" in (directory / "supervisor.ps1").read_text()
-        xml = ET.fromstring((directory / "task.xml").read_bytes())
-        ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
-        assert xml.find("t:Triggers/t:BootTrigger", ns) is not None
+        assert "UserName" not in plist
         assert (
-            xml.findtext("t:Principals/t:Principal/t:UserId", namespaces=ns)
-            == "S-1-5-18"
+            services._plist()
+            == Path.home() / "Library" / "LaunchAgents" / "relay.relayd.plist"
+        )
+        assert [
+            "/bin/launchctl",
+            "bootstrap",
+            "gui/501",
+            str(services._plist()),
+        ] in calls
+        assert ["/bin/launchctl", "print", "gui/501/relay.relayd"] in calls
+        assert not any("sudo" in command or "system" in command for command in calls)
+    else:
+        import subprocess
+
+        xml = ET.fromstring(current["xml"])
+        ns = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
+        owner = "S-1-5-21-123-456-789-1001"
+        assert xml.find("t:Triggers/t:BootTrigger", ns) is None
+        assert (
+            xml.findtext("t:Triggers/t:LogonTrigger/t:UserId", namespaces=ns) == owner
+        )
+        assert xml.findtext("t:Principals/t:Principal/t:UserId", namespaces=ns) == owner
+        assert (
+            xml.findtext("t:Principals/t:Principal/t:LogonType", namespaces=ns)
+            == "InteractiveToken"
+        )
+        assert (
+            xml.findtext("t:Principals/t:Principal/t:RunLevel", namespaces=ns)
+            == "LeastPrivilege"
         )
         assert xml.findtext("t:Settings/t:ExecutionTimeLimit", namespaces=ns) == "PT0S"
-        assert key not in (directory / "task.xml").read_text(encoding="utf-16")
+        assert (
+            xml.findtext("t:Settings/t:RestartOnFailure/t:Interval", namespaces=ns)
+            == "PT1M"
+        )
+        assert (
+            xml.findtext("t:Settings/t:RestartOnFailure/t:Count", namespaces=ns)
+            == "255"
+        )
+        assert xml.findtext("t:Actions/t:Exec/t:Command", namespaces=ns) == str(
+            binary.resolve()
+        )
+        assert xml.findtext(
+            "t:Actions/t:Exec/t:Arguments", namespaces=ns
+        ) == subprocess.list2cmdline(
+            [
+                *args[1:],
+                "--config-dir",
+                str(config.resolve()),
+                "--log-file",
+                str(procs.log_path("relayd").resolve()),
+            ]
+        )
+        assert xml.findtext(
+            "t:Actions/t:Exec/t:WorkingDirectory", namespaces=ns
+        ) == str(config.resolve())
+        assert key not in current["xml"].decode("utf-16")
+        assert profile.server()["ts_authkey"] == key
+        assert not list(config.glob("*.xml"))
+        assert not list(config.glob("*.ps1"))
+        assert not list(config.glob("*.exe"))
 
     assert services.stop()
     assert services.installed()
@@ -167,7 +185,7 @@ def test_install_start_stop_and_remove(platform_service, platform):
     elif platform == "darwin":
         assert not services._plist().exists()
     else:
-        assert not services._windows_dir().exists()
+        assert not current["task"]
 
 
 def test_linux_refuses_existing_unmanaged_unit(platform_service):
@@ -216,22 +234,26 @@ def test_windows_refuses_existing_task(platform_service):
     with pytest.raises(services.ServiceError, match="not managed"):
         services.install([str(binary), "--port", "8080"], None)
     assert current["task"]
-    assert not services._windows_dir().exists()
+    assert not services._marker().exists()
 
 
-def test_windows_status_distinguishes_supervisor_from_running_daemon(platform_service):
+def test_windows_status_reports_task_state_without_supervisor(
+    platform_service, monkeypatch
+):
     current, _, binary, _ = platform_service
     current["platform"] = "win32"
     services.install([str(binary), "--port", "8080"], None)
-    state_file = services._windows_runtime_state()
-    state_file.unlink()
-    assert services.state() == "activating"
-    state_file.write_text("starting")
-    assert services.state() == "activating"
-    state_file.write_text("running")
-    assert services.state() == "active"
-    state_file.write_text("unexpected")
-    with pytest.raises(services.ServiceError, match="runtime state"):
+    for task_state, expected in [
+        ("4", "active"),
+        ("2", "activating"),
+        ("3", "inactive"),
+        ("1", "inactive"),
+        ("0", "failed"),
+    ]:
+        monkeypatch.setattr(services, "_windows_state", lambda value=task_state: value)
+        assert services.state() == expected
+    monkeypatch.setattr(services, "_windows_state", lambda: "missing")
+    with pytest.raises(services.ServiceError, match="task is missing"):
         services.state()
 
 
@@ -253,7 +275,7 @@ def test_macos_reports_unknown_launchd_output(platform_service, monkeypatch):
     current, _, binary, _ = platform_service
     current["platform"] = "darwin"
     services.install([str(binary), "--port", "8080"], None)
-    monkeypatch.setattr(services, "_privileged", lambda argv: "unexpected output")
+    monkeypatch.setattr(services, "_run", lambda argv: "unexpected output")
     with pytest.raises(services.ServiceError, match="determine the launchd"):
         services.state()
 
@@ -320,128 +342,61 @@ def test_service_start_replaces_stale_token_without_restoring_it_on_status(
     assert profile.server()["admin_token"] == "rotated-token"
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows known folders")
-def test_windows_service_directory_ignores_programdata_override(tmp_path, monkeypatch):
-    directory = services._windows_dir()
-    monkeypatch.setenv("PROGRAMDATA", str(tmp_path))
-    assert services._windows_dir() == directory
-
-
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows ACLs")
-def test_windows_state_acl_validation_accepts_private_directory(tmp_path, monkeypatch):
-    script = r"""
-$owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-$directory = [IO.DirectoryInfo]::new($env:RELAY_TEST_DIR)
-$acl = [Security.AccessControl.DirectorySecurity]::new()
-$acl.SetAccessRuleProtection($true, $false)
-foreach ($sid in @($owner.Value, 'S-1-5-18', 'S-1-5-32-544')) {
-    $identity = [Security.Principal.SecurityIdentifier]::new($sid)
-    $rule = [Security.AccessControl.FileSystemAccessRule]::new(
-        $identity, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')
-    $acl.AddAccessRule($rule)
-}
-$directory.SetAccessControl($acl)
-"""
-    services._powershell(script, {"RELAY_TEST_DIR": str(tmp_path)})
-    config = tmp_path / "relay"
-    config.mkdir()
-    (config / "relay.db").write_bytes(b"test data")
-    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    monkeypatch.setattr(profile, "config_dir", lambda: config)
-    services._windows_check_state()
-
-
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows supervisor")
-def test_windows_supervisor_restarts_and_stops_its_child(tmp_path):
-    import ctypes
-    import subprocess
-    import time
-
-    log = tmp_path / "service.log"
-    script = tmp_path / "supervisor.ps1"
-    script.write_text(
-        services.WINDOWS_SUPERVISOR.replace(
-            "Start-Sleep -Seconds 10", "Start-Sleep -Milliseconds 100"
-        )
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_missing_marker_names_cleanup_file_and_steps(platform_service, platform):
+    current, _, binary, _ = platform_service
+    current["platform"] = platform
+    services.install([str(binary), "--port", "8080"], None)
+    services._marker().unlink()
+    registration = services._unit() if platform == "linux" else services._plist()
+    with pytest.raises(services.ServiceError) as error:
+        services.installed()
+    message = str(error.value)
+    assert str(registration) in message
+    assert "delete" in message
+    assert (
+        "systemctl --user disable --now" in message
+        if platform == "linux"
+        else "launchctl bootout gui/501/relay.relayd" in message
     )
-    counter = tmp_path / "count"
-    special_argument = 'argument with spaces, $ % & "'
-    key = 'tskey-auth-special-$%"'
-    code = (
-        "import os,sys,time,pathlib; "
-        f"assert os.environ['TS_AUTHKEY'] == {key!r}; "
-        f"assert sys.argv[1] == {special_argument!r}; "
-        f"p=pathlib.Path({str(counter)!r}); "
-        "n=int(p.read_text())+1 if p.exists() else 1; "
-        "p.write_text(str(n)); "
-        "print('relayd listening on :8080', file=sys.stderr, flush=True); "
-        "print('started '+str(os.getpid()), flush=True); "
-        "time.sleep(.3 if n == 1 else 30)"
-    )
-    (tmp_path / "launch.json").write_text(
-        json.dumps(
-            {
-                "binary": sys.executable,
-                "arguments": ["-c", code, special_argument],
-                "workingDirectory": str(tmp_path),
-                "environment": {"TS_AUTHKEY": key},
-                "log": str(log),
-                "runtimeState": str(tmp_path / "runtime-state"),
-            }
-        )
-    )
-    process = subprocess.Popen(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(script),
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    child_pid = None
-    try:
-        deadline = time.monotonic() + 30
-        while time.monotonic() < deadline:
-            lines = log.read_text().splitlines() if log.exists() else []
-            started = [line for line in lines if line.startswith("started ")]
-            if len(started) >= 2:
-                child_pid = int(started[-1].split()[-1])
-                break
-            if process.poll() is not None:
-                break
-            time.sleep(0.1)
-        assert child_pid is not None, (
-            process.communicate(timeout=5)
-            if process.poll() is not None
-            else "supervisor did not restart"
-        )
-    finally:
-        process.terminate()
-        process.wait(timeout=10)
+    assert registration.exists()
 
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel.OpenProcess.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
-    kernel.OpenProcess.restype = ctypes.c_void_p
-    kernel.GetExitCodeProcess.argtypes = [
-        ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_ulong),
-    ]
-    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        handle = kernel.OpenProcess(0x1000, False, child_pid)
-        if not handle:
-            break
-        exit_code = ctypes.c_ulong()
-        assert kernel.GetExitCodeProcess(handle, ctypes.byref(exit_code))
-        kernel.CloseHandle(handle)
-        if exit_code.value != 259:
-            break
-        time.sleep(0.1)
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+def test_failed_activation_rolls_back_registration(
+    platform_service, monkeypatch, platform
+):
+    current, calls, binary, config = platform_service
+    current["platform"] = platform
+    original = services._run
+
+    def fail_start(argv, **kwargs):
+        if "bootstrap" in argv or "/Run" in argv:
+            raise services.ServiceError("activation failed")
+        return original(argv, **kwargs)
+
+    monkeypatch.setattr(services, "_run", fail_start)
+    with pytest.raises(services.ServiceError, match="activation failed"):
+        services.install([str(binary), "--port", "8080"], None)
+    assert not services._marker().exists()
+    assert not list(config.glob("*.xml"))
+    if platform == "darwin":
+        assert not services._plist().exists()
     else:
-        pytest.fail("the supervised child survived stopping the supervisor")
+        assert not current["task"]
+        assert any("/Delete" in command for command in calls)
+
+
+def test_windows_task_name_tracks_profile(platform_service, monkeypatch, tmp_path):
+    _, _, _, config = platform_service
+    first = services._task_name()
+    monkeypatch.setattr(profile, "config_dir", lambda: tmp_path / "other-relay")
+    assert services._task_name() != first
+    monkeypatch.setattr(profile, "config_dir", lambda: config)
+    assert services._task_name() == first
+
+
+def test_windows_owner_rejects_unexpected_identity(monkeypatch):
+    monkeypatch.setattr(services, "_powershell", lambda script: "unexpected output")
+    with pytest.raises(services.ServiceError, match="current Windows account"):
+        services._windows_owner()

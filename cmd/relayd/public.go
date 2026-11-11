@@ -13,7 +13,7 @@ import (
 )
 
 // errNoAuthKey is returned by publicConfig when --public is set but
-// TS_AUTHKEY is empty. main prints it and exits 2.
+// neither TS_AUTHKEY nor a saved CLI key is available. main prints it and exits 2.
 var errNoAuthKey = errors.New(
 	"--public needs a Tailscale auth key: set TS_AUTHKEY to a reusable key from " +
 		"https://login.tailscale.com/admin/settings/keys")
@@ -21,19 +21,25 @@ var errNoAuthKey = errors.New(
 // publicConfig is everything the embedded Tailscale node needs.
 type publicConfig struct {
 	Name    string // hostname on the tailnet, becomes https://<name>.<tailnet>.ts.net
-	AuthKey string // from TS_AUTHKEY
+	AuthKey string // from TS_AUTHKEY or the saved CLI settings
 	Dir     string // where tsnet keeps its state so a restart keeps the same address
 }
 
-// Builds the config for --public from the flag and the environment.
-// Returns errNoAuthKey if TS_AUTHKEY is unset or empty.
-func newPublicConfig(name, authKey string) (publicConfig, error) {
+// Builds the config for --public from the hostname and resolved key.
+// Returns errNoAuthKey if no key is available.
+func newPublicConfig(name, authKey, configDir string) (publicConfig, error) {
 	if authKey == "" {
 		return publicConfig{}, errNoAuthKey
 	}
-	dir, err := stateDir()
-	if err != nil {
-		return publicConfig{}, err
+	var dir string
+	if configDir != "" {
+		dir = filepath.Join(configDir, "tsnet")
+	} else {
+		var err error
+		dir, err = stateDir()
+		if err != nil {
+			return publicConfig{}, err
+		}
 	}
 	return publicConfig{Name: name, AuthKey: authKey, Dir: dir}, nil
 }

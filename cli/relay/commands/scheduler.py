@@ -3,6 +3,7 @@
 import getpass
 import os
 import re
+import shlex
 import time
 
 import httpx
@@ -27,18 +28,19 @@ def register(sub) -> None:
     st.add_argument(
         "--public",
         action="store_true",
+        default=None,
         help="also serve a public https address through Tailscale",
     )
-    st.add_argument("--port", type=int, default=8080, help="local port (default 8080)")
+    st.add_argument("--port", type=int, default=None, help="local port (default 8080)")
     st.add_argument(
         "--name",
-        default="relay",
+        default=None,
         help="Tailscale hostname for --public (default relay)",
     )
     st.add_argument(
         "--service",
         action="store_true",
-        help="install or start the boot service",
+        help="install or start the startup service",
     )
     st.set_defaults(func=run_start)
 
@@ -46,7 +48,7 @@ def register(sub) -> None:
     sp.add_argument(
         "--service",
         action="store_true",
-        help="stop and remove the boot service",
+        help="stop and remove the startup service",
     )
     sp.set_defaults(func=run_stop)
 
@@ -91,6 +93,10 @@ def run_start(args) -> None:
             else:
                 print("relayd is installed as a service; use relay scheduler status")
             return
+        # Keep omitted flags distinct until an existing service has been checked.
+        args.public = bool(args.public)
+        args.port = 8080 if args.port is None else args.port
+        args.name = "relay" if args.name is None else args.name
         if getattr(args, "service", False):
             start_service(args, existing=False)
             return
@@ -184,6 +190,19 @@ def start_service(args, existing: bool) -> None:
     )
     if existing:
         argv = services.configuration()
+        saved = {
+            "port": int(argv[argv.index("--port") + 1]),
+            "public": "--public" in argv,
+            "name": argv[argv.index("--name") + 1] if "--name" in argv else "relay",
+        }
+        if any(
+            getattr(args, name, None) is not None and getattr(args, name) != value
+            for name, value in saved.items()
+        ):
+            raise services.ServiceError(
+                f"relayd service is installed with {shlex.join(argv[1:])}; "
+                "run relay scheduler stop --service first to change them"
+            )
         if services.state() in {"active", "activating"}:
             print("relayd service is already running with its saved configuration")
             run_status(args)
@@ -311,9 +330,11 @@ def run_stop(args) -> None:
             return
         if managed:
             if services.stop():
-                print("relayd service stopped; it remains registered for boot")
+                print("relayd service stopped; it remains registered for startup")
             else:
-                print("relayd service is not running; it remains registered for boot")
+                print(
+                    "relayd service is not running; it remains registered for startup"
+                )
             return
     except services.ServiceError as exc:
         raise SystemExit(f"relay scheduler: {exc}") from exc
@@ -337,7 +358,7 @@ def run_status(args) -> None:
                 "inactive": "stopped",
                 "failed": "failed",
             }
-            print(f"relayd service {labels[state]} (installed for boot)")
+            print(f"relayd service {labels[state]} (installed for startup)")
             if srv.get("address"):
                 print(f"  local address:   {srv['address']}")
             if srv.get("public_url"):

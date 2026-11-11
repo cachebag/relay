@@ -26,8 +26,8 @@ The first time it starts, `relayd` prints a server admin token. Save it. It is t
 
 ## Keep it running
 
-Install a boot service to start the scheduler now and after a reboot, and to
-retry if it exits:
+Install a per-user service to start the scheduler now, start it again after
+reboot or login as described below, and retry if it exits:
 
 ```sh
 relay scheduler start --service --public
@@ -42,9 +42,11 @@ reusable key and complete the Funnel setup described below.
 The service uses the same `relay.db`, Tailscale state, and `relayd.log` as a
 normal scheduler start. If a normal scheduler is already running, stop it
 before installing the service. Once installed, plain `start` does not start a
-second copy. Plain `stop` stops the service temporarily, but it will start
-again at boot; use `start --service` to resume it sooner with its existing
-options. To remove the registration, or to change its options, run:
+second copy. Plain `stop` stops the service temporarily, but the registration
+remains for the next reboot or login. Use `start --service` to resume it with
+its saved options. Explicit options that differ from the installed command
+are rejected with the saved command and instructions to remove the service
+first. To remove the registration, or to change its options, run:
 
 ```sh
 relay scheduler stop --service
@@ -53,29 +55,43 @@ relay scheduler start --service --public  # optional: reinstall with new options
 
 Removing the service does not delete the database, settings, or log.
 
-- **Linux:** Relay installs a systemd user unit and enables user lingering so
-  the service can run without a login. Enabling lingering may require
-  authorization. Check `systemctl --user status relayd.service` if it fails.
-- **macOS:** Relay installs a system LaunchDaemon that runs as the scheduler
-  owner. Unlike a LaunchAgent, it can start before login. Installation,
-  status, and removal request administrator authorization through `sudo`;
-  run the `relay` command as the owner, not as `root`. Check
-  `sudo launchctl print system/relay.relayd` if it fails.
-- **Windows:** Run service installation and removal in an elevated
-  Administrator terminal for the scheduler owner. Relay registers a
-  boot-triggered Scheduled Task running as SYSTEM. Its executable and launch
-  files are protected for SYSTEM and administrators; Relay refuses unsafe
-  owner-state permissions or reparse points. After updating `relayd`, remove
-  and reinstall the service to update its protected copy. If status or stop
-  reports access denied, use the same elevated terminal. Task Scheduler and
-  `relayd.log` show failures.
+- **Linux:** Relay installs `~/.config/systemd/user/relayd.service` (or under
+  `XDG_CONFIG_HOME`) and enables user lingering so the service can run after
+  reboot without a login. Enabling lingering may require authorization
+  under the machine's policy. Check `systemctl --user status relayd.service`
+  if it fails.
+- **macOS:** Relay installs a LaunchAgent at
+  `~/Library/LaunchAgents/relay.relayd.plist`, with `RunAtLoad` and `KeepAlive`.
+  It runs as your account and starts when you log in. Install, start, stop,
+  status, and removal use your `gui` launchd domain without `sudo`. Check
+  `launchctl print gui/$(id -u)/relay.relayd` if it fails.
+- **Windows:** Relay registers a Scheduled Task for your account, triggered
+  when you log in, with task settings that restart it on failure. Use a
+  normal terminal as the scheduler owner. The task runs the installed
+  `relayd.exe` directly and writes to the same `relayd.log`. To upgrade, use
+  plain `relay scheduler stop`, run `relay install`, then run
+  `relay scheduler start --service` to use the new binary. The registration
+  does not need to be reinstalled. Task Scheduler and `relayd.log` show
+  failures.
 
-Service registration contains the Tailscale key or a protected copy of it;
-the log can contain the initial admin token. Keep the service configuration,
-Relay config directory, and logs private. A boot service cannot run while the
-machine is asleep, powered off, or waiting for an encrypted disk to be
-unlocked. Check `relay scheduler status` and the log if the public address
-doesn't answer; network or Tailscale setup failures are retried.
+On macOS and Windows, the scheduler needs the owner's login session after a
+reboot. A dedicated server laptop can use the operating system's automatic
+login setting if it must resume without someone signing in; anyone with
+physical access may then be able to use that account. Relay does not change
+this setting.
+
+Relay saves a per-profile registration record in `relayd-service.json` in
+the config folder. If that record is lost while the unit or plist remains,
+the error names the registration file and explains how to unload and remove
+it before reinstalling. Follow those instructions only for your own Relay
+service.
+
+Service registration or saved settings contain the Tailscale key; the log
+can contain the initial admin token. Keep the service configuration, Relay
+config directory, and logs private. The service cannot run while the machine
+is asleep, powered off, or waiting for an encrypted disk to be unlocked.
+Check `relay scheduler status` and the log if the public address doesn't
+answer; network or Tailscale setup failures are retried.
 
 ## Create a pool
 
