@@ -82,6 +82,17 @@ def _tracking_paths(pool_id: str) -> tuple[Path, Path]:
     return directory / f"{prefix}.pid", directory / f"{prefix}.state.json"
 
 
+def _agent_cache_dir(pool_id: str) -> Path:
+    """Keep job data per pool in the same user cache root as the Go agent."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Caches"
+    else:
+        base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    return base / "relay" / "agents" / pool_id
+
+
 def _legacy_tracking_paths() -> tuple[Path, Path]:
     """Older CLI versions kept a single process in these two files."""
     directory = profile.config_dir()
@@ -263,6 +274,8 @@ def start(prof: dict, scheduler: str) -> tuple[int, Path]:
         token,
         "--owner",
         owner,
+        "--cache-dir",
+        str(_agent_cache_dir(pool_id)),
     ]
     if sys.platform == "win32":
         options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}

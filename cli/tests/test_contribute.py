@@ -38,7 +38,31 @@ def cfg(tmp_path, monkeypatch):
     # Keep test PID, log, and profile files away from the real user's config.
     folder = tmp_path / "relay"
     monkeypatch.setattr(profile, "config_dir", lambda: folder)
+    monkeypatch.setattr(
+        contribution,
+        "_agent_cache_dir",
+        lambda pool_id: tmp_path / "cache" / "relay" / "agents" / pool_id,
+    )
     return folder
+
+
+def test_agent_cache_dir_uses_the_os_cache_location(tmp_path, monkeypatch):
+    if sys.platform == "win32":
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    elif sys.platform == "linux":
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    elif sys.platform == "darwin":
+        expected_root = Path.home() / "Library" / "Caches"
+        assert contribution._agent_cache_dir("p1") == (
+            expected_root / "relay" / "agents" / "p1"
+        )
+        return
+    else:
+        pytest.skip("supported OS cache locations only")
+
+    assert contribution._agent_cache_dir("p1") == (
+        tmp_path / "relay" / "agents" / "p1"
+    )
 
 
 def tracked_agent(cfg, pid=4321, pool_id="p1", pool_name="lab", legacy=False):
@@ -86,6 +110,8 @@ def test_start_launches_agent_with_saved_pool(cfg, monkeypatch):
         "tok",
         "--owner",
         "akrm",
+        "--cache-dir",
+        str(cfg.parent / "cache" / "relay" / "agents" / "p1"),
     ]
     assert seen["options"]["stdin"] == subprocess.DEVNULL
     assert seen["options"]["stderr"] == subprocess.STDOUT
@@ -196,9 +222,13 @@ def test_two_pools_run_independently(cfg, monkeypatch):
             return None
 
     monkeypatch.setattr(contribution.binaries, "find", lambda name: "relay-agent-test")
-    monkeypatch.setattr(
-        contribution.subprocess, "Popen", lambda *a, **kw: FakeProcess()
-    )
+    launched = []
+
+    def fake_popen(argv, **options):
+        launched.append(argv)
+        return FakeProcess()
+
+    monkeypatch.setattr(contribution.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(contribution, "_pid_alive", lambda pid: True)
     monkeypatch.setattr(contribution, "STARTUP_SECONDS", 0)
 
@@ -208,6 +238,12 @@ def test_two_pools_run_independently(cfg, monkeypatch):
     assert (pid1, pid2) == (4321, 5678)
     assert log1 == cfg / "relay-agent.p1.log"
     assert log2 == cfg / "relay-agent.p2.log"
+    assert launched[0][-2:] == [
+        "--cache-dir", str(cfg.parent / "cache" / "relay" / "agents" / "p1")
+    ]
+    assert launched[1][-2:] == [
+        "--cache-dir", str(cfg.parent / "cache" / "relay" / "agents" / "p2")
+    ]
     assert {state["pool_id"] for state in contribution.statuses()} == {"p1", "p2"}
     assert {state["pid"] for state in contribution.statuses()} == {4321, 5678}
 
