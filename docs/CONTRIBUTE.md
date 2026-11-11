@@ -27,12 +27,12 @@ relay login --scheduler http://<scheduler address>:8080 --pool-token <pool token
 relay contribute
 ```
 
-`relay contribute` runs an agent in the background for the **current** saved
+`relay contribute` runs an agent in the background for the current saved
 pool, using its token, scheduler, and your saved name. The terminal is free
 again while the agent keeps running. Use `relay pools` to list saved logins or
 `relay use <pool name or ID>` to change the current pool.
 
-Each pool has its **own agent process**. Starting a second pool does not stop
+Each pool has its own agent process. Starting a second pool does not stop
 the first, and starting the same pool twice reports that it is already
 contributing. To choose a saved pool without changing your current login:
 
@@ -42,7 +42,7 @@ relay contribute --pool <pool name or ID>
 
 If an agent exits during its first ten seconds, the command reports the last
 line of its log. The scheduler can still refuse contributions to two pools on
-the **same scheduler**; the CLI displays that error rather than overriding the
+the same scheduler; the CLI displays that error rather than overriding the
 scheduler's restriction.
 
 ### Inspect and stop agents
@@ -56,10 +56,10 @@ relay contribute stop --all               # stop all locally tracked agents
 
 Stopping an agent returns its current job to the queue. `status` also lists
 agents whose saved login was removed after they started, and `stop --all` can
-stop those processes. A manually launched agent is **not** managed by these
+stop those processes. A manually launched agent is not managed by these
 commands; stop it with Ctrl+C in its own terminal.
 
-In `relay dash`, the **a** key starts or stops only the pool currently shown
+In `relay dash`, the `a` key starts or stops only the pool currently shown
 in the dashboard. Switching pools leaves other agents running. The top bar
 shows `this machine: contributing` for one active current pool, or
 `this machine: contributing to 2 pools` when two are running. It also indicates
@@ -78,36 +78,7 @@ macOS, `%AppData%\relay` on Windows):
 An agent started by an older CLI using `relay-agent.pid` is still recognized
 until it stops, so upgrading does not silently orphan a running process.
 
-### Verify contributions to two schedulers
-
-Log in to a pool on each of two **different** schedulers, using their own
-join tokens. Each `relay login` saves the pool and makes it current:
-
-```sh
-relay login --scheduler http://scheduler-a.example:8080 --pool-token <token-a> --name <your name>
-relay login --scheduler http://scheduler-b.example:8080 --pool-token <token-b> --name <your name>
-relay pools
-```
-
-Use the pool names or IDs shown by `relay pools` for the following commands:
-
-```sh
-relay contribute --pool pool-a
-relay contribute --pool pool-b
-relay contribute status
-relay contribute stop --pool pool-a
-relay contribute status
-relay contribute stop --all
-```
-
-After starting both, `status` should show **two different PIDs** and both
-scheduler addresses, and the machine should appear online in both dashboards.
-Stopping pool A should leave pool B online and listed in `status`. The final
-`stop --all` should leave no CLI-managed agents running. You can also switch
-between the pools in `relay dash` and verify that **a** controls only the pool
-being viewed.
-
-To run the agent by hand instead, use the commands below.
+To run the agent directly without the CLI, use the commands below.
 
 ## Linux and macOS
 
@@ -147,7 +118,9 @@ $env:RELAY_POOL_TOKEN="<pool token>"
 
 ## Where jobs run
 
-Each job runs in its own empty folder, `relay/jobs/<job id>` in your cache folder (`~/.cache` on Linux, `~/Library/Caches` on macOS, `%LocalAppData%` on Windows), with `HOME` and the temp folder pointed inside it. The folder is deleted once the result is reported, and any left behind by a crash are deleted when the agent next starts. Jobs still run as your user, so this keeps their files tidy but doesn't stop a job reading yours.
+Each job runs in its own empty folder under your user cache directory (`~/.cache` on Linux, `~/Library/Caches` on macOS, `%LocalAppData%` on Windows). A manually started agent uses `relay/jobs/<job id>`; `relay contribute` uses `relay/agents/<pool id>/jobs/<job id>` so different pools cannot remove each other's work. The machine's `relay/node-id` remains shared. `HOME` and the temp folder point inside the job folder, which is deleted once the result is reported. Any folders left by a crash are cleaned up when that pool's agent next starts. Jobs still run as your user, so this keeps their files tidy but doesn't stop a job reading yours.
+
+A job submitted with `relay submit --dir` or `--file` has its files unpacked into that folder first, and whatever it writes to `out/` there (up to 50 MB packed) is sent back to the scheduler with the result for the submitter to fetch.
 
 To look at what a job left behind, start the agent with `--keep-workdir`. It keeps every job's folder and logs where it is.
 
