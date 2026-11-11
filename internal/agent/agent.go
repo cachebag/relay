@@ -7,6 +7,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -61,6 +64,7 @@ type Agent struct {
 	// this machine. Run then stops instead of retrying forever.
 	removed       bool
 	rotatedWarned bool
+	rejected      bool
 }
 
 // New returns an Agent for node n that talks to the scheduler at schedulerURL
@@ -145,11 +149,15 @@ func (a *Agent) Tick(ctx context.Context) {
 				log.Printf("%s", store.RotatedTokenMsg)
 				a.rotatedWarned = true
 			}
-
 		case errors.Is(err, ErrBadToken):
 			log.Printf(
 				"pool token rejected; check it with your pool admin",
 			)
+			// A rotated token is caught by the ErrTokenRotated case above and
+			// never sets this, so a contributor whose admin rotated the invite
+			// keeps heartbeating (#122) while a plain wrong token exits. Keep
+			// that case above this one.
+			a.rejected = true
 
 		case isConnectionError(err):
 			log.Printf(
@@ -203,7 +211,11 @@ func (a *Agent) Tick(ctx context.Context) {
 		return
 	}
 
-	log.Printf("running job %s: %v", job.ID, job.Command)
+	if job.BundleBytes > 0 {
+		log.Printf("running job %s: %s %v (%d bytes of files)", job.ID, entryName(job.Entry), job.Command, job.BundleBytes)
+	} else {
+		log.Printf("running job %s: %v", job.ID, job.Command)
+	}
 	a.busy.Store(true)
 	a.wg.Add(1)
 	go func() {
@@ -236,15 +248,35 @@ func (a *Agent) execute(ctx context.Context, job store.Job) {
 	if err != nil {
 		res = Result{ExitCode: -1, Stderr: fmt.Sprintf("relay: can't create job folder: %v\n", err)}
 	} else {
-		res = a.run(jobCtx, job.Command, dir)
+		res = a.runInWorkdir(jobCtx, job, dir)
 	}
 
 	// A job killed because the agent is shutting down didn't really fail, so
-	// leave it unreported for the scheduler to hand out again.
-	if ctx.Err() != nil {
-		log.Printf("job %s interrupted, not reporting a result", job.ID)
+	// leave it unreported for the scheduler to hand out again. The same goes
+	// for a bundle that couldn't be fetched: the scheduler hands the job back
+	// on the next poll and the download is tried again.
+	if ctx.Err() != nil || errors.Is(res.err, errBundleRetry) {
+		if ctx.Err() != nil {
+			log.Printf("job %s interrupted, not reporting a result", job.ID)
+		} else {
+			log.Printf("job %s: %v, will retry", job.ID, res.err)
+		}
 		a.removeWorkdir(job.ID)
 		return
+	}
+
+	// Whatever the job left in out/ goes back with the result.
+	outputPath := ""
+	if dir != "" {
+		switch path, size, err := packOutput(dir); {
+		case err != nil:
+			res.Stderr += fmt.Sprintf("relay: can't pack out/: %v\n", err)
+		case size > maxOutputBundleBytes:
+			res.Stderr += fmt.Sprintf("relay: out/ is %d MB, over the %d MB limit, files not returned\n", size>>20, maxOutputBundleBytes>>20)
+			os.Remove(path)
+		case path != "":
+			outputPath = path
+		}
 	}
 
 	// Report an execution deadline as a failed job with exit code -1.
@@ -257,11 +289,45 @@ func (a *Agent) execute(ctx context.Context, job store.Job) {
 	}
 
 	a.setPending(pending{
-		JobID:   job.ID,
-		Attempt: job.Attempts,
-		Result:  res,
+		JobID:      job.ID,
+		Attempt:    job.Attempts,
+		Result:     res,
+		OutputPath: outputPath,
 	})
 	a.flushPending(ctx)
+}
+
+// runInWorkdir fetches the job's files into dir if it has any, works out
+// what to run, and runs it. Setup failures come back as a failed result
+// with the reason on stderr, except a download worth retrying, which is
+// returned in Result.err for execute to leave unreported.
+func (a *Agent) runInWorkdir(ctx context.Context, job store.Job, dir string) Result {
+	argv := job.Command
+	if job.BundleBytes > 0 {
+		if err := a.fetchBundle(ctx, job, dir); err != nil {
+			if errors.Is(err, errBundleRetry) {
+				return Result{ExitCode: -1, err: err}
+			}
+			return Result{ExitCode: -1, Stderr: fmt.Sprintf("relay: can't get job files: %v\n", err)}
+		}
+		var err error
+		if argv, err = entryArgv(job.Entry, dir, job.Command, runtime.GOOS); err != nil {
+			return Result{ExitCode: -1, Stderr: "relay: " + err.Error() + "\n"}
+		}
+	}
+	// Every job gets an out/ folder to write results into.
+	if err := os.MkdirAll(filepath.Join(dir, outputDir), 0o755); err != nil {
+		return Result{ExitCode: -1, Stderr: fmt.Sprintf("relay: can't create out/: %v\n", err)}
+	}
+	return a.run(ctx, argv, dir)
+}
+
+// entryName is what the log calls the entry: the name, or the default.
+func entryName(entry string) string {
+	if entry == "" {
+		return "run.sh/run.ps1/run.cmd"
+	}
+	return entry
 }
 
 // formatJobTimeout presents whole-second limits without redundant zeros.
@@ -298,13 +364,19 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 
 	for {
 		a.Tick(ctx)
-		// Removed by the pool admin: stop the job and return nil, so
-		// relay-agent exits 0 instead of retrying a heartbeat that will
-		// never be accepted. The deferred wg.Wait lets the job wind down.
-		if a.removed {
+		// Removed by the pool admin: stop the job and return ErrRemoved, so
+		// relay-agent exits 1 with a clear reason instead of retrying a
+		// heartbeat that will never be accepted. The deferred wg.Wait lets
+		// the job wind down. A rejected token stops the same way with
+		// ErrBadToken.
+		if a.removed || a.rejected {
 			stopJob()
-			return nil
+			if a.removed {
+				return ErrRemoved
+			}
+			return ErrBadToken
 		}
+
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():

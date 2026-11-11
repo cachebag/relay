@@ -297,3 +297,47 @@ def test_pid_alive_reaps_an_exited_child():
     os.kill(proc.pid, 0)  # still visible to the kernel
     assert contribution._pid_alive(proc.pid) is False
     assert contribution._pid_alive(proc.pid) is False  # and stays dead
+
+
+REMOVED_LINE = "relay-agent: removed from this pool by the admin; ask for a new invite after the token is rotated"
+
+
+def test_start_keeps_the_agents_final_line(cfg, monkeypatch):
+    class ExitedProcess:
+        pid = 4321
+
+        def poll(self):
+            return 1
+
+    def fake_popen(argv, **options):
+        options["stdout"].write(
+            "relay-agent 0.2.9: host connecting to http://test:8080 as akrm\n"
+            "2026/11/04 15:00:00 removed from this pool by the admin\n"
+            f"{REMOVED_LINE}\n"
+        )
+        options["stdout"].flush()
+        return ExitedProcess()
+
+    monkeypatch.setattr(contribution.binaries, "find", lambda name: "relay-agent-test")
+    monkeypatch.setattr(contribution.subprocess, "Popen", fake_popen)
+
+    with pytest.raises(contribution.AgentExitedError) as exc:
+        contribution.start(SAVED, SCHED)
+
+    assert exc.value.line == REMOVED_LINE
+
+
+def test_cli_contribute_shows_agent_exit_line_verbatim(cfg, monkeypatch, capsys):
+    profile.save(SAVED)
+
+    def fake_start(prof, scheduler):
+        raise contribution.AgentExitedError(REMOVED_LINE)
+
+    monkeypatch.setattr(contribution, "start", fake_start)
+
+    with pytest.raises(SystemExit) as exc:
+        contribute.run_start(argparse.Namespace(scheduler=SCHED))
+
+    assert exc.value.code == 1
+    err_lines = capsys.readouterr().err.splitlines()
+    assert err_lines[-1] == REMOVED_LINE

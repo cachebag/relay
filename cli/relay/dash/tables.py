@@ -8,6 +8,7 @@ from textual.widgets import DataTable
 
 from relay.commands import jobs as jobs_cmd
 from relay.commands import nodes as nodes_cmd
+from relay.commands import status as status_cmd
 from relay.dash.theme import JOB_STYLES, OFFLINE, ONLINE
 
 # How often the dashboard asks the scheduler for nodes and jobs.
@@ -117,7 +118,7 @@ class JobsTable(LiveTable):
                         hostnames.get(node_id, node_id) or "-",
                         str(job.get("attempts", 0)),
                         jobs_cmd.age(job["created_at"]),
-                        jobs_cmd.shorten(" ".join(job["command"])),
+                        jobs_cmd.shorten(status_cmd.describe(job)),
                     ),
                 )
             )
