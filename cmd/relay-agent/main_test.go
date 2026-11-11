@@ -50,7 +50,7 @@ func TestPrintStartup(t *testing.T) {
 	printStartup(&testOutput, node, scheduler)
 
 	expected := fmt.Sprintf(
-		"relay-agent %s: test-machine (windows/amd64, 8 CPUs, 16.0 GB) joining http://localhost:8080 as akrm\n",
+		"relay-agent %s: test-machine (windows/amd64, 8 CPUs, 16.0 GB) connecting to http://localhost:8080 as akrm\n",
 		Version,
 	)
 

@@ -19,6 +19,14 @@ class ContributionError(RuntimeError):
     """A user-facing error while starting or managing the agent."""
 
 
+class AgentExitedError(ContributionError):
+    """relay-agent exited during startup; ``line`` is the last thing it printed."""
+
+    def __init__(self, line: str) -> None:
+        super().__init__(f"relay-agent exited during startup: {line}")
+        self.line = line
+
+
 def _pid_alive(pid: int) -> bool:
     """Check a PID without sending it a termination signal on Windows."""
     if pid <= 0:
@@ -297,5 +305,5 @@ def start(prof: dict, scheduler: str) -> tuple[int, Path]:
     if exited:
         _clear_tracking((pid_path, state_path))
         detail = _last_log_line(log_path, log_start)
-        raise ContributionError(f"relay-agent exited during startup: {detail}")
+        raise AgentExitedError(detail)
     return process.pid, log_path
