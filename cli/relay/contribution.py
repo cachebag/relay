@@ -208,7 +208,7 @@ def _stop_running(running: dict, paths: tuple[Path, Path]) -> dict:
     if _pid_alive(pid):
         raise ContributionError(
             f"sent stop signal to PID {pid}, but it is still running; "
-            "check the pool's relay-agent log and try status again"
+            f"check {paths[0].with_suffix('.log')} and try status again"
         )
 
     _clear_tracking(paths)

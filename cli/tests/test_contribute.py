@@ -204,6 +204,22 @@ def test_stop_signals_the_tracked_process(cfg, monkeypatch):
     assert not (cfg / "relay-agent.p1.state.json").exists()
 
 
+@pytest.mark.parametrize(
+    ("legacy", "log_name"),
+    [(False, "relay-agent.p1.log"), (True, "relay-agent.log")],
+)
+def test_stop_timeout_points_to_correct_log(cfg, monkeypatch, legacy, log_name):
+    tracked_agent(cfg, legacy=legacy)
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(contribution.os, "kill", lambda pid, sig: None)
+    monkeypatch.setattr(contribution, "STOP_SECONDS", 0)
+
+    with pytest.raises(contribution.ContributionError) as exc:
+        contribution.stop("p1")
+
+    assert str(cfg / log_name) in str(exc.value)
+
+
 def test_two_pools_run_independently(cfg, monkeypatch):
     second = {
         **SAVED,
@@ -354,7 +370,7 @@ def test_cli_contribute_uses_saved_login(cfg, monkeypatch, capsys):
 
     def fake_start(prof, scheduler):
         seen.append((prof, scheduler))
-        return 4321, cfg / "relay-agent.log"
+        return 4321, cfg / "relay-agent.p1.log"
 
     monkeypatch.setattr(contribution, "start", fake_start)
 
@@ -517,7 +533,7 @@ def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
     def fake_start(prof, scheduler):
         calls.append(("start", prof["pool_token"], scheduler))
         state["running"] = True
-        return 4321, cfg / "relay-agent.log"
+        return 4321, cfg / "relay-agent.p1.log"
 
     def fake_stop(pool_id):
         calls.append(("stop", pool_id))
