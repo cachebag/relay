@@ -84,4 +84,4 @@ relay nodes
 - The plain `:8080` listener stays up, so machines on your LAN can keep using `http://<your-ip>:8080`.
 - Tailscale state lives in `relay/tsnet` under your user config directory. Delete that folder to start over with a fresh node.
 - Funnel has a bandwidth cap. Fine for heartbeats and job output, which is capped at 1 MB. Not for moving big files.
-- Without `TS_AUTHKEY`, `relayd --public` exits with code 2 and says what to set.
+- `relayd --public` uses `TS_AUTHKEY` first, then the key saved by the CLI. If neither is available, it exits with code 2 and says what to set.

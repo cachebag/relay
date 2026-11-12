@@ -10,11 +10,11 @@ import (
 // Verifies that --public without TS_AUTHKEY is refused with the message
 // that says what to set.
 func TestPublicConfigNeedsAuthKey(t *testing.T) {
-	_, err := newPublicConfig("relay", "")
+	_, err := newPublicConfig("relay", "", "")
 	if !errors.Is(err, errNoAuthKey) {
 		t.Fatalf("got %v, want errNoAuthKey", err)
 	}
-	cfg, err := newPublicConfig("relay", "tskey-auth-test")
+	cfg, err := newPublicConfig("relay", "tskey-auth-test", "")
 	if err != nil {
 		t.Fatalf("with a key: %v", err)
 	}
