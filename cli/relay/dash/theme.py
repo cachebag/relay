@@ -78,6 +78,7 @@ DataTable > .datatable--cursor { background: $primary 25%; }
 #body { height: 1fr; }
 #submit-bar { height: 3; margin: 0 1; }
 #submit-bar .key { width: auto; height: 3; content-align: left middle; color: $text-muted; padding-right: 1; }
+#target { width: 9; height: 3; content-align: left middle; color: $accent; text-style: bold; }
 #submit { width: 1fr; border: tall $panel; background: $panel; }
 #submit:focus { border: tall $primary; }
 
