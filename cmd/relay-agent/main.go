@@ -77,6 +77,15 @@ func poolTokenDefault() string {
 	return os.Getenv("RELAY_POOL_TOKEN")
 }
 
+// The job cache can be overridden without changing the shared node identity.
+func cacheDirFlag(fs *flag.FlagSet) *string {
+	return fs.String(
+		"cache-dir",
+		os.Getenv("RELAY_AGENT_DIR"),
+		"directory for job folders and unreported results (or set RELAY_AGENT_DIR)",
+	)
+}
+
 // Returns RELAY_OWNER if set, otherwise the name of the user running the
 // agent, or an empty string if that can't be found.
 func ownerDefault() string {
@@ -157,6 +166,7 @@ func main() {
 	)
 	// Pointer to command-line 'owner' flag.
 	owner := ownerFlag(flag.CommandLine)
+	cacheDir := cacheDirFlag(flag.CommandLine)
 
 	// Leaves each job's folder in place after it finishes, for debugging.
 	keepWorkdir := flag.Bool(
@@ -218,7 +228,12 @@ func main() {
 
 	// Every 10 seconds, sends a heartbeat to the scheduler, then fetches,
 	// runs and reports the node's next job.
-	a := agent.New(*scheduler, *poolToken, node)
+	var a *agent.Agent
+	if *cacheDir != "" {
+		a = agent.NewWithCacheDir(*scheduler, *poolToken, node, *cacheDir)
+	} else {
+		a = agent.New(*scheduler, *poolToken, node)
+	}
 	if *keepWorkdir {
 		a.KeepWorkdir()
 	}

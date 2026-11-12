@@ -40,8 +40,8 @@ func TestRemovedAgentExitsLoudly(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Send log lines and the final line to the same buffer, like the
-	// terminal or relay-agent.log would see them.
+	// Send log lines and the final line to the same buffer,
+	// like the terminal or the selected agent's log file would see them.
 	var out bytes.Buffer
 	originalOutput := log.Writer()
 	log.SetOutput(&out)

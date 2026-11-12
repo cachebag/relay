@@ -113,6 +113,29 @@ func TestPoolTokenDefaultFallback(t *testing.T) {
 	}
 }
 
+// The explicit cache flag overrides RELAY_AGENT_DIR, leaving the default
+// empty so standalone agents continue using their existing cache layout.
+func TestCacheDirFlag(t *testing.T) {
+	t.Setenv("RELAY_AGENT_DIR", "/cache/from-env")
+	fs := flag.NewFlagSet("relay-agent", flag.ContinueOnError)
+	cacheDir := cacheDirFlag(fs)
+	if *cacheDir != "/cache/from-env" {
+		t.Fatalf("flag default = %q, want environment value", *cacheDir)
+	}
+	if err := fs.Parse([]string{"--cache-dir", "/cache/from-flag"}); err != nil {
+		t.Fatal(err)
+	}
+	if *cacheDir != "/cache/from-flag" {
+		t.Fatalf("flag value = %q, want explicit override", *cacheDir)
+	}
+
+	t.Setenv("RELAY_AGENT_DIR", "")
+	fallback := flag.NewFlagSet("relay-agent", flag.ContinueOnError)
+	if dir := *cacheDirFlag(fallback); dir != "" {
+		t.Errorf("default = %q, want empty for legacy cache behavior", dir)
+	}
+}
+
 // Tests that the help output includes an example showing
 // how to join a Relay pool.
 func TestPrintUsage(t *testing.T) {

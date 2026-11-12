@@ -74,14 +74,27 @@ func New(schedulerURL, poolToken string, n store.Node) *Agent {
 	return newAgent(schedulerURL, poolToken, n, defaultCacheDir())
 }
 
+// NewWithCacheDir keeps job folders and unreported results in cacheDir while
+// retaining the machine's shared node ID in the default cache directory.
+// Separate pools can therefore run concurrently without touching each other's
+// unfinished work.
+func NewWithCacheDir(schedulerURL, poolToken string, n store.Node, cacheDir string) *Agent {
+	return newAgentWithDirs(schedulerURL, poolToken, n, cacheDir, defaultCacheDir())
+}
+
 // newAgent is New with the cache directory chosen by the caller, so tests
 // can use a temp directory.
 func newAgent(schedulerURL, poolToken string, n store.Node, cacheDir string) *Agent {
+	return newAgentWithDirs(schedulerURL, poolToken, n, cacheDir, cacheDir)
+}
+
+// newAgentWithDirs allows tests to isolate both the job cache and node identity.
+func newAgentWithDirs(schedulerURL, poolToken string, n store.Node, cacheDir, identityDir string) *Agent {
 	// Chat apps turn the address into a link and add a trailing slash. The
 	// paths below start with one, and "//nodes/heartbeat" is redirected by
 	// the scheduler to a GET, which it then refuses. Strip it here once.
 	schedulerURL = strings.TrimRight(schedulerURL, "/")
-	n.ID = loadOrCreateNodeID(cacheDir, n.ID)
+	n.ID = loadOrCreateNodeID(identityDir, n.ID)
 	a := &Agent{
 		schedulerURL: schedulerURL,
 		poolToken:    poolToken,

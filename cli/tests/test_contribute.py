@@ -24,6 +24,13 @@ SAVED = {
     "pool_token": "tok",
     "name": "akrm",
 }
+SECOND = {
+    **SAVED,
+    "scheduler": "http://other:8080",
+    "pool_id": "p2",
+    "pool_name": "second",
+    "pool_token": "tok2",
+}
 
 
 @pytest.fixture
@@ -31,14 +38,39 @@ def cfg(tmp_path, monkeypatch):
     # Keep test PID, log, and profile files away from the real user's config.
     folder = tmp_path / "relay"
     monkeypatch.setattr(profile, "config_dir", lambda: folder)
+    monkeypatch.setattr(
+        contribution,
+        "_agent_cache_dir",
+        lambda pool_id: tmp_path / "cache" / "relay" / "agents" / pool_id,
+    )
     return folder
 
 
-def tracked_agent(cfg, pid=4321):
+def test_agent_cache_dir_uses_the_os_cache_location(tmp_path, monkeypatch):
+    if sys.platform == "win32":
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    elif sys.platform == "linux":
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    elif sys.platform == "darwin":
+        expected_root = Path.home() / "Library" / "Caches"
+        assert contribution._agent_cache_dir("p1") == (
+            expected_root / "relay" / "agents" / "p1"
+        )
+        return
+    else:
+        pytest.skip("supported OS cache locations only")
+
+    assert contribution._agent_cache_dir("p1") == (
+        tmp_path / "relay" / "agents" / "p1"
+    )
+
+
+def tracked_agent(cfg, pid=4321, pool_id="p1", pool_name="lab", legacy=False):
     cfg.mkdir(parents=True, exist_ok=True)
-    (cfg / "relay-agent.pid").write_text(f"{pid}\n", encoding="utf-8")
-    (cfg / "relay-agent.state.json").write_text(
-        json.dumps({"pid": pid, "pool_id": "p1", "pool_name": "lab"}),
+    prefix = "relay-agent" if legacy else f"relay-agent.{pool_id}"
+    (cfg / f"{prefix}.pid").write_text(f"{pid}\n", encoding="utf-8")
+    (cfg / f"{prefix}.state.json").write_text(
+        json.dumps({"pid": pid, "pool_id": pool_id, "pool_name": pool_name}),
         encoding="utf-8",
     )
 
@@ -78,13 +110,17 @@ def test_start_launches_agent_with_saved_pool(cfg, monkeypatch):
         "tok",
         "--owner",
         "akrm",
+        "--cache-dir",
+        str(cfg.parent / "cache" / "relay" / "agents" / "p1"),
     ]
     assert seen["options"]["stdin"] == subprocess.DEVNULL
     assert seen["options"]["stderr"] == subprocess.STDOUT
     assert Path(seen["options"]["stdout"].name) == log_path
-    assert log_path == cfg / "relay-agent.log"
-    assert (cfg / "relay-agent.pid").read_text(encoding="utf-8") == "4321\n"
-    assert json.loads((cfg / "relay-agent.state.json").read_text())["pool_id"] == "p1"
+    assert log_path == cfg / "relay-agent.p1.log"
+    assert (cfg / "relay-agent.p1.pid").read_text(encoding="utf-8") == "4321\n"
+    assert (
+        json.loads((cfg / "relay-agent.p1.state.json").read_text())["pool_id"] == "p1"
+    )
 
     if sys.platform == "win32":
         assert seen["options"]["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP
@@ -112,8 +148,8 @@ def test_start_reports_last_log_line_when_agent_exits(cfg, monkeypatch):
         contribution.start(SAVED, SCHED)
 
     # Do not leave a PID pointing at a process that already exited.
-    assert not (cfg / "relay-agent.pid").exists()
-    assert not (cfg / "relay-agent.state.json").exists()
+    assert not (cfg / "relay-agent.p1.pid").exists()
+    assert not (cfg / "relay-agent.p1.state.json").exists()
 
 
 def test_start_rejects_an_existing_agent(cfg, monkeypatch):
@@ -129,10 +165,11 @@ def test_status_reads_the_tracked_pool(cfg, monkeypatch):
     tracked_agent(cfg)
     monkeypatch.setattr(contribution, "_pid_alive", lambda pid: True)
 
-    assert contribution.status() == {
+    assert contribution.status("p1") == {
         "pid": 4321,
         "pool_id": "p1",
         "pool_name": "lab",
+        "scheduler": None,
     }
 
 
@@ -140,9 +177,9 @@ def test_status_removes_stale_pid_and_state(cfg, monkeypatch):
     tracked_agent(cfg)
     monkeypatch.setattr(contribution, "_pid_alive", lambda pid: False)
 
-    assert contribution.status() is None
-    assert not (cfg / "relay-agent.pid").exists()
-    assert not (cfg / "relay-agent.state.json").exists()
+    assert contribution.status("p1") is None
+    assert not (cfg / "relay-agent.p1.pid").exists()
+    assert not (cfg / "relay-agent.p1.state.json").exists()
 
 
 def test_stop_signals_the_tracked_process(cfg, monkeypatch):
@@ -156,13 +193,165 @@ def test_stop_signals_the_tracked_process(cfg, monkeypatch):
     monkeypatch.setattr(contribution, "_pid_alive", lambda pid: not signals)
     monkeypatch.setattr(contribution.os, "kill", fake_kill)
 
-    stopped = contribution.stop()
+    stopped = contribution.stop("p1")
 
     expected_signal = (
         signal.CTRL_BREAK_EVENT if sys.platform == "win32" else signal.SIGTERM
     )
     assert signals == [(4321, expected_signal)]
     assert stopped["pool_name"] == "lab"
+    assert not (cfg / "relay-agent.p1.pid").exists()
+    assert not (cfg / "relay-agent.p1.state.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("legacy", "log_name"),
+    [(False, "relay-agent.p1.log"), (True, "relay-agent.log")],
+)
+def test_stop_timeout_points_to_correct_log(cfg, monkeypatch, legacy, log_name):
+    tracked_agent(cfg, legacy=legacy)
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(contribution.os, "kill", lambda pid, sig: None)
+    monkeypatch.setattr(contribution, "STOP_SECONDS", 0)
+
+    with pytest.raises(contribution.ContributionError) as exc:
+        contribution.stop("p1")
+
+    assert str(cfg / log_name) in str(exc.value)
+
+
+def test_two_pools_run_independently(cfg, monkeypatch):
+    second = {
+        **SAVED,
+        "scheduler": "http://other:8080",
+        "pool_id": "p2",
+        "pool_name": "second",
+        "pool_token": "tok2",
+    }
+    next_pid = iter([4321, 5678])
+
+    class FakeProcess:
+        def __init__(self):
+            self.pid = next(next_pid)
+
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(contribution.binaries, "find", lambda name: "relay-agent-test")
+    launched = []
+
+    def fake_popen(argv, **options):
+        launched.append(argv)
+        return FakeProcess()
+
+    monkeypatch.setattr(contribution.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: True)
+    monkeypatch.setattr(contribution, "STARTUP_SECONDS", 0)
+
+    pid1, log1 = contribution.start(SAVED, SCHED)
+    pid2, log2 = contribution.start(second, second["scheduler"])
+
+    assert (pid1, pid2) == (4321, 5678)
+    assert log1 == cfg / "relay-agent.p1.log"
+    assert log2 == cfg / "relay-agent.p2.log"
+    assert launched[0][-2:] == [
+        "--cache-dir", str(cfg.parent / "cache" / "relay" / "agents" / "p1")
+    ]
+    assert launched[1][-2:] == [
+        "--cache-dir", str(cfg.parent / "cache" / "relay" / "agents" / "p2")
+    ]
+    assert {state["pool_id"] for state in contribution.statuses()} == {"p1", "p2"}
+    assert {state["pid"] for state in contribution.statuses()} == {4321, 5678}
+
+    with pytest.raises(contribution.ContributionError, match="already contributing"):
+        contribution.start(SAVED, SCHED)
+
+
+def test_stopping_one_pool_keeps_the_other(cfg, monkeypatch):
+    tracked_agent(cfg, pid=4321)
+    tracked_agent(cfg, pid=5678, pool_id="p2", pool_name="second")
+    stopped_pids = set()
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid not in stopped_pids)
+    monkeypatch.setattr(contribution.os, "kill", lambda pid, sig: stopped_pids.add(pid))
+
+    assert contribution.stop("p1")["pid"] == 4321
+    assert contribution.status("p1") is None
+    assert contribution.status("p2")["pid"] == 5678
+    assert (cfg / "relay-agent.p2.pid").exists()
+
+
+def test_stale_pool_tracking_does_not_clear_other_pools(cfg, monkeypatch):
+    tracked_agent(cfg, pid=4321)
+    tracked_agent(cfg, pid=5678, pool_id="p2", pool_name="second")
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid == 5678)
+
+    assert [agent["pool_id"] for agent in contribution.statuses()] == ["p2"]
+    assert not (cfg / "relay-agent.p1.pid").exists()
+    assert not (cfg / "relay-agent.p1.state.json").exists()
+    assert (cfg / "relay-agent.p2.pid").exists()
+
+
+def test_stop_all_attempts_other_pools_if_one_stop_fails(cfg, monkeypatch):
+    tracked_agent(cfg, pid=4321)
+    tracked_agent(cfg, pid=5678, pool_id="p2", pool_name="second")
+    stopped = set()
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid not in stopped)
+
+    def fake_kill(pid, sig):
+        if pid == 4321:
+            raise PermissionError("permission denied")
+        stopped.add(pid)
+
+    monkeypatch.setattr(contribution.os, "kill", fake_kill)
+
+    with pytest.raises(
+        contribution.ContributionError, match="could not stop every agent"
+    ):
+        contribution.stop_all()
+
+    assert stopped == {5678}
+    assert [agent["pool_id"] for agent in contribution.statuses()] == ["p1"]
+
+
+def test_scheduler_refusal_is_reported_without_stopping_other_pool(cfg, monkeypatch):
+    tracked_agent(cfg, pid=4321)
+    second = {**SECOND, "scheduler": SCHED}  # same scheduler, different pool
+
+    class RefusedProcess:
+        pid = 5678
+
+        def poll(self):
+            return 1
+
+    def fake_popen(argv, **options):
+        options["stdout"].write("cannot join two pools on this scheduler\n")
+        options["stdout"].flush()
+        return RefusedProcess()
+
+    monkeypatch.setattr(contribution.binaries, "find", lambda name: "relay-agent-test")
+    monkeypatch.setattr(contribution.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid == 4321)
+
+    with pytest.raises(
+        contribution.ContributionError,
+        match="cannot join two pools on this scheduler",
+    ):
+        contribution.start(second, SCHED)
+
+    assert contribution.status("p1")["pid"] == 4321
+    assert contribution.status("p2") is None
+    assert not (cfg / "relay-agent.p2.pid").exists()
+
+
+def test_older_single_agent_remains_visible_and_stoppable(cfg, monkeypatch):
+    tracked_agent(cfg, legacy=True)
+    stopped_pids = set()
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid not in stopped_pids)
+    monkeypatch.setattr(contribution.os, "kill", lambda pid, sig: stopped_pids.add(pid))
+
+    assert contribution.status("p1")["pid"] == 4321
+    assert [state["pid"] for state in contribution.statuses()] == [4321]
+    assert contribution.stop("p1")["pid"] == 4321
     assert not (cfg / "relay-agent.pid").exists()
     assert not (cfg / "relay-agent.state.json").exists()
 
@@ -181,7 +370,7 @@ def test_cli_contribute_uses_saved_login(cfg, monkeypatch, capsys):
 
     def fake_start(prof, scheduler):
         seen.append((prof, scheduler))
-        return 4321, cfg / "relay-agent.log"
+        return 4321, cfg / "relay-agent.p1.log"
 
     monkeypatch.setattr(contribution, "start", fake_start)
 
@@ -192,15 +381,134 @@ def test_cli_contribute_uses_saved_login(cfg, monkeypatch, capsys):
 
 
 def test_cli_contribute_status_and_stop(cfg, monkeypatch, capsys):
+    profile.save(SAVED)
     state = {"pid": 4321, "pool_name": "lab", "pool_id": "p1"}
-    monkeypatch.setattr(contribution, "status", lambda: state)
-    monkeypatch.setattr(contribution, "stop", lambda: state)
+    monkeypatch.setattr(contribution, "statuses", lambda: [state])
+    monkeypatch.setattr(
+        contribution, "stop", lambda pool_id: state if pool_id == "p1" else None
+    )
 
     contribute.run_status(argparse.Namespace())
     assert "contributing to lab (p1)" in capsys.readouterr().out
 
     contribute.run_stop(argparse.Namespace())
     assert "stopped contributing to lab (p1)" in capsys.readouterr().out
+
+
+def test_cli_named_pool_uses_its_scheduler_without_switching(cfg, monkeypatch, capsys):
+    profile.save(SAVED)
+    profile.save(SECOND)
+    started = []
+
+    def fake_start(prof, scheduler):
+        started.append((prof["pool_id"], scheduler, prof["pool_token"]))
+        return 4321, cfg / "relay-agent.p1.log"
+
+    monkeypatch.setattr(contribution, "start", fake_start)
+    contribute.run_start(
+        argparse.Namespace(
+            scheduler=SECOND["scheduler"], pool="lab", scheduler_given=False
+        )
+    )
+
+    assert started == [("p1", SCHED, "tok")]
+    assert profile.load()["pool_id"] == "p2"
+    assert "contributing to lab" in capsys.readouterr().out
+
+
+def test_cli_explicit_scheduler_overrides_selected_pool(cfg, monkeypatch):
+    profile.save(SAVED)
+    started = []
+    monkeypatch.setattr(
+        contribution,
+        "start",
+        lambda prof, scheduler: (started.append(scheduler) or 4321, cfg / "agent.log"),
+    )
+    contribute.run_start(
+        argparse.Namespace(
+            scheduler="http://override:8080", scheduler_given=True, pool="lab"
+        )
+    )
+    assert started == ["http://override:8080"]
+
+
+def test_cli_status_lists_every_pool(cfg, monkeypatch, capsys):
+    states = [
+        {"pid": 4321, "pool_name": "lab", "pool_id": "p1", "scheduler": SCHED},
+        {
+            "pid": 5678,
+            "pool_name": "second",
+            "pool_id": "p2",
+            "scheduler": SECOND["scheduler"],
+        },
+    ]
+    monkeypatch.setattr(contribution, "statuses", lambda: states)
+    contribute.run_status(argparse.Namespace())
+    output = capsys.readouterr().out
+    assert "contributing to lab (p1) (PID 4321) at http://test:8080" in output
+    assert "contributing to second (p2) (PID 5678) at http://other:8080" in output
+
+
+def test_cli_stop_named_pool_without_changing_current(cfg, monkeypatch, capsys):
+    profile.save(SAVED)
+    profile.save(SECOND)
+    tracked_agent(cfg, pid=4321)
+    tracked_agent(cfg, pid=5678, pool_id="p2", pool_name="second")
+    stopped = set()
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid not in stopped)
+    monkeypatch.setattr(contribution.os, "kill", lambda pid, sig: stopped.add(pid))
+
+    contribute.run_stop(argparse.Namespace(pool="lab", all=False))
+
+    assert stopped == {4321}
+    assert contribution.status("p2")["pid"] == 5678
+    assert profile.load()["pool_id"] == "p2"
+    assert "stopped contributing to lab (p1)" in capsys.readouterr().out
+
+
+def test_cli_stop_all_includes_agents_without_saved_logins(cfg, monkeypatch, capsys):
+    tracked_agent(cfg, pid=4321)
+    tracked_agent(cfg, pid=5678, pool_id="p2", pool_name="second")
+    stopped = set()
+    monkeypatch.setattr(contribution, "_pid_alive", lambda pid: pid not in stopped)
+    monkeypatch.setattr(contribution.os, "kill", lambda pid, sig: stopped.add(pid))
+
+    contribute.run_stop(argparse.Namespace(all=True))
+
+    assert stopped == {4321, 5678}
+    assert contribution.statuses() == []
+    output = capsys.readouterr().out
+    assert "stopped contributing to lab (p1)" in output
+    assert "stopped contributing to second (p2)" in output
+
+
+def test_cli_unknown_or_ambiguous_pool_is_reported(cfg, monkeypatch, capsys):
+    profile.save(SAVED)
+    profile.save({**SECOND, "pool_name": "lab"})
+    monkeypatch.setattr(contribution, "start", lambda *args: pytest.fail("started"))
+
+    with pytest.raises(SystemExit) as error:
+        contribute.run_start(argparse.Namespace(scheduler=SCHED, pool="lab"))
+    assert error.value.code == 1
+    assert "ambiguous" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as error:
+        contribute.run_start(argparse.Namespace(scheduler=SCHED, pool="missing"))
+    assert error.value.code == 1
+    assert "not saved" in capsys.readouterr().err
+
+
+def test_cli_contribute_argument_parsing():
+    parser = argparse.ArgumentParser()
+    contribute.register(parser.add_subparsers(dest="command"))
+    assert parser.parse_args(["contribute", "--pool", "lab"]).pool == "lab"
+    assert parser.parse_args(["contribute", "status"]).func == contribute.run_status
+    args = parser.parse_args(["contribute", "stop", "--pool", "lab"])
+    assert args.pool == "lab" and args.all is False
+    args = parser.parse_args(["contribute", "stop", "--all"])
+    assert args.all is True
+    with pytest.raises(SystemExit):
+        parser.parse_args(["contribute", "stop", "--all", "--pool", "lab"])
 
 
 def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
@@ -211,20 +519,29 @@ def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
     state = {"running": False}
     calls = []
 
-    def fake_status():
-        return {"pid": 4321, "pool_name": "lab"} if state["running"] else None
+    def fake_status(pool_id):
+        assert pool_id == "p1"
+        return (
+            {"pid": 4321, "pool_id": "p1", "pool_name": "lab"}
+            if state["running"]
+            else None
+        )
+
+    def fake_statuses():
+        return [fake_status("p1")] if state["running"] else []
 
     def fake_start(prof, scheduler):
         calls.append(("start", prof["pool_token"], scheduler))
         state["running"] = True
-        return 4321, cfg / "relay-agent.log"
+        return 4321, cfg / "relay-agent.p1.log"
 
-    def fake_stop():
-        calls.append(("stop",))
+    def fake_stop(pool_id):
+        calls.append(("stop", pool_id))
         state["running"] = False
         return {"pid": 4321, "pool_name": "lab"}
 
     monkeypatch.setattr(contribution, "status", fake_status)
+    monkeypatch.setattr(contribution, "statuses", fake_statuses)
     monkeypatch.setattr(contribution, "start", fake_start)
     monkeypatch.setattr(contribution, "stop", fake_stop)
 
@@ -252,7 +569,76 @@ def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
             assert not indicator.has_class("running")
 
     asyncio.run(run())
-    assert calls == [("start", "tok", SCHED), ("stop",)]
+    assert calls == [("start", "tok", SCHED), ("stop", "p1")]
+
+
+def test_dashboard_a_only_controls_selected_pool_and_shows_total(cfg, monkeypatch):
+    profile.save(SAVED)
+    profile.save(SECOND)
+    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token: [])
+    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token: [])
+
+    # Pool A is already contributing when the dashboard opens on pool B.
+    running = {"p1": {"pid": 4321, "pool_id": "p1", "pool_name": "lab"}}
+    calls = []
+
+    def fake_status(pool_id):
+        return running.get(pool_id)
+
+    def fake_start(prof, scheduler):
+        pool_id = prof["pool_id"]
+        calls.append(("start", pool_id, scheduler))
+        running[pool_id] = {
+            "pid": 5678,
+            "pool_id": pool_id,
+            "pool_name": prof["pool_name"],
+        }
+        return 5678, cfg / f"relay-agent.{pool_id}.log"
+
+    def fake_stop(pool_id):
+        calls.append(("stop", pool_id))
+        return running.pop(pool_id)
+
+    monkeypatch.setattr(contribution, "statuses", lambda: list(running.values()))
+    monkeypatch.setattr(contribution, "status", fake_status)
+    monkeypatch.setattr(contribution, "start", fake_start)
+    monkeypatch.setattr(contribution, "stop", fake_stop)
+
+    app = DashApp(SECOND["scheduler"])
+
+    async def run():
+        async with app.run_test(size=(180, 40)) as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            indicator = app.query_one("#contribution", Static)
+            assert "1 other pool active" in str(indicator.render())
+
+            # A starts B, leaving A alone; the top bar now counts both.
+            await pilot.press("a")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert set(running) == {"p1", "p2"}
+            assert "contributing to 2 pools" in str(indicator.render())
+
+            # Switching to A then pressing A must stop A, not the former B.
+            app.use_profile(profile.use("p1"))
+            await pilot.pause()
+            await pilot.press("a")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert set(running) == {"p2"}
+            assert "1 other pool active" in str(indicator.render())
+
+            # The remaining pool is still correctly shown when selected.
+            app.use_profile(profile.use("p2"))
+            await pilot.pause()
+            assert "this machine: contributing" in str(indicator.render())
+
+    asyncio.run(run())
+    assert calls == [
+        ("start", "p2", SECOND["scheduler"]),
+        ("stop", "p1"),
+    ]
 
 
 def test_dashboard_ignores_toggle_while_busy(cfg, monkeypatch):
@@ -260,7 +646,8 @@ def test_dashboard_ignores_toggle_while_busy(cfg, monkeypatch):
     monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token: [])
     monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token: [])
     calls = []
-    monkeypatch.setattr(contribution, "status", lambda: None)
+    monkeypatch.setattr(contribution, "status", lambda pool_id: None)
+    monkeypatch.setattr(contribution, "statuses", list)
     monkeypatch.setattr(contribution, "start", lambda *args: calls.append("start"))
 
     app = DashApp(SCHED)

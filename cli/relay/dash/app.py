@@ -90,7 +90,7 @@ class DashApp(App[None]):
     ENABLE_COMMAND_PALETTE = False
 
     BINDINGS: ClassVar[list[BindingType]] = [
-        # A starts or stops the agent on this machine.
+        # A starts or stops the agent for the selected pool only.
         Binding("a", "toggle_contribution", "Contribute"),
         Binding("s", "submit", "Submit"),
         Binding("k", "credits", "Credits"),
@@ -246,7 +246,7 @@ class DashApp(App[None]):
         self.query_one("#error", Label).update(self.error or "")
 
     def redraw_contribution(self) -> None:
-        """Update the dashboard indicator from the locally tracked agent."""
+        """Show machine-wide agent count and the selected pool's state."""
         indicator = self.query_one("#contribution", Static)
 
         if self._contribution_busy:
@@ -256,19 +256,31 @@ class DashApp(App[None]):
             return
 
         try:
-            running = contribution.status()
-        except contribution.ContributionError, OSError:
+            running_agents = contribution.statuses()
+        except (contribution.ContributionError, OSError):
             indicator.update("this machine: status unavailable")
             indicator.set_class(False, "running")
             return
 
-        label = (
-            "this machine: contributing"
-            if running is not None
-            else "this machine: not contributing"
+        pool_id = self.prof.get("pool_id")
+        current_running = (
+            any(agent.get("pool_id") == pool_id for agent in running_agents)
+            if pool_id
+            else False
         )
+        count = len(running_agents)
+        if count > 1:
+            label = f"this machine: contributing to {count} pools"
+            if not current_running:
+                label += " (not current pool)"
+        elif current_running:
+            label = "this machine: contributing"
+        elif count == 1:
+            label = "this pool: not contributing (1 other pool active)"
+        else:
+            label = "this machine: not contributing"
         indicator.update(label)
-        indicator.set_class(running is not None, "running")
+        indicator.set_class(count > 0, "running")
 
     # -- actions ----------------------------------------------------------
 
@@ -276,12 +288,17 @@ class DashApp(App[None]):
         self.refresh_data()
 
     def action_toggle_contribution(self) -> None:
-        """Toggle the local agent without blocking the dashboard UI."""
+        """Toggle only the selected pool's agent without blocking the UI."""
         if self._contribution_busy:
             return
 
+        pool_id = self.prof.get("pool_id")
+        if not pool_id:
+            self.notify("select a pool before contributing", severity="warning")
+            return
+
         try:
-            running = contribution.status()
+            running = contribution.status(pool_id)
         except (contribution.ContributionError, OSError) as exc:
             self.notify(str(exc), severity="error")
             return
@@ -290,7 +307,8 @@ class DashApp(App[None]):
             self.notify("not logged in, run relay login first", severity="warning")
             return
 
-        # Capture credentials now in case the user switches pools later.
+        # Capture the pool ID and credentials now so an in-flight operation
+        # cannot start or stop the wrong agent after a pool switch.
         self._contribution_busy = True
         self._contribution_action = "stopping" if running else "starting"
         self.redraw_contribution()
@@ -302,11 +320,13 @@ class DashApp(App[None]):
     def toggle_contribution(
         self, was_running: bool, prof: dict, scheduler: str
     ) -> None:
-        """Start or stop through the same functions used by the CLI."""
+        """Start or stop the captured pool through the shared CLI manager."""
         try:
             if was_running:
-                contribution.stop()
-                message = "stopped contributing"
+                contribution.stop(prof["pool_id"])
+                message = (
+                    f"stopped contributing to {prof.get('pool_name', 'your pool')}"
+                )
             else:
                 contribution.start(prof, scheduler)
                 message = f"contributing to {prof.get('pool_name', 'your pool')}"
