@@ -11,6 +11,7 @@ from relay.commands import (
     contribute,
     credits,
     dash,
+    fetch,
     install,
     jobs,
     logs,
@@ -64,6 +65,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="subcommand")
     nodes.register(sub)
     jobs.register(sub)
+    fetch.register(sub)
     logs.register(sub)
     submit.register(sub)
     status.register(sub)
