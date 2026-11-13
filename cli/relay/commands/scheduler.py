@@ -4,7 +4,11 @@ import getpass
 import os
 import re
 import shlex
+import shutil
+import sqlite3
 import time
+from contextlib import closing
+from pathlib import Path
 
 import httpx
 
@@ -54,6 +58,19 @@ def register(sub) -> None:
 
     ss = ps.add_parser("status", help="is relayd running, and where")
     ss.set_defaults(func=run_status)
+
+    bk = ps.add_parser("backup", help="copy relay.db with SQLite's online backup")
+    bk.add_argument(
+        "--to",
+        type=Path,
+        default=None,
+        help="destination file (default relay-<date>.db in the current folder)",
+    )
+    bk.set_defaults(func=run_backup)
+
+    rs = ps.add_parser("restore", help="replace relay.db with a backup file")
+    rs.add_argument("file", type=Path, help="database file to restore")
+    rs.set_defaults(func=run_restore)
 
 
 def authkey() -> str:
@@ -389,3 +406,136 @@ def run_status(args) -> None:
             print(f"  public address:  {public_url}")
     print(f"  admin token:     {'saved' if srv.get('admin_token') else 'not saved'}")
     print(f"  log: {procs.log_path(NAME)}")
+
+
+def run_backup(args) -> None:
+    server = profile.server()
+    token = os.environ.get("RELAY_ADMIN_TOKEN") or server.get("admin_token")
+    if not token:
+        raise SystemExit(
+            "relay scheduler backup: no server admin token saved; "
+            "run relay scheduler start or set RELAY_ADMIN_TOKEN"
+        )
+
+    scheduler_url = args.scheduler
+    if not getattr(args, "scheduler_given", True):
+        scheduler_url = (
+            server.get("public_url") or server.get("address") or args.scheduler
+        )
+
+    dest = args.to if args.to is not None else Path(
+        f"relay-{time.strftime('%Y-%m-%d')}.db"
+    )
+    if dest.exists():
+        raise SystemExit(f"relay scheduler backup: {dest} already exists")
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.parent / f"{dest.name}.part"
+    client = httpx.Client(timeout=300)
+
+    try:
+        with client.stream(
+            "POST",
+            f"{scheduler_url.rstrip('/')}/admin/backup",
+            headers=profile.bearer(token),
+        ) as response:
+            if not response.is_success:
+                response.read()
+            response.raise_for_status()
+            with tmp.open("wb") as f:
+                for chunk in response.iter_bytes():
+                    f.write(chunk)
+        tmp.replace(dest)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 401:
+            raise SystemExit(
+                "relay scheduler backup: the server admin token was rejected"
+            )
+        raise SystemExit(
+            f"relay scheduler backup: {exc.response.status_code} "
+            f"{exc.response.text.strip()}"
+        )
+    finally:
+        client.close()
+        tmp.unlink(missing_ok=True)
+
+    print(f"database copied to {dest}")
+
+
+def _validate_backup(path: Path) -> None:
+    # Validate a standalone snapshot without creating or using WAL sidecars.
+    uri = f"{path.resolve().as_uri()}?mode=ro&immutable=1"
+    required_columns = {
+        "nodes": {"id", "hostname", "os", "arch", "cpus", "mem_bytes", "last_seen"},
+        "pools": {"id", "name", "token", "created_at"},
+        "jobs": {"id", "command", "status", "node_id", "attempts", "created_at"},
+    }
+    try:
+        # Connection's own context manager does not close it on exit.
+        with closing(sqlite3.connect(uri, uri=True)) as database:
+            if database.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
+                raise ValueError("SQLite integrity check failed")
+            tables = {
+                row[0] for row in database.execute(
+                    "SELECT name FROM sqlite_schema WHERE type = 'table'"
+                )
+            }
+            for table, required in required_columns.items():
+                if table not in tables:
+                    raise ValueError(f"missing Relay table: {table}")
+                columns = {
+                    row[0] for row in database.execute(
+                        "SELECT name FROM pragma_table_info(?)", (table,)
+                    )
+                }
+                if not required <= columns:
+                    raise ValueError(f"missing Relay columns in {table}")
+    except (sqlite3.Error, ValueError) as exc:
+        raise SystemExit(f"relay scheduler restore: invalid backup: {exc}") from exc
+
+
+def run_restore(args) -> None:
+    if procs.running(NAME) is not None:
+        raise SystemExit(
+            "relay scheduler restore: relayd is running; "
+            "stop it first with relay scheduler stop"
+        )
+
+    try:
+        if services.installed() and services.state() in {
+            "active", "activating", "reloading", "deactivating"
+        }:
+            raise SystemExit(
+                "relay scheduler restore: relayd service is running; stop it first"
+            )
+    except services.ServiceError as exc:
+        raise SystemExit(f"relay scheduler restore: {exc}") from exc
+
+    source = args.file.expanduser()
+    if not source.is_file():
+        raise SystemExit(f"relay scheduler restore: {args.file} is not a file")
+
+    dest = profile.config_dir() / "relay.db"
+    if source.resolve() == dest.resolve():
+        raise SystemExit(
+            "relay scheduler restore: source and relay.db are the same file"
+        )
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    temporary = dest.parent / "relay.db.restoring"
+    temporary.unlink(missing_ok=True)
+
+    try:
+        shutil.copyfile(source, temporary)
+        _validate_backup(temporary)
+        os.replace(temporary, dest)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    # Stale WAL sidecars would otherwise belong to the old database.
+    for suffix in ("-wal", "-shm"):
+        side = Path(f"{dest}{suffix}")
+        if side.exists():
+            side.unlink()
+
+    print(f"database restored from {source} to {dest}")

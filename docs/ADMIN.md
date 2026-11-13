@@ -154,3 +154,26 @@ relayd public address: https://relay.tail1234.ts.net
 ```
 
 Use that as `--scheduler` in `relay pool create` and the invite it prints is ready to share. The plain `:8080` listener stays up too, so machines on your LAN can keep using the local address. Tailscale state lives in `relay/tsnet` under your user config directory (`~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows), so the address survives restarts. Funnel has a bandwidth cap, which is fine for heartbeats and job output (capped at 1 MB) but not for bulk data.
+
+## Move the scheduler to another machine
+
+Back up the database while `relayd` is running:
+
+```sh
+relay scheduler backup --to relay-11-12-2026.db
+```
+
+Copy that file to the new machine, install the CLI and binaries there, stop
+any `relayd` already running there, restore the database into the config
+folder, and start:
+
+```sh
+relay install
+relay scheduler restore relay-11-12-2026.db
+relay scheduler start
+```
+
+The restored database contains the pools, join tokens, pool admin-token hashes,
+nodes, jobs, and credits. Keep the server admin token: the backup and the
+restored database use the same token's hash, so the same server admin token
+still works. Do not restore while `relayd` is running.

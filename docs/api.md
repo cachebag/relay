@@ -24,6 +24,7 @@ The API currently supports:
 - Accepting job results
 - Serving job output
 - Job files: a folder sent with a job, and the files it writes to `out/`
+- Database backup
 
 ## Health Check
 
@@ -1347,6 +1348,26 @@ If the job does not exist, belongs to another pool, or wrote nothing to `out/`:
 ```text
 404 Not Found
 ```
+
+## Back Up the Database
+
+### POST /admin/backup
+
+Copies `relay.db` with SQLite's online backup and returns the database file.
+Requires the server admin token.
+
+```http
+POST /admin/backup
+Authorization: Bearer <server-admin-token>
+```
+
+Success response:
+
+- `200 OK`
+- `Content-Type: application/octet-stream`
+- body: the SQLite database bytes
+
+`relay scheduler backup` calls this endpoint.
 
 ## Manual Job Endpoint Testing
 
