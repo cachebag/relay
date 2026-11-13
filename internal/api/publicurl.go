@@ -9,6 +9,9 @@ type handlerConfig struct {
 	// bundles is where job files are kept. Nil means this scheduler
 	// doesn't take them, and uploads get 503.
 	bundles *store.Bundles
+	// db is the scheduler's SQLite database. Nil means this handler
+	// cannot serve /admin/backup.
+	db *store.SQLite
 }
 
 // WithBundles turns on job files, stored in b.
@@ -23,6 +26,14 @@ func WithPublicURL(get func() string) Option {
 		c.publicURL = get
 	}
 }
+
+// WithDatabase enables the database backup endpoint.
+func WithDatabase(db *store.SQLite) Option {
+	return func(c *handlerConfig) {
+		c.db = db
+	}
+}
+
 func newHandlerConfig(opts []Option) handlerConfig {
 	c := handlerConfig{}
 	for _, opt := range opts {

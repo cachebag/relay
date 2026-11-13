@@ -3,9 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 type SQLite struct {
@@ -66,6 +67,45 @@ func NewSQLite(path string) (*SQLite, error) {
 		return nil, err
 	}
 	return &SQLite{db: db}, nil
+}
+
+// backupper is the driver interface modernc.org/sqlite implements.
+type backupper interface {
+	NewBackup(string) (*sqlite.Backup, error)
+}
+
+// Backup writes an online snapshot of this live database to destPath.
+// The destination is created by SQLite, so destPath must not already exist.
+func (s *SQLite) Backup(ctx context.Context, destPath string) error {
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	return conn.Raw(func(driverConn any) error {
+		driver, ok := driverConn.(backupper)
+		if !ok {
+			return fmt.Errorf("database driver does not support backup")
+		}
+
+		backup, err := driver.NewBackup(destPath)
+		if err != nil {
+			return err
+		}
+
+		more, err := backup.Step(-1)
+		if err != nil {
+			_ = backup.Finish()
+			return err
+		}
+		if more {
+			_ = backup.Finish()
+			return fmt.Errorf("backup did not finish")
+		}
+
+		return backup.Finish()
+	})
 }
 
 func (s *SQLite) Upsert(_ context.Context, n Node) error {
