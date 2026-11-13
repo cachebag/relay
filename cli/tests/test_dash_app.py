@@ -422,6 +422,50 @@ def test_submit_box_posts_the_command(cfg, calls):
     assert notes == ["submitted j2"]
 
 
+def test_tab_in_the_submit_box_picks_the_os(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("s")
+        box = app.query_one("#submit", Input)
+        target = app.query_one("#target")
+        assert text(target) == "any"
+        await pilot.press("tab", "tab", "tab")
+        assert text(target) == "windows"
+        assert box.has_focus
+        box.value = "hostname"
+        await pilot.press("enter")
+        await settle(pilot)
+        # The pick sticks for the next command, and wraps back to any.
+        assert text(target) == "windows"
+        await pilot.press("tab")
+        assert text(target) == "any"
+
+    drive(app, steps)
+    assert calls.bodies[("POST", "/jobs")] == {
+        "command": ["hostname"],
+        "submitter": "akrm",
+        "requires": {"os": "windows"},
+    }
+
+
+def test_jobs_table_shows_what_a_job_requires(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        jobs = app.query_one("#jobs")
+        jobs.show([{**JOB, "requires": {"os": "darwin"}}, OLDER_JOB], {})
+        assert [str(c.label) for c in jobs.columns.values()][3] == "REQUIRES"
+        assert str(jobs.get_row_at(0)[3]) == "darwin"
+        assert str(jobs.get_row_at(1)[3]) == "-"
+
+    drive(app, steps)
+
+
 def test_enter_on_a_job_shows_its_output(cfg, calls):
     profile.save(SAVED)
     app = DashApp(SCHED)

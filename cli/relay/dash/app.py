@@ -26,6 +26,9 @@ from relay.dash.tables import REFRESH_S, JobsTable, NodesTable, totals
 
 AGENT = "relay-agent"
 
+# What the run box's target picker cycles through. "any" sends no requirement.
+TARGETS = ("any", "linux", "darwin", "windows")
+
 
 def invite_line(scheduler: str, token: str) -> str:
     return f"{AGENT} --scheduler {scheduler} --pool-token {token}"
@@ -74,14 +77,19 @@ def parse_invite(text: str, default_scheduler: str) -> tuple[str, str]:
 
 
 class SubmitInput(Input):
-    """The command box. Esc hands the keyboard back to the tables."""
+    """The command box. Esc hands the keyboard back to the tables, tab
+    changes which OS the command runs on."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "leave", "Back to jobs"),
+        Binding("tab", "next_target", "Target"),
     ]
 
     def action_leave(self) -> None:
         self.app.query_one(JobsTable).focus()
+
+    def action_next_target(self) -> None:
+        self.app.next_target()
 
 
 class DashApp(App[None]):
@@ -159,7 +167,8 @@ class DashApp(App[None]):
             yield JobsTable(id="jobs")
             yield Label("", id="error")
         with Horizontal(id="submit-bar"):
-            yield Static("run", classes="key")
+            yield Static("run on", classes="key")
+            yield Static(TARGETS[0], id="target")
             yield SubmitInput(
                 placeholder="a command to run on the pool, then enter", id="submit"
             )
@@ -402,9 +411,15 @@ class DashApp(App[None]):
 
     # -- submit -----------------------------------------------------------
 
+    target = TARGETS[0]
+
     def action_submit(self) -> None:
         if self.prof.get("pool_token"):
             self.query_one("#submit", Input).focus()
+
+    def next_target(self) -> None:
+        self.target = TARGETS[(TARGETS.index(self.target) + 1) % len(TARGETS)]
+        self.query_one("#target", Static).update(self.target)
 
     @on(Input.Submitted, "#submit")
     def on_submit(self, event: Input.Submitted) -> None:
@@ -417,14 +432,18 @@ class DashApp(App[None]):
         if not command:
             return
         event.input.value = ""
-        self.submit(command)
+        self.submit(command, None if self.target == "any" else self.target)
 
     @work(thread=True)
-    def submit(self, command: list[str]) -> None:
+    def submit(self, command: list[str], os: str | None = None) -> None:
         prof = self.prof
         try:
             job = submit_cmd.submit(
-                self.scheduler, command, prof["pool_token"], prof.get("name", "")
+                self.scheduler,
+                command,
+                prof["pool_token"],
+                prof.get("name", ""),
+                os=os,
             )
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             self.error = f"submit failed: {exc}"
