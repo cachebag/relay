@@ -60,9 +60,7 @@ def test_agent_cache_dir_uses_the_os_cache_location(tmp_path, monkeypatch):
     else:
         pytest.skip("supported OS cache locations only")
 
-    assert contribution._agent_cache_dir("p1") == (
-        tmp_path / "relay" / "agents" / "p1"
-    )
+    assert contribution._agent_cache_dir("p1") == (tmp_path / "relay" / "agents" / "p1")
 
 
 def tracked_agent(cfg, pid=4321, pool_id="p1", pool_name="lab", legacy=False):
@@ -255,10 +253,12 @@ def test_two_pools_run_independently(cfg, monkeypatch):
     assert log1 == cfg / "relay-agent.p1.log"
     assert log2 == cfg / "relay-agent.p2.log"
     assert launched[0][-2:] == [
-        "--cache-dir", str(cfg.parent / "cache" / "relay" / "agents" / "p1")
+        "--cache-dir",
+        str(cfg.parent / "cache" / "relay" / "agents" / "p1"),
     ]
     assert launched[1][-2:] == [
-        "--cache-dir", str(cfg.parent / "cache" / "relay" / "agents" / "p2")
+        "--cache-dir",
+        str(cfg.parent / "cache" / "relay" / "agents" / "p2"),
     ]
     assert {state["pool_id"] for state in contribution.statuses()} == {"p1", "p2"}
     assert {state["pid"] for state in contribution.statuses()} == {4321, 5678}

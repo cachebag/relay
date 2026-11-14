@@ -423,8 +423,10 @@ def run_backup(args) -> None:
             server.get("public_url") or server.get("address") or args.scheduler
         )
 
-    dest = args.to if args.to is not None else Path(
-        f"relay-{time.strftime('%Y-%m-%d')}.db"
+    dest = (
+        args.to
+        if args.to is not None
+        else Path(f"relay-{time.strftime('%Y-%m-%d')}.db")
     )
     if dest.exists():
         raise SystemExit(f"relay scheduler backup: {dest} already exists")
@@ -476,7 +478,8 @@ def _validate_backup(path: Path) -> None:
             if database.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                 raise ValueError("SQLite integrity check failed")
             tables = {
-                row[0] for row in database.execute(
+                row[0]
+                for row in database.execute(
                     "SELECT name FROM sqlite_schema WHERE type = 'table'"
                 )
             }
@@ -484,7 +487,8 @@ def _validate_backup(path: Path) -> None:
                 if table not in tables:
                     raise ValueError(f"missing Relay table: {table}")
                 columns = {
-                    row[0] for row in database.execute(
+                    row[0]
+                    for row in database.execute(
                         "SELECT name FROM pragma_table_info(?)", (table,)
                     )
                 }
@@ -503,7 +507,10 @@ def run_restore(args) -> None:
 
     try:
         if services.installed() and services.state() in {
-            "active", "activating", "reloading", "deactivating"
+            "active",
+            "activating",
+            "reloading",
+            "deactivating",
         }:
             raise SystemExit(
                 "relay scheduler restore: relayd service is running; stop it first"

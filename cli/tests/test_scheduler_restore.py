@@ -31,7 +31,9 @@ def make_database(path, value="backed-up", legacy=False):
             "INSERT INTO nodes VALUES ('node-1', ?, 'linux', 'amd64', 4, 1024, 123)",
             (value,),
         )
-        db.execute("INSERT INTO pools VALUES ('pool-1', ?, 'join-token', 123)", (value,))
+        db.execute(
+            "INSERT INTO pools VALUES ('pool-1', ?, 'join-token', 123)", (value,)
+        )
         db.execute(
             "INSERT INTO jobs VALUES ('job-1', ?, 'queued', '', 0, 123)", (value,)
         )
@@ -107,7 +109,9 @@ def test_backup_implicit_target_uses_local_server(
     cfg, tmp_path, monkeypatch, public_url
 ):
     server = profile.save_server(
-        admin_token="local-token", address="http://localhost:9123", public_url=public_url
+        admin_token="local-token",
+        address="http://localhost:9123",
+        public_url=public_url,
     )
     args = backup_args(tmp_path, scheduler=None)
     resolve(args, {}, {"scheduler": "https://remote.example"}, server)
