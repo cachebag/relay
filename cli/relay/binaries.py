@@ -140,11 +140,15 @@ def download(
         tmp.chmod(tmp.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
         tmp.replace(dest)
     else:
+        # Unpack beside dest and rename over it. Writing into a binary that is
+        # running keeps its inode, and macOS then kills every new launch of it.
+        new = dest.with_suffix(dest.suffix + ".new")
         with tarfile.open(tmp) as tar:
             src = tar.extractfile(tar.getmember(name))
-            with open(dest, "wb") as f:
+            with open(new, "wb") as f:
                 shutil.copyfileobj(src, f)
-        dest.chmod(dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        new.chmod(new.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        new.replace(dest)
         tmp.unlink()
     record_version(name, tag)
     return dest, tag, True

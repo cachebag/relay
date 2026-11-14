@@ -187,6 +187,27 @@ def test_install_skips_a_binary_already_at_that_version(
     assert "already installed" in capsys.readouterr().out
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="inodes are a POSIX detail")
+def test_upgrade_replaces_the_binary_instead_of_writing_into_it(
+    cfg, releases, monkeypatch
+):
+    """macOS kills new launches of a binary rewritten in place while an older
+    copy is running, so an upgrade has to land as a new file."""
+    monkeypatch.setattr(binaries, "this_platform", lambda: ("darwin", "arm64"))
+    install.run(argparse.Namespace(version="v0.2.1", agent_only=True))
+    path = cfg / "bin" / "relay-agent"
+    before = path.stat().st_ino
+    held = path.open("rb")
+    try:
+        install.run(argparse.Namespace(version=None, agent_only=True))
+    finally:
+        held.close()
+    assert path.stat().st_ino != before
+    assert b"v0.2.6" in path.read_bytes()
+    assert os.access(path, os.X_OK)
+    assert not list((cfg / "bin").glob("*.new"))
+
+
 def test_install_hint_quotes_a_path_with_spaces(
     cfg, releases, monkeypatch, capsys, tmp_path
 ):

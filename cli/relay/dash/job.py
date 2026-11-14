@@ -10,6 +10,7 @@ from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
+from relay.commands import fetch as fetch_cmd
 from relay.commands import logs as logs_cmd
 from relay.commands import status as status_cmd
 from relay.dash.tables import REFRESH_S
@@ -21,6 +22,7 @@ FINISHED = ("done", "failed")
 class JobModal(ModalScreen[None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("r", "refresh", "Refresh"),
+        Binding("f", "fetch", "Fetch files"),
         Binding("escape", "dismiss", "Close", priority=True),
     ]
 
@@ -30,6 +32,7 @@ class JobModal(ModalScreen[None]):
         self.hostnames = hostnames
         self.timer = None
         self.output_text = ""
+        self.job: dict | None = None
 
     def copyable(self) -> str:
         return self.output_text
@@ -64,6 +67,7 @@ class JobModal(ModalScreen[None]):
         self.query_one("#job-summary", Static).update(f"[$error]{msg}[/]")
 
     def show(self, job: dict, code: int, out: dict | None) -> None:
+        self.job = job
         state = job["status"]
         node = job.get("node_id") or ""
         ran = status_cmd.runtime(job)
@@ -91,6 +95,7 @@ class JobModal(ModalScreen[None]):
             lines.append("")
             lines.append(f"output files ({len(files)})")
             lines.extend(f"  {f['path']}  {f['bytes']} bytes" for f in files)
+            lines.append(f"  f fetch to {fetch_cmd.default_folder(self.job_id)}")
         self.query_one("#job-summary", Static).update("\n".join(lines))
 
         stdout = self.query_one("#job-stdout", Static)
@@ -110,3 +115,31 @@ class JobModal(ModalScreen[None]):
 
     def action_refresh(self) -> None:
         self.load()
+
+    def action_fetch(self) -> None:
+        if not (self.job and self.job.get("output_files")):
+            self.app.notify("this job has no output files", severity="warning")
+            return
+        self.fetch()
+
+    @work(exclusive=True, thread=True, group="fetch")
+    def fetch(self) -> None:
+        app = self.app
+        token = app.prof.get("pool_token", "")
+        try:
+            folder, files = fetch_cmd.fetch_files(
+                app.scheduler, self.job_id, token, job=self.job
+            )
+        except fetch_cmd.FetchFailed as exc:
+            app.call_from_thread(app.notify, str(exc), severity="error")
+            return
+        except (httpx.HTTPError, httpx.InvalidURL) as exc:
+            app.call_from_thread(app.notify, f"can't fetch: {exc}", severity="error")
+            return
+        if not files:
+            app.call_from_thread(app.notify, "this job has no output files")
+            return
+        n = len(files)
+        app.call_from_thread(
+            app.notify, f"fetched {n} file{'s' if n != 1 else ''} to {folder.resolve()}"
+        )

@@ -58,8 +58,9 @@ Removing the service does not delete the database, settings, or log.
 - **Linux:** Relay installs `~/.config/systemd/user/relayd.service` (or under
   `XDG_CONFIG_HOME`) and enables user lingering so the service can run after
   reboot without a login. Enabling lingering may require authorization
-  under the machine's policy. Check `systemctl --user status relayd.service`
-  if it fails.
+  under the machine's policy; if it is refused, run
+  `sudo loginctl enable-linger <your user>` once and start the service
+  again. Check `systemctl --user status relayd.service` if it fails.
 - **macOS:** Relay installs a LaunchAgent at
   `~/Library/LaunchAgents/relay.relayd.plist`, with `RunAtLoad` and `KeepAlive`.
   It runs as your account and starts when you log in. Install, start, stop,

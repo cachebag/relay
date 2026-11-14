@@ -22,6 +22,7 @@ from relay.dash.admin import AdminModal
 from relay.dash.credits import CreditsModal
 from relay.dash.job import JobModal
 from relay.dash.modals import JoinModal, NewPoolModal, PoolPicker
+from relay.dash.newjob import TARGETS, NewJobModal
 from relay.dash.tables import REFRESH_S, JobsTable, NodesTable, totals
 
 AGENT = "relay-agent"
@@ -74,14 +75,19 @@ def parse_invite(text: str, default_scheduler: str) -> tuple[str, str]:
 
 
 class SubmitInput(Input):
-    """The command box. Esc hands the keyboard back to the tables."""
+    """The command box. Esc hands the keyboard back to the tables, tab
+    changes which OS the command runs on."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "leave", "Back to jobs"),
+        Binding("tab", "next_target", "Target"),
     ]
 
     def action_leave(self) -> None:
         self.app.query_one(JobsTable).focus()
+
+    def action_next_target(self) -> None:
+        self.app.next_target()
 
 
 class DashApp(App[None]):
@@ -93,6 +99,7 @@ class DashApp(App[None]):
         # A starts or stops the agent for the selected pool only.
         Binding("a", "toggle_contribution", "Contribute"),
         Binding("s", "submit", "Submit"),
+        Binding("j", "new_job", "New job"),
         Binding("k", "credits", "Credits"),
         Binding("t", "rotate_token", "Rotate token"),
         Binding("x", "remove_node", "Remove node"),
@@ -151,7 +158,7 @@ class DashApp(App[None]):
             )
             yield Static("JOBS", classes="title")
             yield Static(
-                "no jobs yet. Press s, type a command, enter.",
+                "no jobs yet. Press s to run a command, or j to send a folder or script.",
                 id="jobs-empty",
                 classes="empty",
             )
@@ -159,7 +166,8 @@ class DashApp(App[None]):
             yield JobsTable(id="jobs")
             yield Label("", id="error")
         with Horizontal(id="submit-bar"):
-            yield Static("run", classes="key")
+            yield Static("run on", classes="key")
+            yield Static(TARGETS[0], id="target")
             yield SubmitInput(
                 placeholder="a command to run on the pool, then enter", id="submit"
             )
@@ -402,9 +410,28 @@ class DashApp(App[None]):
 
     # -- submit -----------------------------------------------------------
 
+    # What the run box's target picker shows. "any" sends no requirement.
+    target = TARGETS[0]
+    # The new job screen's fields from last time, so a rerun is one key.
+    last_job: dict | None = None
+
     def action_submit(self) -> None:
         if self.prof.get("pool_token"):
             self.query_one("#submit", Input).focus()
+
+    def action_new_job(self) -> None:
+        if self.prof.get("pool_token"):
+            self.push_screen(NewJobModal(self.last_job), self.job_sent)
+
+    def job_sent(self, result: dict | None) -> None:
+        if result is None:
+            return
+        self.notify(f"submitted {result['job']['id']}")
+        self.refresh_data()
+
+    def next_target(self) -> None:
+        self.target = TARGETS[(TARGETS.index(self.target) + 1) % len(TARGETS)]
+        self.query_one("#target", Static).update(self.target)
 
     @on(Input.Submitted, "#submit")
     def on_submit(self, event: Input.Submitted) -> None:
@@ -417,14 +444,18 @@ class DashApp(App[None]):
         if not command:
             return
         event.input.value = ""
-        self.submit(command)
+        self.submit(command, None if self.target == "any" else self.target)
 
     @work(thread=True)
-    def submit(self, command: list[str]) -> None:
+    def submit(self, command: list[str], os: str | None = None) -> None:
         prof = self.prof
         try:
             job = submit_cmd.submit(
-                self.scheduler, command, prof["pool_token"], prof.get("name", "")
+                self.scheduler,
+                command,
+                prof["pool_token"],
+                prof.get("name", ""),
+                os=os,
             )
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             self.error = f"submit failed: {exc}"

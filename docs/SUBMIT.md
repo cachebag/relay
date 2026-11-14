@@ -104,7 +104,15 @@ print("wrote out/result.csv")
 relay submit --wait --dir ./crunch -- 10
 ```
 
-The folder is packed, sent with the job, and unpacked into the job's own empty folder on the node. `run.sh` runs there with the arguments after `--`. Anything the job writes to `out/` comes back with the result: `relay status` and the dashboard list the files, and `relay fetch` (coming in #141) downloads them. Folders are capped at 50 MB packed, and `.git`, `__pycache__`, `.venv` and `node_modules` are left out.
+The folder is packed, sent with the job, and unpacked into the job's own empty folder on the node. `run.sh` runs there with the arguments after `--`. Anything the job writes to `out/` comes back with the result: `relay status` and the dashboard list the files, and `relay fetch` downloads them. Folders are capped at 50 MB packed, and `.git`, `__pycache__`, `.venv` and `node_modules` are left out.
+
+Once the job has finished, get its files with the job id:
+
+```sh
+relay fetch 40ca4109f082
+```
+
+They land in `relay-out/<job id>/` in the current folder, or in the folder named with `--to`. Files that are already there are left alone unless you add `--force`. In the dashboard, open the job with enter and press `f`.
 
 For one script, `--file` sends just that file and runs it:
 
@@ -119,6 +127,8 @@ relay submit --dir ./crunch --entry crunch.py -- data.csv 10
 ```
 
 The node picks the interpreter from the file's extension: `.sh` with `sh`, `.py` with `python3` (`python` on Windows), `.ps1` with PowerShell, `.cmd` with `cmd`, and anything else is run as a program. Add `--os linux` if the job only works on one operating system.
+
+In `relay dash`, `j` does the same without the flags: type the folder or script, and it shows how many files will go and what will run before you send it. As you type, the rest of a matching folder or file name appears in grey and tab accepts it. Arguments, entry, OS and time limit are fields on the same screen, and it remembers them for the next job.
 
 ## See what's in the pool
 
