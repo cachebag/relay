@@ -90,6 +90,7 @@ def test_install_start_stop_and_remove(platform_service, platform):
         assert services.LINUX_MARKER in unit
         assert "StartLimitIntervalSec=0" in unit
         assert "Restart=always" in unit and "RestartSec=10" in unit
+        assert f"WorkingDirectory={config.resolve()}\n" in unit
         assert (
             "ExecStart="
             + " ".join(
