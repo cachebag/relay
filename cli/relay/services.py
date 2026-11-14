@@ -170,6 +170,9 @@ def _environment(key: str | None) -> dict[str, str]:
 
 
 def _linux_unit(argv: list[str], env: dict[str, str]) -> bytes:
+    # systemd takes these paths to the end of the line and does not unquote
+    # them: a quoted WorkingDirectory is rejected as not absolute.
+    workdir = str(profile.config_dir().resolve()).replace("%", "%%")
     lines = [
         LINUX_MARKER,
         "[Unit]",
@@ -178,7 +181,7 @@ def _linux_unit(argv: list[str], env: dict[str, str]) -> bytes:
         "",
         "[Service]",
         "Type=simple",
-        "WorkingDirectory=" + _systemd_quote(str(profile.config_dir().resolve())),
+        "WorkingDirectory=" + workdir,
         "ExecStart=" + " ".join(_systemd_quote(arg.replace("$", "$$")) for arg in argv),
     ]
     lines.extend(
