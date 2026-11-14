@@ -1316,7 +1316,7 @@ If the job cannot be retrieved:
 
 ### GET /jobs/{id}/output/files
 
-Serves the gzipped tar of what a finished job wrote to `out/`. `relay fetch` will call this; until then the dashboard lists the files from `output_files` on the job.
+Serves the gzipped tar of what a finished job wrote to `out/`. `relay fetch` and the dashboard's job view call this.
 
 #### Request
 
