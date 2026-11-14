@@ -77,6 +77,23 @@ def _run(argv: list[str], *, env: dict | None = None) -> str:
     return result.stdout.strip()
 
 
+def _enable_linger(owner: str) -> None:
+    """Let the owner's user services run without a login session."""
+    show = ["loginctl", "show-user", owner, "--property=Linger", "--value"]
+    try:
+        if _run(show) == "yes":
+            return
+    except ServiceError:
+        # A user with no session and no lingering has no record to show.
+        pass
+    try:
+        _run(["loginctl", "enable-linger", owner])
+    except ServiceError as exc:
+        raise ServiceError(
+            f"{exc}; run `sudo loginctl enable-linger {owner}` and try again"
+        ) from exc
+
+
 def _write_private(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -153,6 +170,9 @@ def _environment(key: str | None) -> dict[str, str]:
 
 
 def _linux_unit(argv: list[str], env: dict[str, str]) -> bytes:
+    # systemd takes these paths to the end of the line and does not unquote
+    # them: a quoted WorkingDirectory is rejected as not absolute.
+    workdir = str(profile.config_dir().resolve()).replace("%", "%%")
     lines = [
         LINUX_MARKER,
         "[Unit]",
@@ -161,7 +181,7 @@ def _linux_unit(argv: list[str], env: dict[str, str]) -> bytes:
         "",
         "[Service]",
         "Type=simple",
-        "WorkingDirectory=" + _systemd_quote(str(profile.config_dir().resolve())),
+        "WorkingDirectory=" + workdir,
         "ExecStart=" + " ".join(_systemd_quote(arg.replace("$", "$$")) for arg in argv),
     ]
     lines.extend(
@@ -335,7 +355,7 @@ def install(argv: list[str], key: str | None) -> None:
             created = True
             _write_private(_marker(), metadata)
             marked = True
-            _run(["loginctl", "enable-linger", _owner()])
+            _enable_linger(_owner())
             _run(["systemctl", "--user", "daemon-reload"])
             registered = True
             _run(["systemctl", "--user", "enable", "--now", "relayd.service"])

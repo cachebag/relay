@@ -9,6 +9,101 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-13
+
+### Added
+
+- **Tab completes the path in the dash's new job screen.** As you type a
+  folder or script, the rest of the first match shows in grey and tab
+  accepts it, with a trailing slash on folders. With nothing to complete,
+  tab moves to the next field as before.
+  ([#173](https://github.com/cachebag/relay/pull/173))
+
+### Changed
+
+- **`relay --version` reports the real version from a git install.** The
+  version in `pyproject.toml` was a `0.0.0` placeholder that only the
+  release workflow replaced. It now tracks the release.
+  ([#173](https://github.com/cachebag/relay/pull/173))
+
+### Fixed
+
+- **Quitting the dash no longer hangs after typing a path.** The new job
+  screen counts the files under the path on every keystroke, so typing
+  `~/Desktop/job` started a count of the whole home folder that nothing
+  could stop, and quitting waited on it until ctrl-c. A count now ends when
+  the path changes or the screen closes, and gives up past 20,000 files
+  with a message to pick the job's own folder.
+  ([#173](https://github.com/cachebag/relay/pull/173))
+- **`relay install` no longer breaks a running agent's binary on macOS.**
+  An upgrade wrote into the existing file, and macOS kills every new launch
+  of a binary changed in place while a copy is running, so `relay
+  contribute` failed with no output until the file was deleted. The new
+  binary is now written beside the old one and renamed over it.
+  ([#173](https://github.com/cachebag/relay/pull/173))
+- **Ctrl-C exits without a traceback.** ([#173](https://github.com/cachebag/relay/pull/173))
+- **`relay scheduler start --service` starts on Linux.** The systemd unit
+  wrote `WorkingDirectory` in quotes, which systemd rejects as a path that
+  is not absolute, so the service was installed and then refused to start.
+  The path is now written bare.
+  ([#172](https://github.com/cachebag/relay/pull/172))
+
+## [0.3.1] - 2026-11-13
+
+### Fixed
+
+- **`relay scheduler start --service` works on Linux when lingering is
+  already on.** The installer ran `loginctl enable-linger` every time, which
+  is refused without admin rights, so it failed even after an admin had
+  enabled it. It now checks first, and when it does have to enable lingering
+  and is refused, the error gives the `sudo loginctl enable-linger <user>`
+  command to run.
+  ([#170](https://github.com/cachebag/relay/pull/170))
+
+## [0.3.0] - 2026-11-13
+
+### Added
+
+- **The scheduler can run as a startup service.** `relay scheduler start
+  --service` registers relayd to come back after a reboot: a systemd user
+  unit with lingering on Linux, a LaunchAgent on macOS and a scheduled task
+  on Windows. It takes `--public`, `--port` and `--name` like a normal start
+  and uses the same `relay.db` and `relayd.log`. Plain `stop` pauses it and
+  `relay scheduler stop --service` removes it.
+  ([#162](https://github.com/cachebag/relay/pull/162))
+- **`relay contribute` runs one agent per pool.** A machine can contribute
+  to several pools at once. `relay contribute --pool <name>` starts the
+  agent for a saved pool, `relay contribute status` lists every running
+  agent, and `stop` takes `--pool` or `--all`. Each agent has its own pid
+  file, log and job cache. The dash's `a` key acts on the pool on screen and
+  the top bar says how many pools this machine is contributing to.
+  ([#164](https://github.com/cachebag/relay/pull/164))
+- **The dash sends a folder or script as a job.** `j` opens a new job
+  screen. Type a folder or script and it shows how many files will go and
+  what will run, or why it won't, before anything is sent. Arguments, entry,
+  OS and time limit are fields on the same screen and are remembered for the
+  next job. The CLI and the dash share the same bundle checks.
+  ([#166](https://github.com/cachebag/relay/pull/166),
+  [#168](https://github.com/cachebag/relay/pull/168))
+- **The dash's run box picks the OS a command runs on.** Tab cycles `any`,
+  `linux`, `darwin` and `windows`; the pick is sent as `requires.os` and
+  stays until changed. The jobs table has a `REQUIRES` column like
+  `relay jobs`. ([#165](https://github.com/cachebag/relay/pull/165))
+- **`relay fetch` downloads a job's output files.** `relay fetch <job id>`
+  unpacks what the job wrote to `out/` into `relay-out/<job id>/`, or the
+  folder named with `--to`, and prints each file. Files already there are
+  kept unless `--force` is given. In the dash's job view, `f` does the same
+  into the default folder.
+  ([#167](https://github.com/cachebag/relay/pull/167))
+
+### Changed
+
+- **The agent says what happened when it can't stay in the pool.** Startup
+  prints `connecting to` until the scheduler accepts the first heartbeat. An
+  agent that was removed or whose token is rejected prints one clear line
+  and exits 1, and `relay contribute` shows that line.
+  ([#163](https://github.com/cachebag/relay/pull/163))
+
 ## [0.2.10] - 2026-11-09
 
 ### Added
@@ -495,7 +590,10 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.10...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/cachebag/relay/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/cachebag/relay/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/cachebag/relay/compare/v0.2.10...v0.3.0
 [0.2.10]: https://github.com/cachebag/relay/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/cachebag/relay/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/cachebag/relay/compare/v0.2.7...v0.2.8
