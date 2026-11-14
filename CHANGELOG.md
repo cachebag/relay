@@ -9,6 +9,16 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`relay scheduler start --service` works on Linux when lingering is
+  already on.** The installer ran `loginctl enable-linger` every time, which
+  is refused without admin rights, so it failed even after an admin had
+  enabled it. It now checks first, and when it does have to enable lingering
+  and is refused, the error gives the `sudo loginctl enable-linger <user>`
+  command to run.
+  ([#170](https://github.com/cachebag/relay/pull/170))
+
 ## [0.3.0] - 2026-11-13
 
 ### Added
