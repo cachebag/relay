@@ -22,12 +22,10 @@ from relay.dash.admin import AdminModal
 from relay.dash.credits import CreditsModal
 from relay.dash.job import JobModal
 from relay.dash.modals import JoinModal, NewPoolModal, PoolPicker
+from relay.dash.newjob import TARGETS, NewJobModal
 from relay.dash.tables import REFRESH_S, JobsTable, NodesTable, totals
 
 AGENT = "relay-agent"
-
-# What the run box's target picker cycles through. "any" sends no requirement.
-TARGETS = ("any", "linux", "darwin", "windows")
 
 
 def invite_line(scheduler: str, token: str) -> str:
@@ -101,6 +99,7 @@ class DashApp(App[None]):
         # A starts or stops the agent for the selected pool only.
         Binding("a", "toggle_contribution", "Contribute"),
         Binding("s", "submit", "Submit"),
+        Binding("j", "new_job", "New job"),
         Binding("k", "credits", "Credits"),
         Binding("t", "rotate_token", "Rotate token"),
         Binding("x", "remove_node", "Remove node"),
@@ -159,7 +158,7 @@ class DashApp(App[None]):
             )
             yield Static("JOBS", classes="title")
             yield Static(
-                "no jobs yet. Press s, type a command, enter.",
+                "no jobs yet. Press s to run a command, or j to send a folder or script.",
                 id="jobs-empty",
                 classes="empty",
             )
@@ -411,11 +410,24 @@ class DashApp(App[None]):
 
     # -- submit -----------------------------------------------------------
 
+    # What the run box's target picker shows. "any" sends no requirement.
     target = TARGETS[0]
+    # The new job screen's fields from last time, so a rerun is one key.
+    last_job: dict | None = None
 
     def action_submit(self) -> None:
         if self.prof.get("pool_token"):
             self.query_one("#submit", Input).focus()
+
+    def action_new_job(self) -> None:
+        if self.prof.get("pool_token"):
+            self.push_screen(NewJobModal(self.last_job), self.job_sent)
+
+    def job_sent(self, result: dict | None) -> None:
+        if result is None:
+            return
+        self.notify(f"submitted {result['job']['id']}")
+        self.refresh_data()
 
     def next_target(self) -> None:
         self.target = TARGETS[(TARGETS.index(self.target) + 1) % len(TARGETS)]
