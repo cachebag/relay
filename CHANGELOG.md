@@ -9,7 +9,7 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
-## [0.2.11] - 2026-11-13
+## [0.3.0] - 2026-11-13
 
 ### Added
 
@@ -539,8 +539,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.11...HEAD
-[0.2.11]: https://github.com/cachebag/relay/compare/v0.2.10...v0.2.11
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/cachebag/relay/compare/v0.2.10...v0.3.0
 [0.2.10]: https://github.com/cachebag/relay/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/cachebag/relay/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/cachebag/relay/compare/v0.2.7...v0.2.8
