@@ -9,6 +9,14 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`relay scheduler start --service` starts on Linux.** The systemd unit
+  wrote `WorkingDirectory` in quotes, which systemd rejects as a path that
+  is not absolute, so the service was installed and then refused to start.
+  The path is now written bare.
+  ([#172](https://github.com/cachebag/relay/pull/172))
+
 ## [0.3.1] - 2026-11-13
 
 ### Fixed
