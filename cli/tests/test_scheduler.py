@@ -1,7 +1,9 @@
 import argparse
+import sqlite3
+from contextlib import closing
+from pathlib import Path
 
 import pytest
-from pathlib import Path
 
 from relay import procs, profile, services
 from relay.commands import pool, scheduler
@@ -435,7 +437,21 @@ def test_restore_refuses_running_scheduler(cfg, monkeypatch):
 
 def test_restore_replaces_database_when_stopped(cfg, monkeypatch, capsys):
     source = cfg / "backup.db"
-    source.write_bytes(b"restored")
+    with closing(sqlite3.connect(source)) as database:
+        database.executescript("""
+            CREATE TABLE nodes (
+                id TEXT, hostname TEXT, os TEXT, arch TEXT,
+                cpus INTEGER, mem_bytes INTEGER, last_seen INTEGER
+            );
+            CREATE TABLE pools (
+                id TEXT, name TEXT, token TEXT, created_at INTEGER
+            );
+            CREATE TABLE jobs (
+                id TEXT, command TEXT, status TEXT,
+                node_id TEXT, attempts INTEGER, created_at INTEGER
+            );
+            INSERT INTO pools VALUES ('pool-1', 'lab', 'join-token', 123);
+        """)
 
     (cfg / "relay.db").write_bytes(b"old")
     (cfg / "relay.db-wal").write_bytes(b"wal")

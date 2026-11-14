@@ -1,12 +1,11 @@
 package api
 
 import (
-	"errors"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/cachebag/relay/internal/store"
@@ -15,39 +14,39 @@ import (
 // serveDatabaseBackup writes an online backup of the live database and
 // streams the resulting file to the client.
 func serveDatabaseBackup(w http.ResponseWriter, r *http.Request, db *store.SQLite) {
-	var tmp *os.File
-	tmp, err := os.CreateTemp(os.TempDir(), "relay-backup-*")
+	// SQLite creates the destination with its own file permissions. Keep it
+	// inside an owner-only directory so the database never becomes public.
+	dir, err := os.MkdirTemp("", "relay-backup-*")
 	if err != nil {
 		http.Error(w, "backup failed", http.StatusInternalServerError)
 		return
 	}
 
-	path := tmp.Name()
-	if err := tmp.Close(); err != nil {
-		os.Remove(path)
-		http.Error(w, "backup failed", http.StatusInternalServerError)
-		return
-	}
-
-	os.Remove(path)
+	defer func() {
+		if err := os.RemoveAll(dir); err != nil {
+			log.Printf("could not remove backup temp directory %s: %v", dir, err)
+		}
+	}()
+	path := filepath.Join(dir, "relay.db")
 
 	if err := db.Backup(r.Context(), path); err != nil {
-		os.Remove(path)
 		http.Error(w, "backup failed", http.StatusInternalServerError)
 		return
 	}
 
 	f, err := os.Open(path)
 	if err != nil {
-		os.Remove(path)
 		http.Error(w, "backup failed", http.StatusInternalServerError)
 		return
 	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("could not close backup temp file %s: %v", path, err)
+		}
+	}()
 
 	info, err := f.Stat()
 	if err != nil {
-		f.Close()
-		os.Remove(path)
 		http.Error(w, "backup failed", http.StatusInternalServerError)
 		return
 	}
@@ -58,14 +57,5 @@ func serveDatabaseBackup(w http.ResponseWriter, r *http.Request, db *store.SQLit
 		if _, err := io.Copy(w, f); err != nil {
 			log.Printf("could not stream backup file %s: %v", path, err)
 		}
-	}
-
-	if err := f.Close(); err != nil {
-		os.Remove(path)
-		http.Error(w, "backup failed", http.StatusInternalServerError)
-		return
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		log.Printf("could not remove backup temp file %s: %v", path, err)
 	}
 }
