@@ -9,14 +9,49 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-11-13
+
 ### Added
 
+- **The scheduler can run as a startup service.** `relay scheduler start
+  --service` registers relayd to come back after a reboot: a systemd user
+  unit with lingering on Linux, a LaunchAgent on macOS and a scheduled task
+  on Windows. It takes `--public`, `--port` and `--name` like a normal start
+  and uses the same `relay.db` and `relayd.log`. Plain `stop` pauses it and
+  `relay scheduler stop --service` removes it.
+  ([#162](https://github.com/cachebag/relay/pull/162))
+- **`relay contribute` runs one agent per pool.** A machine can contribute
+  to several pools at once. `relay contribute --pool <name>` starts the
+  agent for a saved pool, `relay contribute status` lists every running
+  agent, and `stop` takes `--pool` or `--all`. Each agent has its own pid
+  file, log and job cache. The dash's `a` key acts on the pool on screen and
+  the top bar says how many pools this machine is contributing to.
+  ([#164](https://github.com/cachebag/relay/pull/164))
+- **The dash sends a folder or script as a job.** `j` opens a new job
+  screen. Type a folder or script and it shows how many files will go and
+  what will run, or why it won't, before anything is sent. Arguments, entry,
+  OS and time limit are fields on the same screen and are remembered for the
+  next job. The CLI and the dash share the same bundle checks.
+  ([#166](https://github.com/cachebag/relay/pull/166),
+  [#168](https://github.com/cachebag/relay/pull/168))
+- **The dash's run box picks the OS a command runs on.** Tab cycles `any`,
+  `linux`, `darwin` and `windows`; the pick is sent as `requires.os` and
+  stays until changed. The jobs table has a `REQUIRES` column like
+  `relay jobs`. ([#165](https://github.com/cachebag/relay/pull/165))
 - **`relay fetch` downloads a job's output files.** `relay fetch <job id>`
   unpacks what the job wrote to `out/` into `relay-out/<job id>/`, or the
   folder named with `--to`, and prints each file. Files already there are
   kept unless `--force` is given. In the dash's job view, `f` does the same
   into the default folder.
   ([#167](https://github.com/cachebag/relay/pull/167))
+
+### Changed
+
+- **The agent says what happened when it can't stay in the pool.** Startup
+  prints `connecting to` until the scheduler accepts the first heartbeat. An
+  agent that was removed or whose token is rejected prints one clear line
+  and exits 1, and `relay contribute` shows that line.
+  ([#163](https://github.com/cachebag/relay/pull/163))
 
 ## [0.2.10] - 2026-11-09
 
@@ -504,7 +539,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.10...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.2.11...HEAD
+[0.2.11]: https://github.com/cachebag/relay/compare/v0.2.10...v0.2.11
 [0.2.10]: https://github.com/cachebag/relay/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/cachebag/relay/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/cachebag/relay/compare/v0.2.7...v0.2.8
