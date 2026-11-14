@@ -356,3 +356,60 @@ def test_create_without_server_settings_or_flag_exits(monkeypatch):
             )
         )
     assert "no scheduler on this machine" in str(exc.value)
+
+
+def test_create_falls_back_to_local_when_public_times_out(monkeypatch, capsys):
+    seen = []
+
+    def handler(req):
+        seen.append(str(req.url))
+        if req.url.host == "me.ts.net":
+            raise httpx.ConnectTimeout("handshake timed out", request=req)
+        return httpx.Response(
+            201,
+            json={
+                "id": "p1",
+                "name": "lab",
+                "token": "jt",
+                "admin_token": "at",
+                "public_url": "https://me.ts.net",
+            },
+        )
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    monkeypatch.setattr(
+        pool.profile,
+        "server",
+        lambda: {"address": "http://localhost:8080", "public_url": "https://me.ts.net"},
+    )
+    pool.run_create(
+        argparse.Namespace(
+            scheduler="http://friend:8080",
+            scheduler_given=False,
+            name="lab",
+            admin_token="sat",
+        )
+    )
+    assert seen == ["https://me.ts.net/pools", "http://localhost:8080/pools"]
+    out = capsys.readouterr()
+    assert "using http://localhost:8080 instead" in out.err
+    assert "relay-agent --scheduler https://me.ts.net" in out.out
+
+
+def test_create_does_not_fall_back_when_flag_given(monkeypatch):
+    def handler(req):
+        raise httpx.ConnectTimeout("handshake timed out", request=req)
+
+    monkeypatch.setattr(pool.httpx, "Client", lambda **kw: mock_client(handler))
+    monkeypatch.setattr(
+        pool.profile, "server", lambda: {"address": "http://localhost:8080"}
+    )
+    with pytest.raises(httpx.ConnectTimeout):
+        pool.run_create(
+            argparse.Namespace(
+                scheduler="https://me.ts.net",
+                scheduler_given=True,
+                name="lab",
+                admin_token="sat",
+            )
+        )

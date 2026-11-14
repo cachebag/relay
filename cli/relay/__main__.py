@@ -87,14 +87,38 @@ def main() -> None:
             return
         args.func(args)
     except httpx.ConnectError:
+        # Name the address that actually failed: commands like pool create
+        # may not have used --scheduler.
+        args.scheduler = failed_scheduler(sys.exception(), args.scheduler)
         print(
             f"relay: can't reach scheduler at {args.scheduler}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except httpx.TransportError as exc:
+        # Timeouts and other network errors get a message, not a traceback.
+        print(
+            f"relay: can't reach scheduler at "
+            f"{failed_scheduler(exc, args.scheduler)} ({type(exc).__name__})",
             file=sys.stderr,
         )
         sys.exit(1)
     except KeyboardInterrupt:
         # Ctrl-C is a normal way out; a traceback isn't.
         sys.exit(130)
+
+
+def failed_scheduler(exc, fallback: str) -> str:
+    """The scheduler address a failed request went to, or fallback."""
+    try:
+        url = exc.request.url
+    except AttributeError:
+        return fallback
+    except RuntimeError:
+        # httpx raises this when the error has no request attached.
+        return fallback
+    port = f":{url.port}" if url.port else ""
+    return f"{url.scheme}://{url.host}{port}"
 
 
 if __name__ == "__main__":
