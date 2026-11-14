@@ -143,4 +143,3 @@ class JobModal(ModalScreen[None]):
         app.call_from_thread(
             app.notify, f"fetched {n} file{'s' if n != 1 else ''} to {folder.resolve()}"
         )
-

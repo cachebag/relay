@@ -16,6 +16,10 @@ class FetchFailed(Exception):
     pass
 
 
+class FilesExist(FetchFailed):
+    pass
+
+
 def register(sub) -> None:
     p = sub.add_parser("fetch", help="download a job's output files")
     p.add_argument("id", help="job id")
@@ -37,10 +41,10 @@ def default_folder(job_id: str) -> Path:
 
 
 def download(
-        scheduler: str,
-        job_id: str,
-        token: str,
-        client: httpx.Client | None = None,
+    scheduler: str,
+    job_id: str,
+    token: str,
+    client: httpx.Client | None = None,
 ) -> bytes | None:
     client = client or httpx.Client(timeout=300)
     r = client.get(
@@ -66,18 +70,17 @@ def _unpack(tar: tarfile.TarFile, dest: Path, force: bool) -> list[Path]:
     targets = []
     for m in files:
         try:
-            tarfile.data_filter(m, str(dest))
+            safe = tarfile.data_filter(m, str(dest))
         except tarfile.FilterError as exc:
             raise FetchFailed(f"unsafe path in output bundle: {m.name}") from exc
-        targets.append(dest / m.name)
+        # The filter strips a leading slash, so this is where extract writes.
+        targets.append(dest / safe.name)
 
     if not force:
         existing = [t for t in targets if t.exists()]
         if existing:
             more = f" (and {len(existing) - 1} more)" if len(existing) > 1 else ""
-            raise FetchFailed(
-                f"{existing[0]} already exists{more}, use --force to overwrite"
-            )
+            raise FilesExist(f"{existing[0]} already exists{more}")
 
     dest.mkdir(parents=True, exist_ok=True)
     for m in files:
@@ -86,13 +89,13 @@ def _unpack(tar: tarfile.TarFile, dest: Path, force: bool) -> list[Path]:
 
 
 def fetch_files(
-        scheduler: str,
-        job_id: str,
-        token: str,
-        dest: Path | None = None,
-        force: bool = False,
-        client: httpx.Client | None = None,
-        job: dict | None = None,
+    scheduler: str,
+    job_id: str,
+    token: str,
+    dest: Path | None = None,
+    force: bool = False,
+    client: httpx.Client | None = None,
+    job: dict | None = None,
 ) -> tuple[Path, list[Path]]:
     dest = dest or default_folder(job_id)
     if job is None:
@@ -125,6 +128,9 @@ def run(args, client: httpx.Client | None = None) -> None:
             force=args.force,
             client=client,
         )
+    except FilesExist as exc:
+        print(f"relay: {exc}, use --force to overwrite", file=sys.stderr)
+        sys.exit(1)
     except FetchFailed as exc:
         print(f"relay: {exc}", file=sys.stderr)
         sys.exit(1)
