@@ -185,3 +185,20 @@ def test_resolve_strips_trailing_slashes(scheduler, env, prof, server, expected)
     relay_main.resolve(args, env, prof, server)
 
     assert args.scheduler == expected
+
+
+def test_ctrl_c_exits_130_without_a_traceback(monkeypatch):
+    def command(args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        relay_main.nodes,
+        "register",
+        lambda subparsers: register_test_command(subparsers, command),
+    )
+    monkeypatch.setattr(sys, "argv", ["relay", "test-command"])
+
+    with pytest.raises(SystemExit) as exc:
+        relay_main.main()
+
+    assert exc.value.code == 130

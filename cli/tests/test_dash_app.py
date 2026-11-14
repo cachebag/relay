@@ -1,7 +1,10 @@
 import asyncio
 import io
 import json
+import os
 import tarfile
+import threading
+import time
 
 import httpx
 import pytest
@@ -10,12 +13,12 @@ from textual.worker import WorkerCancelled
 
 from relay import profile
 from relay.commands import submit as submit_cmd
-from relay.dash import DashApp, invite_line, parse_invite
+from relay.dash import DashApp, invite_line, newjob, parse_invite
 from relay.dash.admin import AdminModal
 from relay.dash.credits import CreditsModal
 from relay.dash.job import JobModal
 from relay.dash.modals import JoinModal, NewPoolModal, PoolPicker
-from relay.dash.newjob import NewJobModal, preview
+from relay.dash.newjob import NewJobModal, complete_path, preview
 
 _RealClient = httpx.Client
 
@@ -895,3 +898,114 @@ def test_bad_picks_say_why_and_send_nothing(cfg, calls, monkeypatch, tmp_path):
 
     drive(app, steps)
     assert sent == []
+
+
+def test_scan_stops_when_asked_and_gives_up_on_a_huge_folder(tmp_path):
+    root = folder(tmp_path)
+    assert newjob.scan(root)[0] == 2
+    with pytest.raises(newjob.ScanStopped):
+        newjob.scan(root, stop=lambda: True)
+    with pytest.raises(newjob.TooManyFiles):
+        newjob.scan(root, limit=1)
+
+
+def test_preview_of_a_huge_folder_says_to_pick_a_smaller_one(tmp_path, monkeypatch):
+    root = folder(tmp_path)
+    monkeypatch.setattr(newjob, "SCAN_LIMIT", 1)
+
+    def scan(path, stop=None):
+        raise newjob.TooManyFiles
+
+    monkeypatch.setattr(newjob, "scan", scan)
+    ok, msg = preview(str(root), "")
+    assert not ok and "has more than 1 files" in msg
+
+
+def test_complete_path(tmp_path, monkeypatch):
+    root = folder(tmp_path)
+    (tmp_path / "crunch.py").write_text("print(1)\n")
+    (tmp_path / "other").mkdir()
+    base = str(tmp_path) + os.sep
+    # The first match wins, and a folder gets its separator.
+    assert complete_path(base + "cr") == base + "crunch" + os.sep
+    assert complete_path(base + "crunch") == base + "crunch" + os.sep
+    assert complete_path(base + "crunch.") == base + "crunch.py"
+    assert complete_path(base + "o") == base + "other" + os.sep
+    assert complete_path(str(root) + os.sep + "da") == str(root) + os.sep + "data.csv"
+    # Nothing to add: no match, a finished path, or nothing typed after the folder.
+    assert complete_path(base + "zzz") is None
+    assert complete_path(base + "crunch.py") is None
+    assert complete_path(base) is None
+    assert complete_path("") is None
+    assert complete_path(str(tmp_path / "missing") + os.sep + "x") is None
+    # A bare name is looked up in the folder the dash was started from.
+    monkeypatch.chdir(tmp_path)
+    assert complete_path("oth") == "other" + os.sep
+    # ~ is kept as typed.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    assert complete_path("~") == "~" + os.sep
+    assert complete_path("~/cr") == "~/crunch/"
+
+
+def test_tab_completes_the_path_then_moves_to_the_next_field(
+    cfg, calls, tmp_path, monkeypatch
+):
+    profile.save(SAVED)
+    root = folder(tmp_path)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("j")
+        await pilot.pause()
+        box = app.screen.query_one("#job-path", Input)
+        box.value = str(tmp_path) + os.sep + "cr"
+        await pilot.pause()
+        await pilot.press("tab")
+        await settle(pilot)
+        assert box.value == str(root) + os.sep
+        assert box.has_focus and box.cursor_position == len(box.value)
+        assert "runs    run.sh" in text(app.screen.query_one("#job-preview"))
+        # Nothing left to complete, so tab is the usual next field.
+        await pilot.press("tab")
+        await pilot.pause()
+        assert app.screen.query_one("#job-entry", Input).has_focus
+
+    drive(app, steps)
+
+
+def test_quitting_stops_a_preview_that_is_still_counting(
+    cfg, calls, tmp_path, monkeypatch
+):
+    """Typing a path passes through big folders like ~. Their counts must
+    end when the dash does, or quitting waits on the thread."""
+    profile.save(SAVED)
+    root = folder(tmp_path)
+    counting = threading.Event()
+    stopped = threading.Event()
+
+    def scan(path, stop=None):
+        counting.set()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if stop is not None and stop():
+                stopped.set()
+                raise newjob.ScanStopped
+            time.sleep(0.01)
+        return 1, 1
+
+    monkeypatch.setattr(newjob, "scan", scan)
+    app = DashApp(SCHED)
+    app.last_job = {"path": str(root)}
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("j")
+        await pilot.pause()
+        assert await asyncio.to_thread(counting.wait, 2)
+
+    started = time.monotonic()
+    drive(app, steps)
+    assert stopped.is_set()
+    assert time.monotonic() - started < 4

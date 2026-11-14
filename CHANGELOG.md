@@ -9,8 +9,37 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Added
+
+- **Tab completes the path in the dash's new job screen.** As you type a
+  folder or script, the rest of the first match shows in grey and tab
+  accepts it, with a trailing slash on folders. With nothing to complete,
+  tab moves to the next field as before.
+  ([#173](https://github.com/cachebag/relay/pull/173))
+
+### Changed
+
+- **`relay --version` reports the real version from a git install.** The
+  version in `pyproject.toml` was a `0.0.0` placeholder that only the
+  release workflow replaced. It now tracks the release.
+  ([#173](https://github.com/cachebag/relay/pull/173))
+
 ### Fixed
 
+- **Quitting the dash no longer hangs after typing a path.** The new job
+  screen counts the files under the path on every keystroke, so typing
+  `~/Desktop/job` started a count of the whole home folder that nothing
+  could stop, and quitting waited on it until ctrl-c. A count now ends when
+  the path changes or the screen closes, and gives up past 20,000 files
+  with a message to pick the job's own folder.
+  ([#173](https://github.com/cachebag/relay/pull/173))
+- **`relay install` no longer breaks a running agent's binary on macOS.**
+  An upgrade wrote into the existing file, and macOS kills every new launch
+  of a binary changed in place while a copy is running, so `relay
+  contribute` failed with no output until the file was deleted. The new
+  binary is now written beside the old one and renamed over it.
+  ([#173](https://github.com/cachebag/relay/pull/173))
+- **Ctrl-C exits without a traceback.** ([#173](https://github.com/cachebag/relay/pull/173))
 - **`relay scheduler start --service` starts on Linux.** The systemd unit
   wrote `WorkingDirectory` in quotes, which systemd rejects as a path that
   is not absolute, so the service was installed and then refused to start.

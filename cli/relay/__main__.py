@@ -92,6 +92,9 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+    except KeyboardInterrupt:
+        # Ctrl-C is a normal way out; a traceback isn't.
+        sys.exit(130)
 
 
 if __name__ == "__main__":
