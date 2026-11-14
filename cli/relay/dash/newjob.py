@@ -4,6 +4,7 @@ relay submit --dir / --file, and see what will go before it goes."""
 import argparse
 import os
 import shlex
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
 
@@ -14,11 +15,25 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
+from textual.suggester import Suggester
 from textual.widgets import Input, Label, Select, Static
+from textual.worker import get_current_worker
 
 from relay.commands import submit as submit_cmd
 
 TARGETS = ("any", "linux", "darwin", "windows")
+# The preview stops counting here. A job's own folder is far smaller, and a
+# path typed one character at a time passes through ~ on the way.
+SCAN_LIMIT = 20_000
+SEPARATORS = ("/", os.sep)
+
+
+class ScanStopped(Exception):
+    """The preview this scan was for is no longer wanted."""
+
+
+class TooManyFiles(Exception):
+    pass
 
 
 def human_bytes(n: int) -> str:
@@ -29,22 +44,85 @@ def human_bytes(n: int) -> str:
     return f"{n:.1f} GB"
 
 
-def scan(root: Path) -> tuple[int, int]:
+def scan(
+    root: Path,
+    stop: Callable[[], bool] | None = None,
+    limit: int = SCAN_LIMIT,
+) -> tuple[int, int]:
     """Files and bytes that would be sent from a folder, skipping the same
-    folders build_bundle does without walking into them."""
+    folders build_bundle does without walking into them. Raises ScanStopped
+    once stop() is true and TooManyFiles past limit, so a huge folder can't
+    keep a thread busy after nobody wants the answer."""
     files = size = 0
     for here, dirs, names in os.walk(root):
+        if stop is not None and stop():
+            raise ScanStopped
         dirs[:] = [d for d in dirs if d not in submit_cmd.SKIP_DIRS]
         for name in names:
             path = Path(here, name)
             if path.is_symlink() or not path.is_file():
                 continue
             files += 1
+            if files > limit:
+                raise TooManyFiles
             size += path.stat().st_size
     return files, size
 
 
-def preview(path_text: str, entry: str) -> tuple[bool, str]:
+def complete_path(text: str) -> str | None:
+    """The typed path extended to the first folder or file that starts with
+    its last part, or None when there is nothing to add. Folders get a
+    trailing separator. What was typed is kept as typed, ~ included."""
+    if text == "~":
+        return "~" + os.sep
+    cut = max(text.rfind(sep) for sep in SEPARATORS) + 1
+    typed_dir, prefix = text[:cut], text[cut:]
+    if not prefix:
+        return None
+    sep = typed_dir[-1] if typed_dir else os.sep
+    try:
+        with os.scandir(Path(typed_dir or ".").expanduser()) as entries:
+            found = sorted(
+                (e.name, e.is_dir()) for e in entries if e.name.startswith(prefix)
+            )
+    except OSError:
+        return None
+    for name, is_dir in found:
+        done = typed_dir + name + (sep if is_dir else "")
+        if done != text:
+            return done
+    return None
+
+
+class PathSuggester(Suggester):
+    def __init__(self) -> None:
+        # Folders change under us, so every keystroke looks again.
+        super().__init__(use_cache=False, case_sensitive=True)
+
+    async def get_suggestion(self, value: str) -> str | None:
+        return complete_path(value)
+
+
+class PathInput(Input):
+    """The folder or script box. Tab takes the completion shown in grey, and
+    moves to the next field when there is none."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("tab", "complete", "Complete", show=False),
+    ]
+
+    def action_complete(self) -> None:
+        done = complete_path(self.value)
+        if done is None:
+            self.screen.focus_next()
+            return
+        self.value = done
+        self.cursor_position = len(done)
+
+
+def preview(
+    path_text: str, entry: str, stop: Callable[[], bool] | None = None
+) -> tuple[bool, str]:
     """(ok, what the job will be) for the path and entry typed so far."""
     if not path_text:
         return False, "pick a folder with a run.sh (or run.ps1, run.cmd), or one script"
@@ -55,7 +133,13 @@ def preview(path_text: str, entry: str) -> tuple[bool, str]:
         return True, f"script  {path.name}, {human_bytes(path.stat().st_size)}"
     if not path.is_dir():
         return False, f"{path_text} is not a folder or a file"
-    files, size = scan(path)
+    try:
+        files, size = scan(path, stop)
+    except TooManyFiles:
+        return False, (
+            f"{path_text} has more than {SCAN_LIMIT:,} files; "
+            "pick the folder with just the job's files"
+        )
     lines = [f"folder  {files} files, {human_bytes(size)} before packing"]
     if entry:
         if not (path / entry).is_file():
@@ -94,9 +178,10 @@ class NewJobModal(ModalScreen[dict | None]):
                 classes="hint",
             )
             yield Static("folder or script", classes="label")
-            yield Input(
+            yield PathInput(
                 last.get("path", ""),
                 placeholder="./crunch or analyze.py",
+                suggester=PathSuggester(),
                 id="job-path",
             )
             yield Static("", id="job-preview", classes="result")
@@ -128,7 +213,10 @@ class NewJobModal(ModalScreen[dict | None]):
                         id="job-timeout",
                     )
             yield Label("", id="job-status", classes="result", markup=False)
-            yield Static("enter send   tab next field   esc cancel", classes="keys")
+            yield Static(
+                "enter send   tab complete, then next field   esc cancel",
+                classes="keys",
+            )
 
     def on_mount(self) -> None:
         self.query_one("#job-path", Input).focus()
@@ -155,11 +243,18 @@ class NewJobModal(ModalScreen[dict | None]):
 
     @work(exclusive=True, thread=True, group="preview")
     def show_preview(self, path: str, entry: str) -> None:
-        # A big folder takes a moment to count, so it happens off the UI.
+        # A big folder takes a moment to count, so it happens off the UI. The
+        # count gives up as soon as a newer path or closing the screen cancels
+        # this worker; a thread left walking ~ would hold up quitting the dash.
+        worker = get_current_worker()
         try:
-            ok, text = preview(path, entry)
+            ok, text = preview(path, entry, stop=lambda: worker.is_cancelled)
+        except ScanStopped:
+            return
         except OSError as exc:
             ok, text = False, str(exc)
+        if worker.is_cancelled:
+            return
         markup = escape(text) if ok else f"[$warning]{escape(text)}[/]"
         self.app.call_from_thread(self.apply_preview, path, entry, markup)
 
