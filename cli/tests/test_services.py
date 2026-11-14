@@ -188,6 +188,47 @@ def test_install_start_stop_and_remove(platform_service, platform):
         assert not current["task"]
 
 
+def test_linux_skips_enable_linger_when_already_lingering(
+    platform_service, monkeypatch
+):
+    current, calls, binary, _ = platform_service
+    current["platform"] = "linux"
+    fake = services._run
+
+    def run(argv, **kwargs):
+        if argv[:2] == ["loginctl", "show-user"]:
+            calls.append(argv)
+            return "yes"
+        return fake(argv, **kwargs)
+
+    monkeypatch.setattr(services, "_run", run)
+    services.install([str(binary), "--port", "8080"], None)
+
+    assert ["loginctl", "show-user", "scheduler-owner"] == calls[0][:3]
+    assert not any(command[:2] == ["loginctl", "enable-linger"] for command in calls)
+    assert services.installed()
+
+
+def test_linux_says_how_to_enable_linger_when_refused(platform_service, monkeypatch):
+    current, _, binary, _ = platform_service
+    current["platform"] = "linux"
+    fake = services._run
+
+    def run(argv, **kwargs):
+        if argv[:2] == ["loginctl", "enable-linger"]:
+            raise services.ServiceError("loginctl failed: Access denied")
+        return fake(argv, **kwargs)
+
+    monkeypatch.setattr(services, "_run", run)
+    with pytest.raises(
+        services.ServiceError, match="sudo loginctl enable-linger scheduler-owner"
+    ):
+        services.install([str(binary), "--port", "8080"], None)
+
+    assert not services._unit().exists()
+    assert not services.installed()
+
+
 def test_linux_refuses_existing_unmanaged_unit(platform_service):
     current, _, binary, _ = platform_service
     current["platform"] = "linux"
