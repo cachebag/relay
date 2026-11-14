@@ -9,6 +9,8 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-13
+
 ### Fixed
 
 - **`relay scheduler start --service` works on Linux when lingering is
@@ -549,7 +551,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/cachebag/relay/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/cachebag/relay/compare/v0.2.10...v0.3.0
 [0.2.10]: https://github.com/cachebag/relay/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/cachebag/relay/compare/v0.2.8...v0.2.9
