@@ -9,6 +9,15 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Added
+
+- **`relay fetch` downloads a job's output files.** `relay fetch <job id>`
+  unpacks what the job wrote to `out/` into `relay-out/<job id>/`, or the
+  folder named with `--to`, and prints each file. Files already there are
+  kept unless `--force` is given. In the dash's job view, `f` does the same
+  into the default folder.
+  ([#167](https://github.com/cachebag/relay/pull/167))
+
 ## [0.2.10] - 2026-11-09
 
 ### Added

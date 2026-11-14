@@ -1,5 +1,7 @@
 import asyncio
+import io
 import json
+import tarfile
 
 import httpx
 import pytest
@@ -49,6 +51,19 @@ JOB = {
 }
 OLDER_JOB = {**JOB, "id": "j0", "status": "failed", "command": ["false"]}
 OUTPUT = {"stdout": "box\n", "stderr": "", "exit_code": 0}
+OUTPUT_FILES = [{"path": "result.csv", "bytes": 9}]
+
+
+def _bundle() -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        info = tarfile.TarInfo("result.csv")
+        info.size = 9
+        tar.addfile(info, io.BytesIO(b"total,55\n"))
+    return buf.getvalue()
+
+
+BUNDLE = _bundle()
 CREDITS = [{"account": "akrm", "balance": 42}, {"account": "omar", "balance": 7}]
 
 
@@ -83,6 +98,8 @@ def calls(monkeypatch):
             return httpx.Response(200, json=JOB)
         if req.url.path == "/jobs/j1/output":
             return httpx.Response(200, json=OUTPUT)
+        if req.url.path == "/jobs/j1/output/files":
+            return httpx.Response(200, content=BUNDLE)
         if req.url.path == "/pools/p1/credits":
             return httpx.Response(200, json=CREDITS)
         if req.url.path == "/pools/p1/token" and req.method == "POST":
@@ -487,6 +504,55 @@ def test_enter_on_a_job_shows_its_output(cfg, calls):
     drive(app, steps)
     assert ("GET", "/jobs/j1", "Bearer tok") in calls
     assert ("GET", "/jobs/j1/output", "Bearer tok") in calls
+
+
+def test_job_view_lists_output_files_and_f_fetches_them(
+    cfg, calls, monkeypatch, tmp_path
+):
+    profile.save(SAVED)
+    monkeypatch.setitem(JOB, "output_files", OUTPUT_FILES)
+    monkeypatch.chdir(tmp_path)
+    app = DashApp(SCHED)
+    notes = []
+    app.notify = lambda msg, **kw: notes.append(msg)
+    dest = tmp_path / "relay-out" / "j1"
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        summary = text(app.screen.query_one("#job-summary"))
+        assert "output files (1)" in summary
+        assert "result.csv  9 bytes" in summary
+        await pilot.press("f")
+        await settle(pilot)
+        assert (dest / "result.csv").read_bytes() == b"total,55\n"
+        assert notes[-1] == f"fetched 1 file to {dest.resolve()}"
+        # A second fetch leaves the files alone and says why.
+        await pilot.press("f")
+        await settle(pilot)
+        assert "already exists" in notes[-1] and "--force" not in notes[-1]
+
+    drive(app, steps)
+    assert ("GET", "/jobs/j1/output/files", "Bearer tok") in calls
+
+
+def test_f_on_a_job_without_output_files_only_says_so(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+    notes = []
+    app.notify = lambda msg, **kw: notes.append(msg)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        await pilot.press("f")
+        await settle(pilot)
+        assert notes == ["this job has no output files"]
+
+    drive(app, steps)
+    assert ("GET", "/jobs/j1/output/files", "Bearer tok") not in calls
 
 
 def test_credits_modal_marks_me(cfg, calls):

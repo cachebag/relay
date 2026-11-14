@@ -104,7 +104,15 @@ print("wrote out/result.csv")
 relay submit --wait --dir ./crunch -- 10
 ```
 
-The folder is packed, sent with the job, and unpacked into the job's own empty folder on the node. `run.sh` runs there with the arguments after `--`. Anything the job writes to `out/` comes back with the result: `relay status` and the dashboard list the files, and `relay fetch` (coming in #141) downloads them. Folders are capped at 50 MB packed, and `.git`, `__pycache__`, `.venv` and `node_modules` are left out.
+The folder is packed, sent with the job, and unpacked into the job's own empty folder on the node. `run.sh` runs there with the arguments after `--`. Anything the job writes to `out/` comes back with the result: `relay status` and the dashboard list the files, and `relay fetch` downloads them. Folders are capped at 50 MB packed, and `.git`, `__pycache__`, `.venv` and `node_modules` are left out.
+
+Once the job has finished, get its files with the job id:
+
+```sh
+relay fetch 40ca4109f082
+```
+
+They land in `relay-out/<job id>/` in the current folder, or in the folder named with `--to`. Files that are already there are left alone unless you add `--force`. In the dashboard, open the job with enter and press `f`.
 
 For one script, `--file` sends just that file and runs it:
 
