@@ -143,55 +143,62 @@ def build_bundle(root: Path, only: Path | None = None) -> bytes:
     return buf.getvalue()
 
 
-def bundle_from_args(args) -> tuple[bytes | None, str | None]:
-    """The bundle and entry for --dir or --file, or (None, None). Exits with a
-    message on a bad combination, a missing file or a bundle over the cap."""
-    dir_arg = getattr(args, "dir", None)
-    file_arg = getattr(args, "file", None)
-    entry = getattr(args, "entry", None)
+class BundleError(ValueError):
+    """What's wrong with the files picked for a job, in words for the user."""
 
+
+def make_bundle(
+    dir_arg: str | None, file_arg: str | None, entry: str | None
+) -> tuple[bytes | None, str | None]:
+    """The bundle and entry for a folder or one script, or (None, None) for
+    neither. Raises BundleError on a bad combination, a missing file or a
+    bundle over the cap. The CLI and the dash share this."""
     if dir_arg and file_arg:
-        print("relay: use --dir or --file, not both", file=sys.stderr)
-        sys.exit(2)
+        raise BundleError("use --dir or --file, not both")
     if entry and not dir_arg:
-        print("relay: --entry needs --dir", file=sys.stderr)
-        sys.exit(2)
+        raise BundleError("--entry needs --dir")
     if not dir_arg and not file_arg:
         return None, None
 
     if file_arg:
         script = Path(file_arg)
         if not script.is_file():
-            print(f"relay: {file_arg} is not a file", file=sys.stderr)
-            sys.exit(2)
+            raise BundleError(f"{file_arg} is not a file")
         bundle = build_bundle(script.parent, only=script)
         entry = script.name
     else:
         root = Path(dir_arg)
         if not root.is_dir():
-            print(f"relay: {dir_arg} is not a folder", file=sys.stderr)
-            sys.exit(2)
+            raise BundleError(f"{dir_arg} is not a folder")
         if entry:
             if not (root / entry).is_file():
-                print(f"relay: {entry} is not in {dir_arg}", file=sys.stderr)
-                sys.exit(2)
+                raise BundleError(f"{entry} is not in {dir_arg}")
         elif not any((root / name).is_file() for name in DEFAULT_ENTRIES):
-            print(
-                f"relay: {dir_arg} has no run.sh, run.ps1 or run.cmd; "
-                "name the file to run with --entry",
-                file=sys.stderr,
+            raise BundleError(
+                f"{dir_arg} has no run.sh, run.ps1 or run.cmd; "
+                "name the file to run with --entry"
             )
-            sys.exit(2)
         bundle = build_bundle(root)
 
     if len(bundle) > MAX_BUNDLE_BYTES:
-        print(
-            f"relay: job files are {len(bundle) / (1024 * 1024):.1f} MB packed, "
-            f"the limit is {MAX_BUNDLE_BYTES // (1024 * 1024)} MB",
-            file=sys.stderr,
+        raise BundleError(
+            f"job files are {len(bundle) / (1024 * 1024):.1f} MB packed, "
+            f"the limit is {MAX_BUNDLE_BYTES // (1024 * 1024)} MB"
         )
-        sys.exit(2)
     return bundle, entry
+
+
+def bundle_from_args(args) -> tuple[bytes | None, str | None]:
+    """make_bundle for --dir, --file and --entry. Exits with the message."""
+    try:
+        return make_bundle(
+            getattr(args, "dir", None),
+            getattr(args, "file", None),
+            getattr(args, "entry", None),
+        )
+    except BundleError as exc:
+        print(f"relay: {exc}", file=sys.stderr)
+        sys.exit(2)
 
 
 def submit(

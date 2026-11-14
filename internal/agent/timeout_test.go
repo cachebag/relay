@@ -79,13 +79,15 @@ func TestAgentTimeoutReportsFailureAndTakesNextJob(t *testing.T) {
 
 	a := newTestAgent(f, "node-1", RunCommand)
 
-	// The first job should be terminated shortly after one second.
+	// The first job should be terminated shortly after one second. The bound
+	// is loose because starting and killing a process on a busy Windows
+	// runner has taken over 2s; it only has to be far below the 60s sleep.
 	started := time.Now()
 	tickAndWait(a)
 
-	if elapsed := time.Since(started); elapsed > 2*time.Second {
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
 		t.Fatalf(
-			"one-second timeout took %s, want under 2s",
+			"one-second timeout took %s, want under 10s",
 			elapsed,
 		)
 	}

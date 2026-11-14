@@ -83,6 +83,12 @@ DataTable > .datatable--cursor { background: $primary 25%; }
 #submit:focus { border: tall $primary; }
 
 #job-modal { width: 110; }
+#newjob-modal .row { height: auto; }
+#newjob-modal .row > Vertical { height: auto; width: 1fr; }
+#newjob-modal .row > Vertical:first-of-type { margin-right: 2; }
+#newjob-modal Select > SelectCurrent { border: tall $panel; background: $panel; }
+#newjob-modal Select:focus > SelectCurrent { border: tall $primary; }
+#job-status.failed { color: $error; }
 #job-output { height: auto; max-height: 24; margin-top: 1; background: $panel; padding: 0 1; }
 #job-output .stderr { color: $warning; }
 #credits, #pools { height: auto; max-height: 20; background: $surface; margin: 0; }
