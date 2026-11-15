@@ -839,6 +839,7 @@ Example response:
   "submitter": "alice",
   "attempts": 0,
   "created_at": "2026-09-23T15:01:03.320292Z",
+  "position": 0,
   "bundle_bytes": 0,
   "output_bytes": 0
 }
@@ -870,6 +871,10 @@ A job that was sent with files also shows them. `entry` is the file the node run
 `node_id` is the node the scheduler assigned the job to, or empty while the job is queued.
 
 `attempts` counts how many times the scheduler has placed the job on a node.
+
+Queued jobs are ordered by their submitter's credit balance in the pool, highest first. Jobs from submitters with the same balance stay in `created_at` order, and a submitter with no ledger entries has a balance of `0`. `position` is the zero-based place of a queued job in that order; it counts only queued jobs in the same pool, so the first queued job has `position` `0`. It is absent once the job is assigned or finished.
+
+When all eligible nodes are busy, jobs stay queued until a node is free. Assigned and running jobs do not count toward `position`.
 
 `timeout_seconds` is the maximum time an agent may spend executing a single
 attempt. It is always included in job responses, and defaults to `3600` for

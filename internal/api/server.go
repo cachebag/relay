@@ -492,6 +492,68 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			return
 		}
 
+		// Only queued jobs have a position. It counts the queued jobs ahead
+		// of this one in the same pool when jobs are ordered by submitter balance.
+		if j.Status == store.JobQueued {
+			balances, err := credits.Balances(r.Context(), p.ID)
+			if err != nil {
+				http.Error(w, "store error", http.StatusInternalServerError)
+				return
+			}
+
+			all, err := jobs.List(r.Context())
+			if err != nil {
+				http.Error(w, "store error", http.StatusInternalServerError)
+				return
+			}
+
+			var queue []store.Job
+			for _, x := range all {
+				if x.PoolID == p.ID && x.Status == store.JobQueued {
+					queue = append(queue, x)
+				}
+			}
+
+			sort.Slice(queue, func(i, j int) bool {
+				a := queue[i]
+				b := queue[j]
+
+				var ab int = 0
+				if v, ok := balances[a.Submitter]; ok {
+					ab = v
+				}
+
+				var bb int = 0
+				if v, ok := balances[b.Submitter]; ok {
+					bb = v
+				}
+
+				if ab != bb {
+					return ab > bb
+				}
+				if !a.CreatedAt.Equal(b.CreatedAt) {
+					return a.CreatedAt.Before(b.CreatedAt)
+				}
+				return a.ID < b.ID
+			})
+
+			var position int = 0
+			for _, x := range queue {
+				if x.ID == j.ID {
+					break
+				}
+				position++
+			}
+
+			type jobView struct {
+				store.Job
+				Position int `json:"position"`
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(jobView{Job: j, Position: position})
+			return
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(j)
 	})

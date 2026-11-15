@@ -2,7 +2,9 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"github.com/cachebag/relay/internal/credit"
@@ -17,6 +19,7 @@ type Scheduler struct {
 	nodes   store.Registry
 	jobs    store.JobStore
 	credits *credit.Earner
+	ledger  store.CreditStore
 	started time.Time
 
 	// next is the round-robin position per pool, used to break ties between
@@ -25,12 +28,19 @@ type Scheduler struct {
 }
 
 // New returns a Scheduler. credits pays owners for their machines' online
-// time each tick; nil turns that off.
-func New(nodes store.Registry, jobs store.JobStore, credits *credit.Earner) *Scheduler {
+// time each tick; nil turns that off. ledger is the credit store used to
+// order queued jobs by submitter balance; nil keeps oldest-first ordering.
+func New(nodes store.Registry, jobs store.JobStore, credits *credit.Earner, ledgers ...store.CreditStore) *Scheduler {
+	var ledger store.CreditStore = nil
+	if len(ledgers) > 0 {
+		ledger = ledgers[0]
+	}
+
 	return &Scheduler{
 		nodes:   nodes,
 		jobs:    jobs,
 		credits: credits,
+		ledger:  ledger,
 		started: time.Now(),
 		next:    make(map[string]int),
 	}
@@ -111,7 +121,115 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 		s.next = make(map[string]int)
 	}
 
+	// Load each pool's balances once, for pools that have queued jobs.
+	// Jobs from a submitter with no ledger entries get a balance of 0.
+	var poolBalances map[string]map[string]int = make(map[string]map[string]int)
+	var queue []store.Job
 	for _, j := range jobs {
+		if j.Status != store.JobQueued || j.PoolID == "" {
+			continue
+		}
+
+		queue = append(queue, j)
+
+		if s.ledger == nil {
+			continue
+		}
+
+		if _, ok := poolBalances[j.PoolID]; ok {
+			continue
+		}
+
+		var balances map[string]int
+		balances, err := s.ledger.Balances(ctx, j.PoolID)
+		if err != nil {
+			return err
+		}
+		poolBalances[j.PoolID] = balances
+	}
+
+	// Highest balance goes first. Equal balances stay in created-at order,
+	// and an absent ledger entry counts as 0.
+	if s.ledger != nil {
+		sort.Slice(queue, func(i, j int) bool {
+			a := queue[i]
+			b := queue[j]
+
+			// Keep pools together so one pool's balances never order another's jobs.
+			if a.PoolID != b.PoolID {
+				return a.PoolID < b.PoolID
+			}
+
+			var ab int = 0
+			if pool, ok := poolBalances[a.PoolID]; ok {
+				if v, found := pool[a.Submitter]; found {
+					ab = v
+				}
+			}
+
+			var bb int = 0
+			if pool, ok := poolBalances[b.PoolID]; ok {
+				if v, found := pool[b.Submitter]; found {
+					bb = v
+				}
+			}
+
+			if ab != bb {
+				return ab > bb
+			}
+			if !a.CreatedAt.Equal(b.CreatedAt) {
+				return a.CreatedAt.Before(b.CreatedAt)
+			}
+			return a.ID < b.ID
+		})
+	}
+
+	// Log why jobs waited, once per pool, when more than one submitter is
+	// queued. The ledger may be absent, so the balance shown is 0.
+	var waiting map[string][]string = make(map[string][]string)
+	for _, j := range queue {
+		account := j.Submitter
+		if account == "" {
+			account = "-"
+		}
+
+		accounts := waiting[j.PoolID]
+		var found bool = false
+		for _, a := range accounts {
+			if a == account {
+				found = true
+				break
+			}
+		}
+		if !found {
+			waiting[j.PoolID] = append(accounts, account)
+		}
+	}
+
+	if s.ledger != nil {
+		for pool, accounts := range waiting {
+			if len(accounts) <= 1 {
+				continue
+			}
+
+			var line string = ""
+			for _, account := range accounts {
+				var balance int = 0
+				if balances, ok := poolBalances[pool]; ok {
+					if v, found := balances[account]; found {
+						balance = v
+					}
+				}
+				if line != "" {
+					line += ", "
+				}
+				line += fmt.Sprintf("%s (%d)", account, balance)
+			}
+			log.Printf("queue order in pool %s: %s", pool, line)
+		}
+	}
+
+	for _, j := range queue {
 
 		// Only queued jobs can be scheduled.
 		if j.Status != store.JobQueued {
@@ -154,6 +272,13 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 			if len(least) == 0 || load[n.ID] == load[least[0].ID] {
 				least = append(least, n)
 			}
+		}
+		// With credit priority enabled, leave excess work in the pool queue
+		// until a node is free. Agent pickup uses created-at order, so stacking
+		// assignments on a busy node would discard the priority order.
+		// A nil ledger preserves the legacy oldest-first placement behavior.
+		if s.ledger != nil && load[least[0].ID] > 0 {
+			continue
 		}
 		node := least[s.next[j.PoolID]%len(least)]
 		s.next[j.PoolID]++

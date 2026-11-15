@@ -90,3 +90,24 @@ def test_status_prints_the_requirement(monkeypatch, capsys):
     )
     status.run(argparse.Namespace(scheduler="http://scheduler", job_id="abc123"))
     assert "queued (requires linux)" in capsys.readouterr().out
+
+
+def test_status_prints_queued_position(monkeypatch, capsys):
+    """A queued job shows how many jobs are ahead of it in its pool."""
+    monkeypatch.setattr(status.profile, "require_login", lambda: {"pool_token": "tok"})
+    monkeypatch.setattr(
+        status,
+        "fetch",
+        lambda scheduler, job_id, token: {
+            "id": "abc123",
+            "command": ["echo", "hi"],
+            "status": "queued",
+            "node_id": "",
+            "attempts": 0,
+            "created_at": "2026-09-23T15:01:03.320292Z",
+            "position": 1,
+            "timeout_seconds": 3600,
+        },
+    )
+    status.run(argparse.Namespace(scheduler="http://scheduler", job_id="abc123"))
+    assert "queued (1 ahead)" in capsys.readouterr().out
