@@ -18,6 +18,7 @@ from relay.commands import (
     node,
     nodes,
     pool,
+    reset,
     scheduler,
     status,
     submit,
@@ -77,6 +78,7 @@ def main() -> None:
     node.register(sub)
     install.register(sub)
     scheduler.register(sub)
+    reset.register(sub)
 
     args = parser.parse_args()
 
