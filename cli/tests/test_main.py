@@ -202,3 +202,58 @@ def test_ctrl_c_exits_130_without_a_traceback(monkeypatch):
         relay_main.main()
 
     assert exc.value.code == 130
+
+
+def test_timeout_is_friendly_and_names_the_address_that_failed(monkeypatch, capsys):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("handshake timed out", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    def command(args):
+        client.post("https://relay.example.ts.net/pools")
+
+    monkeypatch.setattr(
+        relay_main.nodes,
+        "register",
+        lambda subparsers: register_test_command(subparsers, command),
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["relay", "--scheduler", "http://localhost:8080", "test-command"]
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        relay_main.main()
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert (
+        err
+        == "relay: can't reach scheduler at https://relay.example.ts.net (ConnectTimeout)\n"
+    )
+    assert "Traceback" not in err
+
+
+def test_connection_error_names_the_address_that_failed(monkeypatch, capsys):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection failed", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    def command(args):
+        client.post("https://relay.example.ts.net/pools")
+
+    monkeypatch.setattr(
+        relay_main.nodes,
+        "register",
+        lambda subparsers: register_test_command(subparsers, command),
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["relay", "--scheduler", "http://localhost:8080", "test-command"]
+    )
+
+    with pytest.raises(SystemExit):
+        relay_main.main()
+
+    err = capsys.readouterr().err
+    assert err == "relay: can't reach scheduler at https://relay.example.ts.net\n"

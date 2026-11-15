@@ -96,6 +96,17 @@ def own_scheduler(server: dict | None = None) -> str:
     return server.get("public_url") or server.get("address") or ""
 
 
+def local_fallback(args, tried: str) -> str:
+    """This machine's local scheduler address, to retry on when the public
+    address doesn't answer (a fresh Funnel address can take a minute for its
+    first TLS handshake). Empty when --scheduler was given or there is no
+    different local address to try."""
+    if getattr(args, "scheduler_given", True):
+        return ""
+    local = profile.server().get("address") or ""
+    return local if local and local != tried else ""
+
+
 def create_scheduler(args) -> str:
     if getattr(args, "scheduler_given", True):
         return args.scheduler
@@ -127,6 +138,19 @@ def run_create(args) -> None:
         raise SystemExit(
             f"create failed: {e.response.status_code} {e.response.text.strip()}"
         )
+    except httpx.TransportError:
+        local = local_fallback(args, scheduler)
+        if not local:
+            raise
+        print(f"{scheduler} didn't answer; using {local} instead", file=sys.stderr)
+        try:
+            p = create(local, args.name, admin_token)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise SystemExit("create failed: the server admin token was rejected")
+            raise SystemExit(
+                f"create failed: {e.response.status_code} {e.response.text.strip()}"
+            )
     print(f"pool id:    {p['id']}")
     print(f"join token: {p['token']}")
     print(f"admin token: {p['admin_token']}")
