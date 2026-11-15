@@ -1,4 +1,7 @@
 import argparse
+import sqlite3
+from contextlib import closing
+from pathlib import Path
 
 import pytest
 
@@ -402,3 +405,68 @@ def test_existing_service_accepts_omitted_or_matching_flags(
     assert "saved configuration" in capsys.readouterr().out
     if initial_state == "inactive":
         assert profile.server()["address"] == "http://localhost:9123"
+
+
+def test_backup_and_restore_are_registered():
+    parser = argparse.ArgumentParser()
+    scheduler.register(parser.add_subparsers(dest="command", required=True))
+
+    backup = parser.parse_args(["scheduler", "backup", "--to", "x.db"])
+    assert backup.func is scheduler.run_backup
+    assert backup.to == Path("x.db")
+
+    restore = parser.parse_args(["scheduler", "restore", "x.db"])
+    assert restore.func is scheduler.run_restore
+    assert restore.file == Path("x.db")
+
+
+def test_restore_refuses_running_scheduler(cfg, monkeypatch):
+    source = cfg / "backup.db"
+    source.write_bytes(b"")
+
+    monkeypatch.setattr(procs, "running", lambda name: 4242)
+
+    parser = argparse.ArgumentParser()
+    scheduler.register(parser.add_subparsers(dest="command", required=True))
+    args = parser.parse_args(["scheduler", "restore", str(source)])
+
+    with pytest.raises(SystemExit) as exc:
+        scheduler.run_restore(args)
+    assert "relayd is running" in str(exc.value)
+
+
+def test_restore_replaces_database_when_stopped(cfg, monkeypatch, capsys):
+    source = cfg / "backup.db"
+    with closing(sqlite3.connect(source)) as database:
+        database.executescript("""
+            CREATE TABLE nodes (
+                id TEXT, hostname TEXT, os TEXT, arch TEXT,
+                cpus INTEGER, mem_bytes INTEGER, last_seen INTEGER
+            );
+            CREATE TABLE pools (
+                id TEXT, name TEXT, token TEXT, created_at INTEGER
+            );
+            CREATE TABLE jobs (
+                id TEXT, command TEXT, status TEXT,
+                node_id TEXT, attempts INTEGER, created_at INTEGER
+            );
+            INSERT INTO pools VALUES ('pool-1', 'lab', 'join-token', 123);
+        """)
+
+    (cfg / "relay.db").write_bytes(b"old")
+    (cfg / "relay.db-wal").write_bytes(b"wal")
+    (cfg / "relay.db-shm").write_bytes(b"shm")
+
+    monkeypatch.setattr(procs, "running", lambda name: None)
+    monkeypatch.setattr(services, "installed", lambda: False)
+
+    parser = argparse.ArgumentParser()
+    scheduler.register(parser.add_subparsers(dest="command", required=True))
+    args = parser.parse_args(["scheduler", "restore", str(source)])
+
+    scheduler.run_restore(args)
+
+    assert (cfg / "relay.db").read_bytes() == source.read_bytes()
+    assert not (cfg / "relay.db-wal").exists()
+    assert not (cfg / "relay.db-shm").exists()
+    assert "database restored" in capsys.readouterr().out

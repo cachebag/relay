@@ -860,6 +860,19 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 	// pool's admin token. See removenode.go.
 	mux.HandleFunc("DELETE /pools/{id}/nodes/{node_id}", handleRemoveNode(reg, pools, jobs))
 
+	// Copies the live relay.db with SQLite's online backup and sends the
+	// database file. Requires the server admin token.
+	mux.HandleFunc("POST /admin/backup", func(w http.ResponseWriter, r *http.Request) {
+		if !checkServerAdmin(w, r, server) {
+			return
+		}
+		if cfg.db == nil {
+			http.Error(w, "this scheduler cannot back up", http.StatusServiceUnavailable)
+			return
+		}
+		serveDatabaseBackup(w, r, cfg.db)
+	})
+
 	return mux
 }
 

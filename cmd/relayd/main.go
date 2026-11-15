@@ -180,7 +180,8 @@ func main() {
 
 	handler := api.NewHandler(reg, pools, jobs, credits, server,
 		api.WithPublicURL(func() string { return publicURL.Load().(string) }),
-		api.WithBundles(bundles))
+		api.WithBundles(bundles),
+		api.WithDatabase(reg))
 
 	// With --public, join the tailnet and serve the same handler on the
 	// Funnel listener too. A failure here is fatal on purpose: silently
