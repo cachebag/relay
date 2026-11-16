@@ -69,11 +69,9 @@ Removing the service does not delete the database, settings, or log.
 - **Windows:** Relay registers a Scheduled Task for your account, triggered
   when you log in, with task settings that restart it on failure. Use a
   normal terminal as the scheduler owner. The task runs the installed
-  `relayd.exe` directly and writes to the same `relayd.log`. To upgrade, use
-  plain `relay scheduler stop`, run `relay install`, then run
-  `relay scheduler start --service` to use the new binary. The registration
-  does not need to be reinstalled. Task Scheduler and `relayd.log` show
-  failures.
+  `relayd.exe` directly and writes to the same `relayd.log`. `relay update`
+  upgrades it in place; the registration does not need to be reinstalled.
+  Task Scheduler and `relayd.log` show failures.
 
 On macOS and Windows, the scheduler needs the owner's login session after a
 reboot. A dedicated server laptop can use the operating system's automatic
@@ -155,6 +153,29 @@ relayd public address: https://relay.tail1234.ts.net
 ```
 
 Use that as `--scheduler` in `relay pool create` and the invite it prints is ready to share. The plain `:8080` listener stays up too, so machines on your LAN can keep using the local address. Tailscale state lives in `relay/tsnet` under your user config directory (`~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows), so the address survives restarts. Funnel has a bandwidth cap, which is fine for heartbeats and job output (capped at 1 MB) but not for bulk data.
+
+## Update to a new release
+
+```sh
+relay update
+```
+
+It downloads the latest `relayd` and `relay-agent` first, so a failed
+download changes nothing. Then it stops `relayd`, copies `relay.db` to
+`backups/relay-before-<version>.db` in the config folder, swaps the binary
+and starts `relayd` again the way it was running: the same port and public
+address, or the startup service if that is how it runs. The new `relayd`
+brings the database up to date when it starts. Agents this machine runs with
+`relay contribute` are restarted on the new `relay-agent` too.
+
+If the new `relayd` does not answer within 20 seconds, the old binary and the
+database copy are put back and the old `relayd` is started again, so a
+release that fails on your data leaves you where you were.
+
+`relay update --check` only says what would change, and `--version v0.3.2`
+goes to that release in place of the latest. `relayd` is down for a few
+seconds during the swap; agents keep retrying and reconnect on their own. A
+job running on this machine's own agent is stopped when that agent restarts.
 
 ## Move the scheduler to another machine
 

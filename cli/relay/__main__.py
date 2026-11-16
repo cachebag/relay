@@ -21,6 +21,7 @@ from relay.commands import (
     scheduler,
     status,
     submit,
+    update,
 )
 
 DEFAULT_SCHEDULER = "http://localhost:8080"
@@ -76,6 +77,7 @@ def main() -> None:
     credits.register(sub)
     node.register(sub)
     install.register(sub)
+    update.register(sub)
     scheduler.register(sub)
 
     args = parser.parse_args()

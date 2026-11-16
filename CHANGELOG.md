@@ -11,6 +11,16 @@ without a pull request link their commit instead.
 
 ### Added
 
+- **`relay update` moves relayd and relay-agent to the latest release.**
+  It downloads the new binaries first, then stops relayd, copies `relay.db`
+  to `backups/relay-before-<version>.db`, swaps the binary and starts relayd
+  again with the same port and public address, or through the startup
+  service if it runs as one. Agents started with `relay contribute` are
+  restarted on the new binary. If the new relayd does not answer, the old
+  binary and the database copy are put back and the old relayd is started
+  again. `--check` only says what would change and `--version` picks a
+  release. It also says when the CLI itself is behind.
+  ([#183](https://github.com/cachebag/relay/pull/183))
 - **The dash's new job screen opens the desktop's file picker.** `ctrl+o`
   picks a folder and `ctrl+f` picks a script, in Finder on macOS, File
   Explorer on Windows, and zenity or kdialog on Linux. The pick lands in
@@ -49,6 +59,11 @@ without a pull request link their commit instead.
 
 ### Changed
 
+- **`relay scheduler start` records the flags it started relayd with.**
+  They go in `relayd.argv.json` in the config folder, which `relay update`
+  reads to start relayd the same way. For a relayd started by an older CLI
+  it works them out from the saved address and the log.
+  ([#183](https://github.com/cachebag/relay/pull/183))
 - **A job waits in the queue until a node is free.** The scheduler used to
   place a waiting job behind the one already running on the least busy
   node. It now leaves the job queued until a node that fits it is idle, so

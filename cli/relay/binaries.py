@@ -90,23 +90,33 @@ def installed_versions() -> dict:
         return {}
 
 
-def record_version(name: str, tag: str) -> None:
+def record_version(name: str, tag: str | None) -> None:
     versions = installed_versions()
     versions[name] = tag
     (install_dir() / "versions.json").write_text(json.dumps(versions, indent=2))
 
 
-def download(
+def installed_path(name: str) -> Path:
+    """Where relay install puts this binary, whether or not it is there."""
+    return install_dir() / (name + (".exe" if this_platform()[0] == "windows" else ""))
+
+
+def _beside(dest: Path, suffix: str) -> Path:
+    return dest.with_suffix(dest.suffix + suffix)
+
+
+def stage(
     name: str,
     version: str | None = None,
     client: httpx.Client | None = None,
     progress: Callable[[int, int | None], None] | None = None,
 ) -> tuple[Path, str, bool]:
-    """Fetch one binary into the install dir.
+    """Fetch one binary and leave it beside the installed one, ready for
+    commit. The installed binary is untouched, so whatever is running it can
+    keep running until the swap.
 
-    Returns (path, tag, downloaded). downloaded is False when that tag is
-    already installed. progress(bytes_so_far, total_or_None) is called as
-    chunks land."""
+    Returns (path, tag, staged). staged is False when that tag is already
+    installed. progress(bytes_so_far, total_or_None) is called as chunks land."""
     os_name, arch = this_platform()
     if (os_name, arch) not in PUBLISHED:
         raise MissingBinary(
@@ -118,13 +128,14 @@ def download(
         tag = version if version.startswith("v") else "v" + version
     else:
         tag = latest_tag(client)
-    dest = install_dir() / (name + (".exe" if os_name == "windows" else ""))
+    dest = installed_path(name)
     if dest.exists() and installed_versions().get(name) == tag:
         return dest, tag, False
 
     url = f"{REPO}/releases/download/{tag}/{asset_name(name, os_name, arch)}"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(dest.suffix + ".part")
+    tmp = _beside(dest, ".part")
+    new = _beside(dest, ".new")
     with client.stream("GET", url) as r:
         r.raise_for_status()
         length = r.headers.get("content-length")
@@ -137,18 +148,54 @@ def download(
                 if progress:
                     progress(done, total)
     if os_name == "windows":
-        tmp.chmod(tmp.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        tmp.replace(dest)
+        tmp.replace(new)
     else:
-        # Unpack beside dest and rename over it. Writing into a binary that is
-        # running keeps its inode, and macOS then kills every new launch of it.
-        new = dest.with_suffix(dest.suffix + ".new")
         with tarfile.open(tmp) as tar:
             src = tar.extractfile(tar.getmember(name))
             with open(new, "wb") as f:
                 shutil.copyfileobj(src, f)
-        new.chmod(new.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        new.replace(dest)
         tmp.unlink()
-    record_version(name, tag)
+    new.chmod(new.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return dest, tag, True
+
+
+def commit(dest: Path, name: str, tag: str, keep_old: bool = False) -> None:
+    """Put a staged binary in place. It is renamed over the old one: writing
+    into a binary that is running keeps its inode, and macOS then kills every
+    new launch of it. keep_old leaves the old binary beside it for rollback."""
+    if keep_old and dest.exists():
+        dest.replace(_beside(dest, ".old"))
+    _beside(dest, ".new").replace(dest)
+    record_version(name, tag)
+
+
+def rollback(dest: Path, name: str, tag: str | None) -> bool:
+    """Put back the binary commit kept, recorded as tag. False if none was kept."""
+    old = _beside(dest, ".old")
+    if not old.exists():
+        return False
+    old.replace(dest)
+    record_version(name, tag)
+    return True
+
+
+def discard(dest: Path) -> None:
+    """Remove what stage and commit leave beside a binary."""
+    for suffix in (".old", ".new"):
+        _beside(dest, suffix).unlink(missing_ok=True)
+
+
+def download(
+    name: str,
+    version: str | None = None,
+    client: httpx.Client | None = None,
+    progress: Callable[[int, int | None], None] | None = None,
+) -> tuple[Path, str, bool]:
+    """Fetch one binary into the install dir.
+
+    Returns (path, tag, downloaded). downloaded is False when that tag is
+    already installed."""
+    dest, tag, staged = stage(name, version, client, progress)
+    if staged:
+        commit(dest, name, tag)
+    return dest, tag, staged

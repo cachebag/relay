@@ -20,7 +20,7 @@ If you have the `relay` CLI (see [SUBMIT.md](SUBMIT.md)), it downloads the right
 relay install --agent-only
 ```
 
-It goes into `relay/bin` under your config folder and puts that folder on your PATH. Then log in once with the address and token from your admin, and start contributing:
+It goes into `relay/bin` under your config folder and puts that folder on your PATH. `relay update` moves it to the latest release later and restarts the agent if it is running. Then log in once with the address and token from your admin, and start contributing:
 
 ```sh
 relay login --scheduler http://<scheduler address>:8080 --pool-token <pool token> --name <your name>
