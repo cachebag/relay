@@ -49,6 +49,12 @@ without a pull request link their commit instead.
 
 ### Fixed
 
+- **Typing `~?` as the job path no longer crashes the dash.** In the new
+  job screen, `~` followed by anything but a slash names another user's
+  home folder, and looking up a user that does not exist raised an error
+  that took the whole dash down. Such a path is now kept as typed and
+  reported as not a folder or a file.
+  ([#181](https://github.com/cachebag/relay/pull/181))
 - **`relay pool create` works while the public address is still coming
   up.** A new Funnel address can take a minute to answer its first
   request, and `pool create` timed out with a traceback. It now retries on
