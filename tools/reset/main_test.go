@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,6 +133,23 @@ func TestStopProcessesKillsRelayProcess(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
+
+	// Start returns once bash is running, before bash has become the sleep.
+	// /proc/<pid>/cmdline reads empty while that exec swaps the process
+	// image, and stopProcesses would skip the child as not relay's.
+	cmdline := fmt.Sprintf("/proc/%d/cmdline", cmd.Process.Pid)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		data, _ := os.ReadFile(cmdline)
+		if strings.HasPrefix(string(data), "relay-agent\x00") {
+			break
+		}
+		if time.Now().After(deadline) {
+			cmd.Process.Kill()
+			t.Fatalf("child never became relay-agent: %q", data)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	config := t.TempDir()
 	os.WriteFile(filepath.Join(config, "relay-agent.p1.pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600)
