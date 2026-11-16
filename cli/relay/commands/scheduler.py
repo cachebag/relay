@@ -1,5 +1,6 @@
 """relay scheduler start | stop | status: run relayd without a terminal."""
 
+import argparse
 import getpass
 import os
 import re
@@ -9,6 +10,7 @@ import sqlite3
 import time
 from contextlib import closing
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -199,6 +201,31 @@ def run_start(args) -> None:
     print(f"  log: {procs.log_path(NAME)}")
     if not want_all_found(found, want):
         print("  (relayd is still starting; relay scheduler status shows the rest)")
+
+
+def running_flags() -> argparse.Namespace:
+    """The flags the running relayd was started with, in the shape run_start
+    takes, so it can be started again the same way."""
+    argv = procs.argv(NAME) or []
+    if "--port" in argv:
+        return argparse.Namespace(
+            port=int(argv[argv.index("--port") + 1]),
+            public="--public" in argv,
+            name=argv[argv.index("--name") + 1] if "--name" in argv else "relay",
+            service=False,
+        )
+    # Started by a CLI that did not record its flags. The saved address has
+    # the port, and the log has the public address if there is one.
+    port = urlsplit(profile.server().get("address", "")).port or 8080
+    public = re.findall(
+        r"relayd public address: https://([^.\s]+)", procs.tail(NAME, 200)
+    )
+    return argparse.Namespace(
+        port=port,
+        public=bool(public),
+        name=public[-1] if public else "relay",
+        service=False,
+    )
 
 
 def start_service(args, existing: bool) -> None:

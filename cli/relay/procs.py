@@ -4,6 +4,7 @@ Each one gets <config dir>/<name>.log for its output and <name>.pid for its
 process ID. Nothing here is specific to either binary.
 """
 
+import json
 import os
 import signal
 import subprocess
@@ -21,6 +22,20 @@ def log_path(name: str) -> Path:
 
 def pid_path(name: str) -> Path:
     return profile.config_dir() / f"{name}.pid"
+
+
+def argv_path(name: str) -> Path:
+    return profile.config_dir() / f"{name}.argv.json"
+
+
+def argv(name: str) -> list[str] | None:
+    """What the process was last started with, or None when it was started
+    by a CLI that did not record it."""
+    try:
+        saved = json.loads(argv_path(name).read_text())
+    except OSError, ValueError:
+        return None
+    return saved if isinstance(saved, list) else None
 
 
 def running(name: str) -> int | None:
@@ -61,6 +76,8 @@ def start(name: str, argv: list[str], env: dict | None = None) -> int:
             **kwargs,
         )
     pid_path(name).write_text(str(proc.pid))
+    # relay update restarts the process with the same flags.
+    argv_path(name).write_text(json.dumps(argv))
     return proc.pid
 
 
