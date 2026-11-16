@@ -35,6 +35,7 @@ SAVED = {
 NODE = {
     "id": "n1",
     "hostname": "box",
+    "owner": "akrm",
     "os": "linux",
     "arch": "amd64",
     "cpus": 4,
@@ -207,6 +208,8 @@ def test_shows_pool_and_tables_with_saved_login(cfg, calls):
         assert app.invite_text == invite_line(SCHED, "tok")
         nodes, jobs = app.query_one("#nodes"), app.query_one("#jobs")
         assert nodes.row_count == 1 and jobs.row_count == 2
+        assert [str(c.label) for c in nodes.columns.values()][2] == "OWNER"
+        assert str(nodes.get_row_at(0)[2]) == "akrm"
         # The jobs table shows the node's hostname, not its ID.
         assert "box" in str(jobs.get_row_at(0)[3])
         labels = [str(c.label) for c in jobs.columns.values()]

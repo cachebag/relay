@@ -19,6 +19,9 @@ without a pull request link their commit instead.
 - **The dash's jobs table shows who submitted each job**, in a SUBMITTER
   column.
   ([#187](https://github.com/cachebag/relay/pull/187))
+- **The dash's nodes table shows who owns each machine**, in an OWNER
+  column, since a hostname often doesn't say whose it is.
+  ([#188](https://github.com/cachebag/relay/pull/188))
 - **The dash's theme picker is back.** `ctrl+p` opens the command palette,
   and "Change theme" lists the built-in themes. The pick is remembered, and
   node and job states are drawn in the theme's colours.

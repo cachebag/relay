@@ -14,7 +14,7 @@ from relay.dash.theme import STATE_COLORS
 # How often the dashboard asks the scheduler for nodes and jobs.
 REFRESH_S = 2.0
 
-NODE_COLUMNS = ("ID", "HOST", "STATUS", "OS/ARCH", "CPU", "MEM", "SEEN")
+NODE_COLUMNS = ("ID", "HOST", "OWNER", "STATUS", "OS/ARCH", "CPU", "MEM", "SEEN")
 JOB_COLUMNS = (
     "ID",
     "STATUS",
@@ -93,6 +93,7 @@ class NodesTable(LiveTable):
                     (
                         n["id"],
                         n["hostname"],
+                        n.get("owner") or "-",
                         self.colored(f"● {node_state(n)}", node_state(n)),
                         f"{n['os']}/{n['arch']}",
                         str(n.get("cpus", 0)),
