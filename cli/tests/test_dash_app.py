@@ -277,6 +277,32 @@ def test_job_without_output_files_only_offers_refresh_and_close(cfg, calls):
     drive(app, steps)
 
 
+def test_theme_picker_is_on_and_the_pick_is_remembered(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        assert app.theme == "relay"
+        status = lambda: app.query_one("#jobs").get_row_at(0)[1]
+        assert status().spans[0].style == "#7BD88F"
+        await pilot.press("ctrl+p")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "CommandPalette"
+        await pilot.press("escape")
+        app.theme = "textual-light"
+        await pilot.pause()
+        # Cell colours follow the theme instead of staying the relay ones.
+        assert status().spans[0].style == app.theme_variables["success"] != "#7BD88F"
+
+    drive(app, steps)
+    assert profile.theme() == "textual-light"
+    assert profile.load()["pool_token"] == "tok"
+
+    again = DashApp(SCHED)
+    assert again.theme == "textual-light"
+
+
 def test_join_modal_logs_in_with_pasted_token(cfg, calls):
     app = DashApp("http://ignored")
 

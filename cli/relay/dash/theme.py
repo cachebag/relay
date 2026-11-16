@@ -1,17 +1,18 @@
-"""One palette for the whole dashboard, so every screen and modal matches."""
+"""The dashboard's own palette, which it starts in, and what the other
+themes in the picker need from it."""
 
 from textual.theme import Theme
 
-# Cell colours for the tables. Taken from the theme below so a row looks
-# the same whether or not the cursor is on it.
-ONLINE = "#7bd88f"
-OFFLINE = "#ff6b6b"
-JOB_STYLES = {
-    "queued": "#f0b35a",
-    "assigned": "#7fb4e6",
-    "running": "#7fb4e6",
-    "done": "#7bd88f",
-    "failed": "#ff6b6b",
+# The theme colour each node and job state is drawn in, so the tables
+# follow whichever theme is picked.
+STATE_COLORS = {
+    "online": "success",
+    "offline": "error",
+    "queued": "warning",
+    "assigned": "primary",
+    "running": "primary",
+    "done": "success",
+    "failed": "error",
 }
 
 RELAY = Theme(

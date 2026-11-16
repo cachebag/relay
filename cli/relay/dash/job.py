@@ -16,7 +16,7 @@ from relay.commands import logs as logs_cmd
 from relay.commands import status as status_cmd
 from relay.dash import picker
 from relay.dash.tables import REFRESH_S
-from relay.dash.theme import JOB_STYLES
+from relay.dash.theme import STATE_COLORS
 
 FINISHED = ("done", "failed")
 
@@ -79,7 +79,7 @@ class JobModal(ModalScreen[None]):
         lines = [
             f"[b]{status_cmd.describe(job)}[/b]",
             "",
-            f"status     [{JOB_STYLES.get(state, '')}]{state}[/]",
+            f"status     [${STATE_COLORS.get(state, 'foreground')}]{state}[/]",
             f"node       {self.hostnames.get(node, node) or '-'}",
             f"attempts   {job.get('attempts', 0)}",
             f"submitter  {job.get('submitter') or '-'}",

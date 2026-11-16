@@ -8,6 +8,7 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
+from textual.theme import Theme
 from textual.widgets import Footer, Input, Label, Static
 
 # Share agent lifecycle logic with the `relay contribute` CLI command.
@@ -93,7 +94,6 @@ class SubmitInput(Input):
 class DashApp(App[None]):
     TITLE = "relay"
     CSS = theme.CSS
-    ENABLE_COMMAND_PALETTE = False
 
     BINDINGS: ClassVar[list[BindingType]] = [
         # A starts or stops the agent for the selected pool only.
@@ -139,7 +139,8 @@ class DashApp(App[None]):
         self._contribution_busy = False
         self._contribution_action = ""
         self.register_theme(theme.RELAY)
-        self.theme = "relay"
+        saved = profile.theme()
+        self.theme = saved if saved in self.available_themes else "relay"
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="topbar"):
@@ -178,6 +179,7 @@ class DashApp(App[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        self.theme_changed_signal.subscribe(self, self.theme_changed)
         self.set_interval(REFRESH_S, self.refresh_data)
         # Redraw every second so the SEEN and AGE columns keep ticking.
         self.set_interval(1.0, self.redraw)
@@ -188,6 +190,11 @@ class DashApp(App[None]):
 
     def on_unmount(self) -> None:
         self.http.close()
+
+    def theme_changed(self, picked: Theme) -> None:
+        profile.save_theme(picked.name)
+        # Table cells carry their own colours, so draw them again.
+        self.redraw()
 
     # -- login state ------------------------------------------------------
 
