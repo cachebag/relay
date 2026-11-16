@@ -134,6 +134,20 @@ It asks for confirmation, then deletes `relay.db` and its `-wal`/`-shm` files. F
 
 This is a dev-only tool. It is not part of any release binary or the `relay` CLI.
 
+## Resetting everything on your machine
+
+`resetdb` only clears the database in one folder. To put this machine's whole relay setup back to a clean slate, run from the repo root:
+
+```
+go run ./tools/reset
+```
+
+It asks for confirmation, stops `relayd` and every `relay-agent` the CLI started, then deletes the pools, logins, tokens, logs and job folders in the CLI's config and cache folders. The machine also gets a new node ID, which clears "node ID already belongs to another pool" errors.
+
+It keeps `bin/` (so no `relay install` needed), `tsnet/` and the saved Tailscale auth key, so `relay scheduler start --public` comes back on the same public address right away. Flags: `-y` to skip the prompt, `-tailscale` to also forget the Tailscale identity and key (you get a new address; delete the old machine in the Tailscale admin console too), and `-port <n>` if `relayd` isn't on 8080.
+
+This is a dev-only tool as well, never released.
+
 ## Where code goes
 
 | Path | What |
