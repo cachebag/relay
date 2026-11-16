@@ -9,6 +9,58 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Added
+
+- **`relay scheduler backup` and `restore` move the server in one file.**
+  `backup` copies `relay.db` through relayd with SQLite's online backup, so
+  it works while relayd is running, and writes `relay-<date>.db` in the
+  current folder or the file given with `--to`. `restore <file>` refuses
+  while relayd is running, checks that the file is a relay database, and
+  replaces `relay.db` in the config folder. The pools, join tokens, nodes,
+  jobs and credits come over, and the same server admin token keeps
+  working. Job files are kept outside the database and are not in the
+  backup. `POST /admin/backup` is the endpoint behind it and needs the
+  server admin token. `docs/ADMIN.md` covers moving the scheduler to
+  another machine.
+  ([#176](https://github.com/cachebag/relay/pull/176))
+- **The highest credit balance goes first when jobs are waiting.** Queued
+  jobs in a pool are ordered by their submitter's balance, highest first.
+  Equal balances stay oldest first, and a submitter with no credit history
+  counts as 0. `GET /jobs/{id}` returns a `position` for a queued job and
+  `relay status` shows it as `queued (2 ahead)`. relayd logs the order of
+  a pool each tick while more than one submitter is waiting.
+  ([#178](https://github.com/cachebag/relay/pull/178))
+- **`go run ./tools/reset` wipes this machine's relay state.** A dev-only
+  tool, next to `resetdb`. It stops relayd and every agent the CLI started,
+  deletes the pools, logins, tokens, logs and job folders, and gives the
+  machine a new node ID. It keeps `bin/`, `tsnet/` and the Tailscale key so
+  the public address stays the same; `-tailscale` forgets those too and
+  `-y` skips the prompt. It does not stop a relayd installed with
+  `--service`.
+  ([#177](https://github.com/cachebag/relay/pull/177))
+
+### Changed
+
+- **A job waits in the queue until a node is free.** The scheduler used to
+  place a waiting job behind the one already running on the least busy
+  node. It now leaves the job queued until a node that fits it is idle, so
+  the credit order holds up to the moment a job starts.
+  ([#178](https://github.com/cachebag/relay/pull/178))
+
+### Fixed
+
+- **`relay pool create` works while the public address is still coming
+  up.** A new Funnel address can take a minute to answer its first
+  request, and `pool create` timed out with a traceback. It now retries on
+  this machine's local scheduler address and says so. The invite still
+  carries the public address, and an address given with `--scheduler` is
+  never swapped.
+  ([#175](https://github.com/cachebag/relay/pull/175))
+- **Network timeouts print one line instead of a traceback.** Every
+  command now reports a timeout or dropped connection as `can't reach
+  scheduler at <address>`, and the address is the one the request went to.
+  ([#175](https://github.com/cachebag/relay/pull/175))
+
 ## [0.3.2] - 2026-11-13
 
 ### Added
