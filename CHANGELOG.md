@@ -9,6 +9,8 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-15
+
 ### Added
 
 - **`relay update` moves relayd and relay-agent to the latest release.**
@@ -671,7 +673,8 @@ First release, published as the `v0.1.0-beta` pre-release. `v0.1.0` and
   ([#35](https://github.com/cachebag/relay/pull/35); this release was tagged
   from that PR's branch before it merged.)
 
-[Unreleased]: https://github.com/cachebag/relay/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/cachebag/relay/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/cachebag/relay/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/cachebag/relay/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/cachebag/relay/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/cachebag/relay/compare/v0.2.10...v0.3.0
