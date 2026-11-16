@@ -246,6 +246,24 @@ def test_one_connection_for_everything_the_dash_asks(cfg, calls, monkeypatch):
     assert len(made) == 1
 
 
+def test_r_refreshes_the_dash_and_says_so(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+    notes = []
+    app.notify = lambda msg, **kw: notes.append(msg)
+
+    async def steps(pilot):
+        await settle(pilot)
+        before = calls.count(("GET", "/jobs", "Bearer tok"))
+        assert notes == []
+        await pilot.press("r")
+        await settle(pilot)
+        assert calls.count(("GET", "/jobs", "Bearer tok")) > before
+        assert notes == ["refreshed"]
+
+    drive(app, steps)
+
+
 def test_job_without_output_files_only_offers_refresh_and_close(cfg, calls):
     profile.save(SAVED)
     app = DashApp(SCHED)

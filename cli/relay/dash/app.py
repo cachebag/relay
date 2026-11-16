@@ -110,7 +110,7 @@ class DashApp(App[None]):
         Binding("ctrl+c", "copy_text", "Copy", show=False, priority=True),
         Binding("n", "new_pool", "New pool"),
         Binding("p", "switch_pool", "Pools"),
-        Binding("r", "refresh", "Refresh", show=False),
+        Binding("r", "refresh", "Refresh"),
         Binding("l", "logout", "Log out"),
         Binding("q", "quit", "Quit"),
     ]
@@ -213,7 +213,7 @@ class DashApp(App[None]):
     # -- data -------------------------------------------------------------
 
     @work(exclusive=True, thread=True)
-    def refresh_data(self) -> None:
+    def refresh_data(self, announce: bool = False) -> None:
         token = self.prof.get("pool_token")
         if not token:
             return
@@ -227,6 +227,9 @@ class DashApp(App[None]):
             error = f"can't reach {self.scheduler}: {exc}"
         self.node_rows, self.job_rows, self.error = node_rows, job_rows, error
         self.call_from_thread(self.redraw)
+        # The tables refresh on their own, so r would otherwise look dead.
+        if announce and not error:
+            self.call_from_thread(self.notify, "refreshed", timeout=2)
 
     def redraw(self) -> None:
         # The 1 s timer and the refresh worker can both land after the app has
@@ -300,7 +303,7 @@ class DashApp(App[None]):
     # -- actions ----------------------------------------------------------
 
     def action_refresh(self) -> None:
-        self.refresh_data()
+        self.refresh_data(announce=True)
 
     def action_toggle_contribution(self) -> None:
         """Toggle only the selected pool's agent without blocking the UI."""
