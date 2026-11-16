@@ -65,7 +65,7 @@ class JoinModal(ModalScreen[dict | str | None]):
     @work(exclusive=True, thread=True)
     def login(self, scheduler: str, token: str) -> None:
         try:
-            prof = auth.login(scheduler, token, getpass.getuser())
+            prof = auth.login(scheduler, token, getpass.getuser(), self.app.http)
         except httpx.HTTPStatusError as exc:
             msg = (
                 "that token isn't valid for this scheduler"
@@ -200,7 +200,7 @@ class NewPoolModal(ModalScreen[dict | None]):
     @work(exclusive=True, thread=True)
     def create(self, name: str, admin_token: str) -> None:
         try:
-            p = pool_cmd.create(self.target, name, admin_token)
+            p = pool_cmd.create(self.target, name, admin_token, self.app.http)
         except httpx.HTTPStatusError as exc:
             msg = (
                 "the server admin token was rejected"
@@ -250,7 +250,7 @@ class NewPoolModal(ModalScreen[dict | None]):
     @work(exclusive=True, thread=True)
     def log_in(self, scheduler: str, token: str) -> None:
         try:
-            prof = auth.login(scheduler, token, getpass.getuser())
+            prof = auth.login(scheduler, token, getpass.getuser(), self.app.http)
         except (httpx.HTTPError, httpx.InvalidURL) as exc:
             self.app.call_from_thread(
                 self.query_one("#create-error", Label).update, f"login failed: {exc}"

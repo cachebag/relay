@@ -513,8 +513,8 @@ def test_cli_contribute_argument_parsing():
 
 def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
     profile.save(SAVED)
-    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token: [])
-    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token: [])
+    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token, client: [])
+    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token, client: [])
 
     state = {"running": False}
     calls = []
@@ -575,8 +575,8 @@ def test_dashboard_a_starts_and_stops_agent(cfg, monkeypatch):
 def test_dashboard_a_only_controls_selected_pool_and_shows_total(cfg, monkeypatch):
     profile.save(SAVED)
     profile.save(SECOND)
-    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token: [])
-    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token: [])
+    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token, client: [])
+    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token, client: [])
 
     # Pool A is already contributing when the dashboard opens on pool B.
     running = {"p1": {"pid": 4321, "pool_id": "p1", "pool_name": "lab"}}
@@ -643,8 +643,8 @@ def test_dashboard_a_only_controls_selected_pool_and_shows_total(cfg, monkeypatc
 
 def test_dashboard_ignores_toggle_while_busy(cfg, monkeypatch):
     profile.save(SAVED)
-    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token: [])
-    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token: [])
+    monkeypatch.setattr(nodes_cmd, "fetch", lambda scheduler, token, client: [])
+    monkeypatch.setattr(jobs_cmd, "fetch", lambda scheduler, token, client: [])
     calls = []
     monkeypatch.setattr(contribution, "status", lambda pool_id: None)
     monkeypatch.setattr(contribution, "statuses", list)

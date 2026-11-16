@@ -56,8 +56,10 @@ class JobModal(ModalScreen[None]):
         app = self.app
         token = app.prof.get("pool_token", "")
         try:
-            job = status_cmd.fetch(app.scheduler, self.job_id, token)
-            code, out = logs_cmd.fetch_output(app.scheduler, self.job_id, token)
+            job = status_cmd.fetch(app.scheduler, self.job_id, token, app.http)
+            code, out = logs_cmd.fetch_output(
+                app.scheduler, self.job_id, token, app.http
+            )
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             app.call_from_thread(self.show_error, f"can't load job: {exc}")
             return

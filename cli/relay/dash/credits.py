@@ -42,7 +42,10 @@ class CreditsModal(ModalScreen[None]):
         prof = app.prof
         try:
             rows = credits_cmd.fetch(
-                app.scheduler, prof.get("pool_id", ""), prof.get("pool_token", "")
+                app.scheduler,
+                prof.get("pool_id", ""),
+                prof.get("pool_token", ""),
+                app.http,
             )
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             app.call_from_thread(
