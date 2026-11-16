@@ -9,6 +9,15 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The dash no longer keeps losing a public pool.** Every
+  request it made opened a new TLS connection, about one a second, and
+  Tailscale Funnel drops new connections that arrive that fast, so the dash
+  showed `SSL: UNEXPECTED_EOF_WHILE_READING` on and off. It now keeps one
+  connection open and sends everything over it.
+  ([#186](https://github.com/cachebag/relay/pull/186))
+
 ## [0.3.3] - 2026-11-15
 
 ### Added

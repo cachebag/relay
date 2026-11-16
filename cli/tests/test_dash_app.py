@@ -214,6 +214,36 @@ def test_shows_pool_and_tables_with_saved_login(cfg, calls):
     assert ("GET", "/jobs", "Bearer tok") in calls
 
 
+def test_one_connection_for_everything_the_dash_asks(cfg, calls, monkeypatch):
+    made = []
+    patched = httpx.Client
+
+    def client(**kw):
+        made.append(kw)
+        return patched(**kw)
+
+    monkeypatch.setattr(httpx, "Client", client)
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("r")
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        assert isinstance(app.screen, JobModal)
+        await pilot.press("escape")
+        await pilot.press("k")
+        await settle(pilot)
+        assert isinstance(app.screen, CreditsModal)
+
+    drive(app, steps)
+    for path in ("/nodes", "/jobs", "/jobs/j1", "/jobs/j1/output", "/pools/p1/credits"):
+        assert ("GET", path, "Bearer tok") in calls
+    assert len(made) == 1
+
+
 def test_join_modal_logs_in_with_pasted_token(cfg, calls):
     app = DashApp("http://ignored")
 

@@ -125,6 +125,10 @@ class DashApp(App[None]):
         self.scheduler = scheduler
         self.own_scheduler = scheduler if scheduler_given else pool_cmd.own_scheduler()
         self.admin_token = admin_token
+        # One connection for everything the dash asks the scheduler. A new
+        # one per request is a TLS handshake every second, and Tailscale
+        # Funnel starts dropping them after about twenty.
+        self.http = httpx.Client(timeout=5)
         self.pool_admin_token: str | None = None
         self.prof: dict = {}
         self.node_rows: list[dict] = []
@@ -182,6 +186,9 @@ class DashApp(App[None]):
         if not self.prof.get("pool_token"):
             self.push_screen(JoinModal(can_cancel=False), self.joined)
 
+    def on_unmount(self) -> None:
+        self.http.close()
+
     # -- login state ------------------------------------------------------
 
     def use_profile(self, prof: dict) -> None:
@@ -211,8 +218,8 @@ class DashApp(App[None]):
         if not token:
             return
         try:
-            node_rows = nodes_cmd.fetch(self.scheduler, token)
-            job_rows = jobs_cmd.fetch(self.scheduler, token)
+            node_rows = nodes_cmd.fetch(self.scheduler, token, self.http)
+            job_rows = jobs_cmd.fetch(self.scheduler, token, self.http)
             error = None
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
             # Keep showing the last good data when a refresh fails.
@@ -455,6 +462,7 @@ class DashApp(App[None]):
                 command,
                 prof["pool_token"],
                 prof.get("name", ""),
+                self.http,
                 os=os,
             )
         except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
@@ -485,7 +493,9 @@ class DashApp(App[None]):
         pool_id = self.prof.get("pool_id", "")
 
         def run(admin_token: str) -> str:
-            return pool_cmd.rotate_token(self.scheduler, pool_id, admin_token)
+            return pool_cmd.rotate_token(
+                self.scheduler, pool_id, admin_token, self.http
+            )
 
         def describe(new_token: object) -> str:
             return (
@@ -522,7 +532,7 @@ class DashApp(App[None]):
         pool_id = self.prof.get("pool_id", "")
 
         def run(admin_token: str) -> str:
-            node_cmd.remove(self.scheduler, pool_id, node_id, admin_token)
+            node_cmd.remove(self.scheduler, pool_id, node_id, admin_token, self.http)
             return node_id
 
         def describe(_: object) -> str:
