@@ -244,6 +244,19 @@ def test_one_connection_for_everything_the_dash_asks(cfg, calls, monkeypatch):
     assert len(made) == 1
 
 
+def test_job_without_output_files_only_offers_refresh_and_close(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        assert text(app.screen.query_one("#job-keys")) == "r refresh   esc close"
+
+    drive(app, steps)
+
+
 def test_join_modal_logs_in_with_pasted_token(cfg, calls):
     app = DashApp("http://ignored")
 
@@ -562,7 +575,7 @@ def test_job_view_lists_output_files_and_f_fetches_them(
         await pilot.press("f")
         await settle(pilot)
         assert (dest / "result.csv").read_bytes() == b"total,55\n"
-        assert notes[-1] == f"fetched 1 file to {dest.resolve()}"
+        assert notes[-1] == f"fetched 1 file to {dest.resolve()}, o opens the folder"
         # A second fetch leaves the files alone and says why.
         await pilot.press("f")
         await settle(pilot)
@@ -570,6 +583,65 @@ def test_job_view_lists_output_files_and_f_fetches_them(
 
     drive(app, steps)
     assert ("GET", "/jobs/j1/output/files", "Bearer tok") in calls
+
+
+def test_o_on_a_job_opens_the_fetched_folder(cfg, calls, monkeypatch, tmp_path):
+    profile.save(SAVED)
+    monkeypatch.setitem(JOB, "output_files", OUTPUT_FILES)
+    monkeypatch.chdir(tmp_path)
+    app = DashApp(SCHED)
+    notes, opened = [], []
+    app.notify = lambda msg, **kw: notes.append(msg)
+    monkeypatch.setattr(newjob.picker, "show", opened.append)
+    dest = tmp_path / "relay-out" / "j1"
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        # Nothing fetched yet, so there is no folder to open.
+        keys = lambda: text(app.screen.query_one("#job-keys"))
+        assert keys() == "r refresh   f fetch to relay-out/j1   esc close"
+        await pilot.press("o")
+        await settle(pilot)
+        assert notes[-1] == "fetch the files first with f" and opened == []
+        await pilot.press("f")
+        await settle(pilot)
+        assert keys() == (
+            "r refresh   f fetch to relay-out/j1   o open folder   esc close"
+        )
+        await pilot.press("o")
+        await settle(pilot)
+        assert opened == [dest.resolve()]
+
+    drive(app, steps)
+
+
+def test_o_on_a_job_over_ssh_says_where_the_folder_is(
+    cfg, calls, monkeypatch, tmp_path
+):
+    profile.save(SAVED)
+    monkeypatch.chdir(tmp_path)
+    dest = tmp_path / "relay-out" / "j1"
+    dest.mkdir(parents=True)
+    monkeypatch.setenv("SSH_CONNECTION", "10.0.0.2 1 10.0.0.3 22")
+    monkeypatch.delenv("TMUX", raising=False)
+    started = []
+    monkeypatch.setattr(newjob.picker.subprocess, "Popen", started.append)
+    app = DashApp(SCHED)
+    notes = []
+    app.notify = lambda msg, **kw: notes.append(msg)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        await pilot.press("o")
+        await settle(pilot)
+        assert "SSH session" in notes[-1] and str(dest.resolve()) in notes[-1]
+        assert started == []
+
+    drive(app, steps)
 
 
 def test_f_on_a_job_without_output_files_only_says_so(cfg, calls):

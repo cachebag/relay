@@ -141,3 +141,28 @@ def test_pick_says_when_the_dialog_program_fails(monkeypatch):
     fake_popen(monkeypatch, FakeDialog(err="cannot open display\n", code=2))
     with pytest.raises(picker.PickerUnavailable, match="cannot open display"):
         picker.pick("folder", env=DESKTOP, platform="darwin")
+
+
+def test_show_opens_the_folder_in_the_desktops_file_manager(monkeypatch, tmp_path):
+    seen = fake_popen(monkeypatch, FakeDialog())
+    picker.show(tmp_path, env={}, platform="darwin")
+    picker.show(tmp_path, env=DESKTOP, platform="linux")
+    assert seen == [["open", str(tmp_path)], ["xdg-open", str(tmp_path)]]
+
+    started = []
+    monkeypatch.setattr(picker.os, "startfile", started.append, raising=False)
+    picker.show(tmp_path, env={}, platform="win32")
+    assert started == [tmp_path] and len(seen) == 2
+
+
+def test_show_refuses_over_ssh_and_says_where_the_folder_is(monkeypatch, tmp_path):
+    seen = fake_popen(monkeypatch, FakeDialog())
+    with pytest.raises(picker.PickerUnavailable, match="SSH session") as exc:
+        picker.show(tmp_path, env={"SSH_TTY": "/dev/pts/3"}, platform="darwin")
+    assert str(tmp_path) in str(exc.value) and seen == []
+
+
+def test_show_says_when_there_is_nothing_to_open_it_with(monkeypatch, tmp_path):
+    fake_popen(monkeypatch, FileNotFoundError("no xdg-open"))
+    with pytest.raises(picker.PickerUnavailable, match="can't open the folder"):
+        picker.show(tmp_path, env=DESKTOP, platform="linux")

@@ -1,11 +1,12 @@
-"""ctrl+o and ctrl+f on the new job screen: the desktop's own file dialog,
-for whoever is sitting at this machine."""
+"""The desktop's own file dialog and file manager, for whoever is sitting at
+this machine: ctrl+o and ctrl+f on the new job screen, o on a job's output."""
 
 import os
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Mapping
+from pathlib import Path
 
 TITLES = {"folder": "Folder to send as a job", "file": "Script to send as a job"}
 SSH_VARS = ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")
@@ -240,3 +241,36 @@ def pick(
         why = err.strip().splitlines()[-1] if err.strip() else f"exit {proc.returncode}"
         raise PickerUnavailable(f"the file picker failed ({why}); type the path")
     return path.rstrip("/") or "/"
+
+
+def show(
+    folder: Path,
+    env: Mapping[str, str] | None = None,
+    platform: str = sys.platform,
+) -> None:
+    """Opens the folder in Finder, File Explorer or the desktop's file
+    manager."""
+    env = os.environ if env is None else env
+    reason = remote(env, platform)
+    if reason:
+        raise PickerUnavailable(
+            f"the folder opens on this machine's own screen, and {reason}; "
+            f"it is at {folder}"
+        )
+    try:
+        if platform == "win32":
+            # explorer.exe exits 1 even when the window opened.
+            os.startfile(folder)
+            return
+        # Not waited for: xdg-open can stay up as long as the file manager.
+        subprocess.Popen(
+            ["open" if platform == "darwin" else "xdg-open", str(folder)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise PickerUnavailable(
+            f"can't open the folder ({exc}); it is at {folder}"
+        ) from exc

@@ -1,5 +1,6 @@
 """Enter on a job: what it is, where it ran, and what it printed."""
 
+from pathlib import Path
 from typing import ClassVar
 
 import httpx
@@ -13,6 +14,7 @@ from textual.widgets import Static
 from relay.commands import fetch as fetch_cmd
 from relay.commands import logs as logs_cmd
 from relay.commands import status as status_cmd
+from relay.dash import picker
 from relay.dash.tables import REFRESH_S
 from relay.dash.theme import JOB_STYLES
 
@@ -23,6 +25,7 @@ class JobModal(ModalScreen[None]):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("r", "refresh", "Refresh"),
         Binding("f", "fetch", "Fetch files"),
+        Binding("o", "open_folder", "Open folder"),
         Binding("escape", "dismiss", "Close", priority=True),
     ]
 
@@ -44,7 +47,7 @@ class JobModal(ModalScreen[None]):
             with VerticalScroll(id="job-output"):
                 yield Static("", id="job-stdout", markup=False)
                 yield Static("", id="job-stderr", classes="stderr", markup=False)
-            yield Static("r refresh   esc close", classes="keys")
+            yield Static(self.keys(), id="job-keys", classes="keys")
 
     def on_mount(self) -> None:
         self.load()
@@ -91,14 +94,13 @@ class JobModal(ModalScreen[None]):
             lines.append(f"time left  {status_cmd.time_left(job) or '-'}")
         if out is not None:
             lines.append(f"exit code  {out.get('exit_code', 0)}")
-        # Files the job sent back, for relay fetch.
         files = job.get("output_files") or []
         if files:
             lines.append("")
             lines.append(f"output files ({len(files)})")
             lines.extend(f"  {f['path']}  {f['bytes']} bytes" for f in files)
-            lines.append(f"  f fetch to {fetch_cmd.default_folder(self.job_id)}")
         self.query_one("#job-summary", Static).update("\n".join(lines))
+        self.query_one("#job-keys", Static).update(self.keys())
 
         stdout = self.query_one("#job-stdout", Static)
         stderr = self.query_one("#job-stderr", Static)
@@ -115,8 +117,37 @@ class JobModal(ModalScreen[None]):
             self.timer.stop()
             self.timer = None
 
+    def keys(self) -> str:
+        """The keys that do something for this job right now."""
+        keys = ["r refresh"]
+        if self.job and self.job.get("output_files"):
+            keys.append(f"f fetch to {fetch_cmd.default_folder(self.job_id)}")
+            if self.fetched():
+                keys.append("o open folder")
+        return "   ".join([*keys, "esc close"])
+
     def action_refresh(self) -> None:
         self.load()
+
+    def fetched(self) -> Path | None:
+        """The folder this job's files were fetched to, in this run of the
+        dash or an earlier one."""
+        folder = fetch_cmd.default_folder(self.job_id)
+        return folder.resolve() if folder.is_dir() else None
+
+    def action_open_folder(self) -> None:
+        folder = self.fetched()
+        if folder is None:
+            self.app.notify("fetch the files first with f", severity="warning")
+            return
+        self.open_folder(folder)
+
+    @work(exclusive=True, thread=True, group="open")
+    def open_folder(self, folder: Path) -> None:
+        try:
+            picker.show(folder)
+        except picker.PickerUnavailable as exc:
+            self.app.call_from_thread(self.app.notify, str(exc), severity="warning")
 
     def action_fetch(self) -> None:
         if not (self.job and self.job.get("output_files")):
@@ -143,5 +174,9 @@ class JobModal(ModalScreen[None]):
             return
         n = len(files)
         app.call_from_thread(
-            app.notify, f"fetched {n} file{'s' if n != 1 else ''} to {folder.resolve()}"
+            app.notify,
+            f"fetched {n} file{'s' if n != 1 else ''} to {folder.resolve()}, "
+            "o opens the folder",
         )
+        # Redraw so the summary offers the folder.
+        app.call_from_thread(self.load)
