@@ -69,6 +69,15 @@ def scan(
     return files, size
 
 
+def expand(text: str) -> Path:
+    """The typed path with ~ expanded. ~name is another user's home, and
+    expanduser raises when there is no such user, so ~? stays as typed."""
+    try:
+        return Path(text).expanduser()
+    except RuntimeError:
+        return Path(text)
+
+
 def complete_path(text: str) -> str | None:
     """The typed path extended to the first folder or file that starts with
     its last part, or None when there is nothing to add. Folders get a
@@ -81,11 +90,12 @@ def complete_path(text: str) -> str | None:
         return None
     sep = typed_dir[-1] if typed_dir else os.sep
     try:
-        with os.scandir(Path(typed_dir or ".").expanduser()) as entries:
+        with os.scandir(expand(typed_dir or ".")) as entries:
             found = sorted(
                 (e.name, e.is_dir()) for e in entries if e.name.startswith(prefix)
             )
-    except OSError:
+    except OSError, ValueError:
+        # ValueError is a null byte in the path.
         return None
     for name, is_dir in found:
         done = typed_dir + name + (sep if is_dir else "")
@@ -126,7 +136,7 @@ def preview(
     """(ok, what the job will be) for the path and entry typed so far."""
     if not path_text:
         return False, "pick a folder with a run.sh (or run.ps1, run.cmd), or one script"
-    path = Path(path_text).expanduser()
+    path = expand(path_text)
     if path.is_file():
         if entry:
             return False, "an entry is only for folders; a script runs itself"
@@ -283,7 +293,7 @@ class NewJobModal(ModalScreen[dict | None]):
             except argparse.ArgumentTypeError as exc:
                 self.say(str(exc).replace("--timeout", "time limit"), error=True)
                 return
-        path = Path(f["path"]).expanduser()
+        path = expand(f["path"])
         is_file = path.is_file()
         self.say("packing…")
         # Remember the pick for next time, even if the send fails.

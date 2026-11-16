@@ -975,6 +975,37 @@ def test_tab_completes_the_path_then_moves_to_the_next_field(
     drive(app, steps)
 
 
+def test_a_tilde_that_names_no_user_is_just_a_path_that_is_not_there():
+    # ~? is "the home of user ?", and expanduser raises when there is none.
+    for text in ("~?", "~?/job", "~no-such-user-here/job"):
+        ok, said = preview(text, "")
+        assert not ok
+        assert said == f"{text} is not a folder or a file"
+        assert complete_path(text) is None
+    assert complete_path("~?/job/x") is None
+    assert complete_path("a\0b/x") is None
+
+
+def test_typing_a_tilde_that_names_no_user_does_not_crash_the_dash(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("j")
+        await type_into(pilot, "#job-path", "~?")
+        await settle(pilot)
+        assert "~? is not a folder or a file" in text(
+            app.screen.query_one("#job-preview")
+        )
+        app.screen.query_one("#job-path", Input).focus()
+        await pilot.press("enter")
+        await settle(pilot)
+        assert isinstance(app.screen, NewJobModal)
+
+    drive(app, steps)
+
+
 def test_quitting_stops_a_preview_that_is_still_counting(
     cfg, calls, tmp_path, monkeypatch
 ):
