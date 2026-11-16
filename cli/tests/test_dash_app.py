@@ -5,6 +5,7 @@ import os
 import tarfile
 import threading
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -647,15 +648,14 @@ def test_o_on_a_job_opens_the_fetched_folder(cfg, calls, monkeypatch, tmp_path):
         await settle(pilot)
         # Nothing fetched yet, so there is no folder to open.
         keys = lambda: text(app.screen.query_one("#job-keys"))
-        assert keys() == "r refresh   f fetch to relay-out/j1   esc close"
+        fetch = f"f fetch to {Path('relay-out') / 'j1'}"
+        assert keys() == f"r refresh   {fetch}   esc close"
         await pilot.press("o")
         await settle(pilot)
         assert notes[-1] == "fetch the files first with f" and opened == []
         await pilot.press("f")
         await settle(pilot)
-        assert keys() == (
-            "r refresh   f fetch to relay-out/j1   o open folder   esc close"
-        )
+        assert keys() == f"r refresh   {fetch}   o open folder   esc close"
         await pilot.press("o")
         await settle(pilot)
         assert opened == [dest.resolve()]
