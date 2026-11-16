@@ -8,7 +8,7 @@ The `relay` CLI needs [uv](https://docs.astral.sh/uv/getting-started/installatio
 uv tool install "git+https://github.com/cachebag/relay#subdirectory=cli"
 ```
 
-After install, `relay` works from any directory. `relay install` then downloads `relayd` and `relay-agent` for this machine if you need them (`--agent-only` for just the agent, `--version v0.2.5` to pin one). Update or remove the CLI with:
+After install, `relay` works from any directory. `relay install` then downloads `relayd` and `relay-agent` for this machine if you need them (`--agent-only` for just the agent, `--version v0.2.5` to pin one), and `relay update` moves them to the latest release. Update or remove the CLI itself with:
 
 ```sh
 uv tool upgrade relay
