@@ -12,13 +12,94 @@ SSH_VARS = ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")
 
 # The dialog opens above other windows; a plain one can end up behind the
 # terminal. Nothing is printed on cancel.
-WINDOWS = """
+WINDOWS_FILE = """
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
-$owner = New-Object System.Windows.Forms.Form -Property @{{TopMost = $true}}
-$dialog = New-Object System.Windows.Forms.{dialog}
-$dialog.{title} = '{text}'
-if ($dialog.ShowDialog($owner) -eq 'OK') {{ [Console]::Out.Write($dialog.{result}) }}
+$owner = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}
+$dialog = New-Object System.Windows.Forms.OpenFileDialog
+$dialog.Title = 'TITLE'
+if ($dialog.ShowDialog($owner) -eq 'OK') { [Console]::Out.Write($dialog.FileName) }
+"""
+
+# FolderBrowserDialog under Windows PowerShell is the old tree view, so the
+# folder pick asks for File Explorer's own dialog: IFileOpenDialog with
+# FOS_PICKFOLDERS. The interfaces declare only up to the last method called,
+# and the empty ones hold the vtable order. The tree view is the fallback
+# where Add-Type is not allowed.
+WINDOWS_FOLDER = """
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+$owner = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}
+try {
+    Add-Type -ErrorAction Stop -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class RelayFolderPicker
+{
+    [ComImport, Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
+    class FileOpenDialog { }
+
+    [ComImport, Guid("42F85136-DB7E-439C-85F1-E4075D135FC8")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IFileDialog
+    {
+        [PreserveSig] int Show(IntPtr owner);
+        void SetFileTypes();
+        void SetFileTypeIndex();
+        void GetFileTypeIndex();
+        void Advise();
+        void Unadvise();
+        void SetOptions(uint options);
+        void GetOptions(out uint options);
+        void SetDefaultFolder();
+        void SetFolder();
+        void GetFolder();
+        void GetCurrentSelection();
+        void SetFileName();
+        void GetFileName();
+        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title);
+        void SetOkButtonLabel();
+        void SetFileNameLabel();
+        void GetResult(out IShellItem item);
+    }
+
+    [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IShellItem
+    {
+        void BindToHandler();
+        void GetParent();
+        void GetDisplayName(uint form, [MarshalAs(UnmanagedType.LPWStr)] out string name);
+    }
+
+    const uint PickFolders = 0x20;
+    const uint ForceFileSystem = 0x40;
+    const uint FileSystemPath = 0x80058000;
+
+    public static string Pick(string title, IntPtr owner)
+    {
+        IFileDialog dialog = (IFileDialog)new FileOpenDialog();
+        uint options;
+        dialog.GetOptions(out options);
+        dialog.SetOptions(options | PickFolders | ForceFileSystem);
+        dialog.SetTitle(title);
+        if (dialog.Show(owner) != 0) return null;
+        IShellItem item;
+        dialog.GetResult(out item);
+        string path;
+        item.GetDisplayName(FileSystemPath, out path);
+        return path;
+    }
+}
+'@
+    $path = [RelayFolderPicker]::Pick('TITLE', $owner.Handle)
+} catch {
+    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialog.Description = 'TITLE'
+    $path = if ($dialog.ShowDialog($owner) -eq 'OK') { $dialog.SelectedPath }
+}
+if ($path) { [Console]::Out.Write($path) }
 """
 
 
@@ -85,14 +166,8 @@ def command(
             f'POSIX path of (choose {kind} with prompt "{title}")',
         ]
     if platform == "win32":
-        dialog, title_field, result = (
-            ("FolderBrowserDialog", "Description", "SelectedPath")
-            if kind == "folder"
-            else ("OpenFileDialog", "Title", "FileName")
-        )
-        script = WINDOWS.format(
-            dialog=dialog, title=title_field, text=title, result=result
-        )
+        script = WINDOWS_FOLDER if kind == "folder" else WINDOWS_FILE
+        script = script.replace("TITLE", title)
         return ["powershell", "-NoProfile", "-STA", "-Command", script]
     home = os.path.expanduser("~")
     tools = {

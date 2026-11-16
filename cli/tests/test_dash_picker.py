@@ -51,8 +51,14 @@ def test_command_for_each_desktop():
     assert "choose file" in picker.command("file", {}, "darwin")[2]
 
     win = picker.command("folder", {}, "win32")
-    assert win[0] == "powershell" and "FolderBrowserDialog" in win[-1]
-    assert "OpenFileDialog" in picker.command("file", {}, "win32")[-1]
+    assert win[0] == "powershell"
+    # File Explorer's own dialog first, the old tree view only as a fallback.
+    assert win[-1].index("RelayFolderPicker]::Pick") < win[-1].index(
+        "FolderBrowserDialog"
+    )
+    assert "TITLE" not in win[-1] and "'Folder to send as a job'" in win[-1]
+    file = picker.command("file", {}, "win32")[-1]
+    assert "OpenFileDialog" in file and "'Script to send as a job'" in file
 
     both = lambda name: f"/usr/bin/{name}"
     assert picker.command("folder", {}, "linux", both)[:2] == [
