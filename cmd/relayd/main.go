@@ -167,7 +167,7 @@ func main() {
 	log.Printf("relayd listening on :%d", ln.Addr().(*net.TCPAddr).Port)
 
 	// Starts the scheduler in the background.
-	go scheduler.New(reg, jobs, credit.NewEarner(credits)).Run(context.Background(), 2*time.Second)
+	go scheduler.New(reg, jobs, credit.NewEarner(credits), credits).Run(context.Background(), 2*time.Second)
 
 	var publicURL atomic.Value
 	publicURL.Store("")

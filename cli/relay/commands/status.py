@@ -121,6 +121,8 @@ def run(args) -> None:
     state = j["status"]
     if requires(j):
         state += f" (requires {requires(j)})"
+    if j["status"] == "queued" and "position" in j:
+        state += f" ({j['position']} ahead)"
 
     # Every job shows its limit; only running jobs show a countdown.
     print(

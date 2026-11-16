@@ -1391,3 +1391,78 @@ func TestNextJobSetsStartedAt(t *testing.T) {
 		t.Errorf("started_at moved on second pickup: %v -> %v", first.StartedAt, second.StartedAt)
 	}
 }
+
+// positionOf reads the optional position field from GET /jobs/{id}.
+func positionOf(handler http.Handler, id string) *int {
+	rec := getJSON(handler, "/jobs/"+id)
+	if rec.Code != http.StatusOK {
+		return nil
+	}
+
+	var got struct {
+		ID       string `json:"id"`
+		Position *int   `json:"position"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		return nil
+	}
+	return got.Position
+}
+
+// TestQueuedJobPosition checks that GET /jobs/{id} orders queued jobs by
+// submitter balance, counts only queued jobs in the same pool, and omits
+// position for non-queued jobs.
+func TestQueuedJobPosition(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	pools := store.NewMemPools()
+	pool := createTestPool(t, pools)
+	reg := store.NewMem()
+	jobs := store.NewMemJobs()
+	credits := store.NewMemCredits()
+
+	for _, j := range []store.Job{
+		{ID: "low", Command: []string{"echo", "low"}, PoolID: pool.ID, Status: store.JobQueued, Submitter: "omar", CreatedAt: now.Add(-3 * time.Minute)},
+		{ID: "zero", Command: []string{"echo", "zero"}, PoolID: pool.ID, Status: store.JobQueued, Submitter: "nobody", CreatedAt: now.Add(-2 * time.Minute)},
+		{ID: "high", Command: []string{"echo", "high"}, PoolID: pool.ID, Status: store.JobQueued, Submitter: "akrm", CreatedAt: now.Add(-1 * time.Minute)},
+		{ID: "done", Command: []string{"echo", "done"}, PoolID: pool.ID, Status: store.JobDone, Submitter: "akrm", CreatedAt: now.Add(-4 * time.Minute)},
+	} {
+		if err := jobs.Create(ctx, j); err != nil {
+			t.Fatalf("creating job %s: %v", j.ID, err)
+		}
+	}
+
+	for _, e := range []store.CreditEntry{
+		{ID: "credit-akrm", PoolID: pool.ID, Account: "akrm", Delta: 10, Reason: "online", CreatedAt: now.Add(-5 * time.Minute)},
+		{ID: "credit-omar", PoolID: pool.ID, Account: "omar", Delta: -5, Reason: "job", CreatedAt: now.Add(-5 * time.Minute)},
+	} {
+		if err := credits.Add(ctx, e); err != nil {
+			t.Fatalf("adding credit: %v", err)
+		}
+	}
+
+	handler := NewHandler(reg, pools, jobs, credits, testServer())
+
+	for _, c := range []struct {
+		id     string
+		want   int
+		queued bool
+	}{
+		{"high", 0, true},
+		{"zero", 1, true},
+		{"low", 2, true},
+		{"done", 0, false},
+	} {
+		got := positionOf(handler, c.id)
+		if !c.queued {
+			if got != nil {
+				t.Errorf("%s: expected no position, got %d", c.id, *got)
+			}
+			continue
+		}
+		if got == nil || *got != c.want {
+			t.Errorf("%s: expected position %d, got %v", c.id, c.want, got)
+		}
+	}
+}
