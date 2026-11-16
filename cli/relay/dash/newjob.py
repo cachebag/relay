@@ -20,6 +20,7 @@ from textual.widgets import Input, Label, Select, Static
 from textual.worker import get_current_worker
 
 from relay.commands import submit as submit_cmd
+from relay.dash import picker
 
 TARGETS = ("any", "linux", "darwin", "windows")
 # The preview stops counting here. A job's own folder is far smaller, and a
@@ -171,6 +172,8 @@ class NewJobModal(ModalScreen[dict | None]):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "cancel", "Cancel", priority=True),
+        Binding("ctrl+o", "browse('folder')", "Pick a folder", priority=True),
+        Binding("ctrl+f", "browse('file')", "Pick a script", priority=True),
     ]
 
     def __init__(self, last: dict | None = None) -> None:
@@ -224,7 +227,8 @@ class NewJobModal(ModalScreen[dict | None]):
                     )
             yield Label("", id="job-status", classes="result", markup=False)
             yield Static(
-                "enter send   tab complete, then next field   esc cancel",
+                "enter send   tab complete   ctrl+o pick a folder   "
+                "ctrl+f pick a script   esc cancel",
                 classes="keys",
             )
 
@@ -273,6 +277,33 @@ class NewJobModal(ModalScreen[dict | None]):
         f = self.fields()
         if (f["path"], f["entry"]) == (path, entry):
             self.query_one("#job-preview", Static).update(markup)
+
+    def action_browse(self, kind: str) -> None:
+        self.say("waiting for the file picker…")
+        self.browse(kind)
+
+    @work(exclusive=True, thread=True, group="browse")
+    def browse(self, kind: str) -> None:
+        # The dialog is another program, so it is waited on off the UI. It is
+        # closed when this worker is cancelled, the same as the preview count.
+        worker = get_current_worker()
+        try:
+            path = picker.pick(kind, stop=lambda: worker.is_cancelled)
+        except picker.PickerUnavailable as exc:
+            if not worker.is_cancelled:
+                self.app.call_from_thread(self.say, str(exc), True)
+            return
+        if not worker.is_cancelled:
+            self.app.call_from_thread(self.take_pick, path)
+
+    def take_pick(self, path: str | None) -> None:
+        self.say("")
+        if path is None:
+            return
+        box = self.query_one("#job-path", Input)
+        box.value = path
+        box.cursor_position = len(path)
+        box.focus()
 
     @on(Input.Submitted)
     def on_submit(self) -> None:

@@ -1006,6 +1006,60 @@ def test_typing_a_tilde_that_names_no_user_does_not_crash_the_dash(cfg, calls):
     drive(app, steps)
 
 
+def test_ctrl_o_fills_the_path_from_the_file_picker(cfg, calls, tmp_path, monkeypatch):
+    profile.save(SAVED)
+    root = folder(tmp_path)
+    asked = []
+
+    def pick(kind, stop=None):
+        asked.append(kind)
+        return str(root) if kind == "folder" else None
+
+    monkeypatch.setattr(newjob.picker, "pick", pick)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("j")
+        await pilot.press("ctrl+o")
+        await settle(pilot)
+        box = app.screen.query_one("#job-path", Input)
+        assert box.value == str(root)
+        assert "2 files" in text(app.screen.query_one("#job-preview"))
+        # A cancelled dialog leaves the path alone.
+        await pilot.press("ctrl+f")
+        await settle(pilot)
+        assert box.value == str(root)
+        assert text(app.screen.query_one("#job-status")) == ""
+
+    drive(app, steps)
+    assert asked == ["folder", "file"]
+
+
+def test_the_file_picker_is_refused_over_ssh(cfg, calls, monkeypatch):
+    profile.save(SAVED)
+    monkeypatch.setenv("SSH_CONNECTION", "10.0.0.2 50000 10.0.0.3 22")
+    monkeypatch.delenv("TMUX", raising=False)
+    opened = []
+    monkeypatch.setattr(
+        newjob.picker.subprocess, "Popen", lambda *a, **kw: opened.append(a)
+    )
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("j")
+        await pilot.press("ctrl+o")
+        await settle(pilot)
+        status = app.screen.query_one("#job-status")
+        assert "this is an SSH session; type the path" in text(status)
+        assert status.has_class("failed")
+        assert app.screen.query_one("#job-path", Input).value == ""
+
+    drive(app, steps)
+    assert opened == []
+
+
 def test_quitting_stops_a_preview_that_is_still_counting(
     cfg, calls, tmp_path, monkeypatch
 ):
