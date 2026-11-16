@@ -5,6 +5,7 @@ import os
 import tarfile
 import threading
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -207,7 +208,9 @@ def test_shows_pool_and_tables_with_saved_login(cfg, calls):
         nodes, jobs = app.query_one("#nodes"), app.query_one("#jobs")
         assert nodes.row_count == 1 and jobs.row_count == 2
         # The jobs table shows the node's hostname, not its ID.
-        assert "box" in str(jobs.get_row_at(0)[2])
+        assert "box" in str(jobs.get_row_at(0)[3])
+        labels = [str(c.label) for c in jobs.columns.values()]
+        assert labels[2] == "SUBMITTER" and str(jobs.get_row_at(0)[2]) == "akrm"
 
     drive(app, steps)
     assert ("GET", "/nodes", "Bearer tok") in calls
@@ -242,6 +245,63 @@ def test_one_connection_for_everything_the_dash_asks(cfg, calls, monkeypatch):
     for path in ("/nodes", "/jobs", "/jobs/j1", "/jobs/j1/output", "/pools/p1/credits"):
         assert ("GET", path, "Bearer tok") in calls
     assert len(made) == 1
+
+
+def test_r_refreshes_the_dash_and_says_so(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+    notes = []
+    app.notify = lambda msg, **kw: notes.append(msg)
+
+    async def steps(pilot):
+        await settle(pilot)
+        before = calls.count(("GET", "/jobs", "Bearer tok"))
+        assert notes == []
+        await pilot.press("r")
+        await settle(pilot)
+        assert calls.count(("GET", "/jobs", "Bearer tok")) > before
+        assert notes == ["refreshed"]
+
+    drive(app, steps)
+
+
+def test_job_without_output_files_only_offers_refresh_and_close(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        assert text(app.screen.query_one("#job-keys")) == "r refresh   esc close"
+
+    drive(app, steps)
+
+
+def test_theme_picker_is_on_and_the_pick_is_remembered(cfg, calls):
+    profile.save(SAVED)
+    app = DashApp(SCHED)
+
+    async def steps(pilot):
+        await settle(pilot)
+        assert app.theme == "relay"
+        status = lambda: app.query_one("#jobs").get_row_at(0)[1]
+        assert status().spans[0].style == "#7BD88F"
+        await pilot.press("ctrl+p")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "CommandPalette"
+        await pilot.press("escape")
+        app.theme = "textual-light"
+        await pilot.pause()
+        # Cell colours follow the theme instead of staying the relay ones.
+        assert status().spans[0].style == app.theme_variables["success"] != "#7BD88F"
+
+    drive(app, steps)
+    assert profile.theme() == "textual-light"
+    assert profile.load()["pool_token"] == "tok"
+
+    again = DashApp(SCHED)
+    assert again.theme == "textual-light"
 
 
 def test_join_modal_logs_in_with_pasted_token(cfg, calls):
@@ -511,9 +571,9 @@ def test_jobs_table_shows_what_a_job_requires(cfg, calls):
         await settle(pilot)
         jobs = app.query_one("#jobs")
         jobs.show([{**JOB, "requires": {"os": "darwin"}}, OLDER_JOB], {})
-        assert [str(c.label) for c in jobs.columns.values()][3] == "REQUIRES"
-        assert str(jobs.get_row_at(0)[3]) == "darwin"
-        assert str(jobs.get_row_at(1)[3]) == "-"
+        assert [str(c.label) for c in jobs.columns.values()][4] == "REQUIRES"
+        assert str(jobs.get_row_at(0)[4]) == "darwin"
+        assert str(jobs.get_row_at(1)[4]) == "-"
 
     drive(app, steps)
 
@@ -562,7 +622,7 @@ def test_job_view_lists_output_files_and_f_fetches_them(
         await pilot.press("f")
         await settle(pilot)
         assert (dest / "result.csv").read_bytes() == b"total,55\n"
-        assert notes[-1] == f"fetched 1 file to {dest.resolve()}"
+        assert notes[-1] == f"fetched 1 file to {dest.resolve()}, o opens the folder"
         # A second fetch leaves the files alone and says why.
         await pilot.press("f")
         await settle(pilot)
@@ -570,6 +630,64 @@ def test_job_view_lists_output_files_and_f_fetches_them(
 
     drive(app, steps)
     assert ("GET", "/jobs/j1/output/files", "Bearer tok") in calls
+
+
+def test_o_on_a_job_opens_the_fetched_folder(cfg, calls, monkeypatch, tmp_path):
+    profile.save(SAVED)
+    monkeypatch.setitem(JOB, "output_files", OUTPUT_FILES)
+    monkeypatch.chdir(tmp_path)
+    app = DashApp(SCHED)
+    notes, opened = [], []
+    app.notify = lambda msg, **kw: notes.append(msg)
+    monkeypatch.setattr(newjob.picker, "show", opened.append)
+    dest = tmp_path / "relay-out" / "j1"
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        # Nothing fetched yet, so there is no folder to open.
+        keys = lambda: text(app.screen.query_one("#job-keys"))
+        fetch = f"f fetch to {Path('relay-out') / 'j1'}"
+        assert keys() == f"r refresh   {fetch}   esc close"
+        await pilot.press("o")
+        await settle(pilot)
+        assert notes[-1] == "fetch the files first with f" and opened == []
+        await pilot.press("f")
+        await settle(pilot)
+        assert keys() == f"r refresh   {fetch}   o open folder   esc close"
+        await pilot.press("o")
+        await settle(pilot)
+        assert opened == [dest.resolve()]
+
+    drive(app, steps)
+
+
+def test_o_on_a_job_over_ssh_says_where_the_folder_is(
+    cfg, calls, monkeypatch, tmp_path
+):
+    profile.save(SAVED)
+    monkeypatch.chdir(tmp_path)
+    dest = tmp_path / "relay-out" / "j1"
+    dest.mkdir(parents=True)
+    monkeypatch.setenv("SSH_CONNECTION", "10.0.0.2 1 10.0.0.3 22")
+    monkeypatch.delenv("TMUX", raising=False)
+    started = []
+    monkeypatch.setattr(newjob.picker.subprocess, "Popen", started.append)
+    app = DashApp(SCHED)
+    notes = []
+    app.notify = lambda msg, **kw: notes.append(msg)
+
+    async def steps(pilot):
+        await settle(pilot)
+        await pilot.press("enter")
+        await settle(pilot)
+        await pilot.press("o")
+        await settle(pilot)
+        assert "SSH session" in notes[-1] and str(dest.resolve()) in notes[-1]
+        assert started == []
+
+    drive(app, steps)
 
 
 def test_f_on_a_job_without_output_files_only_says_so(cfg, calls):

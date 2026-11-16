@@ -9,13 +9,22 @@ from textual.widgets import DataTable
 from relay.commands import jobs as jobs_cmd
 from relay.commands import nodes as nodes_cmd
 from relay.commands import status as status_cmd
-from relay.dash.theme import JOB_STYLES, OFFLINE, ONLINE
+from relay.dash.theme import STATE_COLORS
 
 # How often the dashboard asks the scheduler for nodes and jobs.
 REFRESH_S = 2.0
 
 NODE_COLUMNS = ("ID", "HOST", "STATUS", "OS/ARCH", "CPU", "MEM", "SEEN")
-JOB_COLUMNS = ("ID", "STATUS", "NODE", "REQUIRES", "ATTEMPTS", "AGE", "COMMAND")
+JOB_COLUMNS = (
+    "ID",
+    "STATUS",
+    "SUBMITTER",
+    "NODE",
+    "REQUIRES",
+    "ATTEMPTS",
+    "AGE",
+    "COMMAND",
+)
 
 
 def human_ago(s: int) -> str:
@@ -47,6 +56,10 @@ class LiveTable(DataTable):
         # The cursor row keeps each cell's own colour (green online, red failed).
         self.cursor_foreground_priority = "renderable"
         self.column_keys = self.add_columns(*self.COLUMNS)
+
+    def colored(self, text: str, state: str) -> Text:
+        color = self.app.theme_variables.get(STATE_COLORS.get(state, ""), "")
+        return Text.assemble((text, color))
 
     def highlighted_key(self) -> str | None:
         if not self.row_count or self.cursor_row >= self.row_count:
@@ -80,9 +93,7 @@ class NodesTable(LiveTable):
                     (
                         n["id"],
                         n["hostname"],
-                        Text.assemble(("● online", ONLINE))
-                        if node_state(n) == "online"
-                        else Text.assemble(("● offline", OFFLINE)),
+                        self.colored(f"● {node_state(n)}", node_state(n)),
                         f"{n['os']}/{n['arch']}",
                         str(n.get("cpus", 0)),
                         f"{n.get('mem_bytes', 0) / 1e9:.1f}GB",
@@ -114,7 +125,8 @@ class JobsTable(LiveTable):
                     job["id"],
                     (
                         job["id"],
-                        Text.assemble((state, JOB_STYLES.get(state, ""))),
+                        self.colored(state, state),
+                        job.get("submitter") or "-",
                         hostnames.get(node_id, node_id) or "-",
                         status_cmd.requires(job) or "-",
                         str(job.get("attempts", 0)),

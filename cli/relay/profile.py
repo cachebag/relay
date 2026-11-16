@@ -86,6 +86,18 @@ def save_server(**fields: str) -> dict:
     return srv
 
 
+def theme() -> str | None:
+    """The dash theme picked last time, if any."""
+    name = _read().get("theme")
+    return name if isinstance(name, str) else None
+
+
+def save_theme(name: str) -> None:
+    data = _read()
+    data["theme"] = name
+    _write(data)
+
+
 def logins() -> list[dict]:
     """Every saved login, in the order they were added."""
     return [login for login in _read()["logins"] if isinstance(login, dict)]

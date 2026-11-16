@@ -9,6 +9,33 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Added
+
+- **`o` on a job in the dash opens its fetched files.** After `f` fetches a
+  job's output, `o` opens that folder in Finder, File Explorer or the
+  desktop's file manager on Linux. Over SSH or Remote Desktop it says where
+  the folder is instead.
+  ([#187](https://github.com/cachebag/relay/pull/187))
+- **The dash's jobs table shows who submitted each job**, in a SUBMITTER
+  column.
+  ([#187](https://github.com/cachebag/relay/pull/187))
+- **The dash's theme picker is back.** `ctrl+p` opens the command palette,
+  and "Change theme" lists the built-in themes. The pick is remembered, and
+  node and job states are drawn in the theme's colours.
+  ([#187](https://github.com/cachebag/relay/pull/187))
+
+### Changed
+
+- **Picking a folder on Windows opens File Explorer's own dialog** instead
+  of the old tree view.
+  ([#187](https://github.com/cachebag/relay/pull/187))
+- **The job screen lists its keys on one line.** Fetch and open sit beside
+  refresh and close at the bottom, and only show when they apply.
+  ([#187](https://github.com/cachebag/relay/pull/187))
+- **`r` in the dash is in the footer and says "refreshed".** It already
+  refetched, but nothing on screen showed it.
+  ([#187](https://github.com/cachebag/relay/pull/187))
+
 ### Fixed
 
 - **The dash no longer keeps losing a public pool.** Every

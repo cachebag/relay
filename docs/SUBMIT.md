@@ -112,7 +112,7 @@ Once the job has finished, get its files with the job id:
 relay fetch 40ca4109f082
 ```
 
-They land in `relay-out/<job id>/` in the current folder, or in the folder named with `--to`. Files that are already there are left alone unless you add `--force`. In the dashboard, open the job with enter and press `f`.
+They land in `relay-out/<job id>/` in the current folder, or in the folder named with `--to`. Files that are already there are left alone unless you add `--force`. In the dashboard, open the job with enter and press `f`. Once the files are there, `o` opens that folder in Finder, File Explorer or the desktop's file manager on Linux.
 
 For one script, `--file` sends just that file and runs it:
 
