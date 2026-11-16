@@ -11,6 +11,14 @@ without a pull request link their commit instead.
 
 ### Added
 
+- **The dash's new job screen opens the desktop's file picker.** `ctrl+o`
+  picks a folder and `ctrl+f` picks a script, in Finder on macOS, File
+  Explorer on Windows, and zenity or kdialog on Linux. The pick lands in
+  the path field. The dialog opens on the machine's own screen, so the
+  dash refuses to open it over SSH, in a Remote Desktop session, or on
+  Linux with no desktop session, and says to type the path. Inside tmux it
+  goes by how the attached client connected.
+  ([#182](https://github.com/cachebag/relay/pull/182))
 - **`relay scheduler backup` and `restore` move the server in one file.**
   `backup` copies `relay.db` through relayd with SQLite's online backup, so
   it works while relayd is running, and writes `relay-<date>.db` in the

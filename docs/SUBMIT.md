@@ -128,7 +128,7 @@ relay submit --dir ./crunch --entry crunch.py -- data.csv 10
 
 The node picks the interpreter from the file's extension: `.sh` with `sh`, `.py` with `python3` (`python` on Windows), `.ps1` with PowerShell, `.cmd` with `cmd`, and anything else is run as a program. Add `--os linux` if the job only works on one operating system.
 
-In `relay dash`, `j` does the same without the flags: type the folder or script, and it shows how many files will go and what will run before you send it. As you type, the rest of a matching folder or file name appears in grey and tab accepts it. Arguments, entry, OS and time limit are fields on the same screen, and it remembers them for the next job.
+In `relay dash`, `j` does the same without the flags: type the folder or script, and it shows how many files will go and what will run before you send it. As you type, the rest of a matching folder or file name appears in grey and tab accepts it. `ctrl+o` opens the desktop's own file dialog to pick a folder (Finder, File Explorer, or zenity or kdialog on Linux) and `ctrl+f` does the same for a script. The dialog opens on the machine's own screen, so over SSH or Remote Desktop the dash says to type the path instead. Arguments, entry, OS and time limit are fields on the same screen, and it remembers them for the next job.
 
 ## See what's in the pool
 
