@@ -207,7 +207,9 @@ def test_shows_pool_and_tables_with_saved_login(cfg, calls):
         nodes, jobs = app.query_one("#nodes"), app.query_one("#jobs")
         assert nodes.row_count == 1 and jobs.row_count == 2
         # The jobs table shows the node's hostname, not its ID.
-        assert "box" in str(jobs.get_row_at(0)[2])
+        assert "box" in str(jobs.get_row_at(0)[3])
+        labels = [str(c.label) for c in jobs.columns.values()]
+        assert labels[2] == "SUBMITTER" and str(jobs.get_row_at(0)[2]) == "akrm"
 
     drive(app, steps)
     assert ("GET", "/nodes", "Bearer tok") in calls
@@ -524,9 +526,9 @@ def test_jobs_table_shows_what_a_job_requires(cfg, calls):
         await settle(pilot)
         jobs = app.query_one("#jobs")
         jobs.show([{**JOB, "requires": {"os": "darwin"}}, OLDER_JOB], {})
-        assert [str(c.label) for c in jobs.columns.values()][3] == "REQUIRES"
-        assert str(jobs.get_row_at(0)[3]) == "darwin"
-        assert str(jobs.get_row_at(1)[3]) == "-"
+        assert [str(c.label) for c in jobs.columns.values()][4] == "REQUIRES"
+        assert str(jobs.get_row_at(0)[4]) == "darwin"
+        assert str(jobs.get_row_at(1)[4]) == "-"
 
     drive(app, steps)
 

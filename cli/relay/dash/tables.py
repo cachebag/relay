@@ -15,7 +15,16 @@ from relay.dash.theme import JOB_STYLES, OFFLINE, ONLINE
 REFRESH_S = 2.0
 
 NODE_COLUMNS = ("ID", "HOST", "STATUS", "OS/ARCH", "CPU", "MEM", "SEEN")
-JOB_COLUMNS = ("ID", "STATUS", "NODE", "REQUIRES", "ATTEMPTS", "AGE", "COMMAND")
+JOB_COLUMNS = (
+    "ID",
+    "STATUS",
+    "SUBMITTER",
+    "NODE",
+    "REQUIRES",
+    "ATTEMPTS",
+    "AGE",
+    "COMMAND",
+)
 
 
 def human_ago(s: int) -> str:
@@ -115,6 +124,7 @@ class JobsTable(LiveTable):
                     (
                         job["id"],
                         Text.assemble((state, JOB_STYLES.get(state, ""))),
+                        job.get("submitter") or "-",
                         hostnames.get(node_id, node_id) or "-",
                         status_cmd.requires(job) or "-",
                         str(job.get("attempts", 0)),
