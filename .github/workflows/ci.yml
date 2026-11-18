@@ -21,6 +21,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # The sandbox tests skip themselves without a working bwrap, and
+      # Ubuntu runners turn unprivileged user namespaces off by default.
+      - name: Install bubblewrap
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          echo "RELAY_REQUIRE_SANDBOX=1" >> "$GITHUB_ENV"
+
       - run: go build ./...
 
       - run: go vet ./...

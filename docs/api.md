@@ -404,6 +404,7 @@ Example body:
 | `cpus` | Number of CPUs available |
 | `mem_bytes` | Amount of memory available in bytes |
 | `owner` | Name of the person who earns credits for this node's online time |
+| `sandbox` | `true` when the node runs jobs inside a bubblewrap sandbox. Optional, `false` when left out |
 | `pool_token` | Secret join token belonging to the node's pool |
 
 The `id` field is required.

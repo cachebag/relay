@@ -73,6 +73,30 @@ def tracked_agent(cfg, pid=4321, pool_id="p1", pool_name="lab", legacy=False):
     )
 
 
+def test_start_without_the_sandbox_tells_the_agent_and_remembers_it(cfg, monkeypatch):
+    seen = {}
+
+    class FakeProcess:
+        pid = 4321
+
+        def poll(self):
+            return None
+
+    def fake_popen(argv, **options):
+        seen["argv"] = argv
+        return FakeProcess()
+
+    monkeypatch.setattr(contribution.binaries, "find", lambda name: "relay-agent-test")
+    monkeypatch.setattr(contribution.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(contribution, "STARTUP_SECONDS", 0)
+
+    contribution.start(SAVED, SCHED, sandbox=False)
+
+    assert seen["argv"][-1] == "--no-sandbox"
+    state = json.loads((cfg / "relay-agent.p1.state.json").read_text())
+    assert state["sandbox"] is False
+
+
 def test_start_launches_agent_with_saved_pool(cfg, monkeypatch):
     seen = {}
 
@@ -116,9 +140,8 @@ def test_start_launches_agent_with_saved_pool(cfg, monkeypatch):
     assert Path(seen["options"]["stdout"].name) == log_path
     assert log_path == cfg / "relay-agent.p1.log"
     assert (cfg / "relay-agent.p1.pid").read_text(encoding="utf-8") == "4321\n"
-    assert (
-        json.loads((cfg / "relay-agent.p1.state.json").read_text())["pool_id"] == "p1"
-    )
+    state = json.loads((cfg / "relay-agent.p1.state.json").read_text())
+    assert state["pool_id"] == "p1" and state["sandbox"] is True
 
     if sys.platform == "win32":
         assert seen["options"]["creationflags"] == subprocess.CREATE_NEW_PROCESS_GROUP

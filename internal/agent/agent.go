@@ -113,6 +113,12 @@ func newAgentWithDirs(schedulerURL, poolToken string, n store.Node, cacheDir, id
 	return a
 }
 
+// UseSandbox runs every job inside s and tells the scheduler so.
+func (a *Agent) UseSandbox(s *Sandbox) {
+	a.run = s.Run
+	a.node.Sandbox = true
+}
+
 // KeepWorkdir leaves job folders in place instead of deleting them, and
 // stops Run from clearing leftover ones when it starts.
 func (a *Agent) KeepWorkdir() {

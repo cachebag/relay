@@ -175,6 +175,13 @@ func main() {
 		"keep each job's folder after it finishes and print where it is",
 	)
 
+	// For a pool whose jobs need the network or files outside their folder.
+	noSandbox := flag.Bool(
+		"no-sandbox",
+		false,
+		"on Linux, run jobs as your own user even when bubblewrap is installed",
+	)
+
 	// Replaces the default help output with Relay-specific usage information and an example showing how to join a pool.
 	flag.Usage = func() {
 		printUsage(flag.CommandLine.Output(), flag.CommandLine)
@@ -236,6 +243,15 @@ func main() {
 	}
 	if *keepWorkdir {
 		a.KeepWorkdir()
+	}
+	switch sandbox, err := agent.FindSandbox(); {
+	case *noSandbox:
+		log.Print("--no-sandbox: jobs will run without a sandbox")
+	case err != nil:
+		log.Printf("%v, jobs will run without a sandbox", err)
+	case sandbox != nil:
+		a.UseSandbox(sandbox)
+		log.Print("jobs run in a bubblewrap sandbox: their own folder, no other files of yours and no network")
 	}
 	if err := a.Run(ctx, 10*time.Second); err != nil && ctx.Err() == nil {
 		if reportExit(os.Stderr, err) {

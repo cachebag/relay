@@ -122,6 +122,8 @@ Each job runs in its own empty folder under your user cache directory (`~/.cache
 
 A job submitted with `relay submit --dir` or `--file` has its files unpacked into that folder first, and whatever it writes to `out/` there (up to 50 MB packed) is sent back to the scheduler with the result for the submitter to fetch.
 
+On Linux with bubblewrap installed (`apt install bubblewrap`, `pacman -S bubblewrap`), the agent runs every job inside a sandbox. The job sees `/usr` and `/etc` read-only and its own folder, and nothing else: not your home folder, not the agent's files, not another job's folder, and no network. The agent says which it is when it starts, and logs `no bubblewrap found, jobs will run without a sandbox` when there is none. A job that needs the network, for example one that installs a package, fails in the sandbox; run `relay contribute --no-sandbox` for a pool that runs such jobs (`relay update` keeps that choice). macOS and Windows have no sandbox, and jobs there run as your own user.
+
 To look at what a job left behind, start the agent with `--keep-workdir`. It keeps every job's folder and logs where it is.
 
 ## Scheduler address

@@ -39,7 +39,8 @@ func NewSQLite(path string) (*SQLite, error) {
 		mem_bytes INTEGER NOT NULL,
 		last_seen INTEGER NOT NULL,
 		pool_id   TEXT NOT NULL DEFAULT '',
-		owner     TEXT NOT NULL DEFAULT ''
+		owner     TEXT NOT NULL DEFAULT '',
+		sandbox   INTEGER NOT NULL DEFAULT 0
 	)`)
 	if err != nil {
 		db.Close()
@@ -48,6 +49,7 @@ func NewSQLite(path string) (*SQLite, error) {
 
 	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN pool_id TEXT NOT NULL DEFAULT ''`)
 	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN owner TEXT NOT NULL DEFAULT ''`)
+	_, _ = db.Exec(`ALTER TABLE nodes ADD COLUMN sandbox INTEGER NOT NULL DEFAULT 0`)
 
 	// Machines a pool admin removed. One row per (pool, node), so removing
 	// the same machine twice keeps a single tombstone.
@@ -110,8 +112,8 @@ func (s *SQLite) Backup(ctx context.Context, destPath string) error {
 
 func (s *SQLite) Upsert(_ context.Context, n Node) error {
 	result, err := s.db.Exec(
-		`INSERT INTO nodes (id, hostname, os, arch, cpus, mem_bytes, last_seen, pool_id, owner)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO nodes (id, hostname, os, arch, cpus, mem_bytes, last_seen, pool_id, owner, sandbox)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 		   hostname=excluded.hostname,
 		   os=excluded.os,
@@ -120,9 +122,10 @@ func (s *SQLite) Upsert(_ context.Context, n Node) error {
 		   mem_bytes=excluded.mem_bytes,
 		   last_seen=excluded.last_seen,
 		   pool_id=excluded.pool_id,
-		   owner=excluded.owner
+		   owner=excluded.owner,
+		   sandbox=excluded.sandbox
 		 WHERE nodes.pool_id=excluded.pool_id`,
-		n.ID, n.Hostname, n.OS, n.Arch, n.CPUs, n.MemBytes, n.LastSeen.Unix(), n.PoolID, n.Owner,
+		n.ID, n.Hostname, n.OS, n.Arch, n.CPUs, n.MemBytes, n.LastSeen.Unix(), n.PoolID, n.Owner, n.Sandbox,
 	)
 	if err != nil {
 		return err
@@ -138,7 +141,7 @@ func (s *SQLite) Upsert(_ context.Context, n Node) error {
 }
 
 func (s *SQLite) List(_ context.Context) ([]Node, error) {
-	rows, err := s.db.Query(`SELECT id, hostname, os, arch, cpus, mem_bytes, last_seen, pool_id, owner FROM nodes ORDER BY hostname, id`)
+	rows, err := s.db.Query(`SELECT id, hostname, os, arch, cpus, mem_bytes, last_seen, pool_id, owner, sandbox FROM nodes ORDER BY hostname, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +151,7 @@ func (s *SQLite) List(_ context.Context) ([]Node, error) {
 	for rows.Next() {
 		var n Node
 		var sec int64
-		if err := rows.Scan(&n.ID, &n.Hostname, &n.OS, &n.Arch, &n.CPUs, &n.MemBytes, &sec, &n.PoolID, &n.Owner); err != nil {
+		if err := rows.Scan(&n.ID, &n.Hostname, &n.OS, &n.Arch, &n.CPUs, &n.MemBytes, &sec, &n.PoolID, &n.Owner, &n.Sandbox); err != nil {
 			return nil, err
 		}
 		n.LastSeen = time.Unix(sec, 0).UTC()

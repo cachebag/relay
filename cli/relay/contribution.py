@@ -239,8 +239,9 @@ def stop_all() -> list[dict]:
     return stopped
 
 
-def start(prof: dict, scheduler: str) -> tuple[int, Path]:
-    """Start one pool's agent without disturbing agents in other pools."""
+def start(prof: dict, scheduler: str, sandbox: bool = True) -> tuple[int, Path]:
+    """Start one pool's agent without disturbing agents in other pools.
+    sandbox=False passes --no-sandbox, for pools whose jobs need the network."""
     token = prof.get("pool_token")
     owner = prof.get("name")
     if not token or not owner:
@@ -277,6 +278,8 @@ def start(prof: dict, scheduler: str) -> tuple[int, Path]:
         "--cache-dir",
         str(_agent_cache_dir(pool_id)),
     ]
+    if not sandbox:
+        argv.append("--no-sandbox")
     if sys.platform == "win32":
         options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
     else:
@@ -305,6 +308,7 @@ def start(prof: dict, scheduler: str) -> tuple[int, Path]:
                     "pool_id": prof.get("pool_id"),
                     "pool_name": prof.get("pool_name"),
                     "scheduler": scheduler,
+                    "sandbox": sandbox,
                 }
             ),
             encoding="utf-8",

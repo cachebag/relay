@@ -43,6 +43,9 @@ relay login --scheduler http://<scheduler address>:8080 --pool-token <pool token
 relay contribute
 ```
 
+On Linux, install bubblewrap (`apt install bubblewrap` or `pacman -S bubblewrap`)
+and jobs run in a sandbox that can't see your files or use the network.
+
 Use `relay contribute status` or `relay contribute stop` to manage the agent,
 or press **a** in `relay dash`. See [the contribution guide](docs/CONTRIBUTE.md)
 for details.

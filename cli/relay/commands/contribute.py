@@ -16,6 +16,12 @@ def register(sub) -> None:
         metavar="NAME",
         help="saved pool name or ID (default: current login)",
     )
+    parser.add_argument(
+        "--no-sandbox",
+        action="store_true",
+        help="on Linux, run jobs as your own user even when bubblewrap is "
+        "installed, for a pool whose jobs need the network",
+    )
     parser.set_defaults(func=run_start)
 
     # Register the commands used to stop and inspect local agents.
@@ -92,7 +98,10 @@ def run_start(args) -> None:
             if getattr(args, "scheduler_given", False)
             else prof.get("scheduler") or args.scheduler
         )
-        pid, log_path = contribution.start(prof, scheduler)
+        if getattr(args, "no_sandbox", False):
+            pid, log_path = contribution.start(prof, scheduler, sandbox=False)
+        else:
+            pid, log_path = contribution.start(prof, scheduler)
     except contribution.AgentExitedError as exc:
         print(
             "relay contribute: relay-agent exited during startup",
