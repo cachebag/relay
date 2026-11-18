@@ -1,0 +1,650 @@
+[
+ {
+  "id": "UT-001",
+  "title": "Reject unauthorized pool administration",
+  "priority": "High",
+  "requirements": "FR-26; NFR-S2; UC-01, UC-09"
+ },
+ {
+  "id": "UT-002",
+  "title": "Validate job input and timeout boundaries",
+  "priority": "High",
+  "requirements": "FR-08; NFR-R2; UC-04"
+ },
+ {
+  "id": "UT-003",
+  "title": "Keep job and node reads within the authenticated pool",
+  "priority": "High",
+  "requirements": "FR-05, FR-09; NFR-S3; UC-03, UC-05"
+ },
+ {
+  "id": "UT-004",
+  "title": "Reject stale and repeated results without changing job data",
+  "priority": "High",
+  "requirements": "NFR-R4, NFR-R5; UC-07"
+ },
+ {
+  "id": "UT-005",
+  "title": "Prevent a heartbeat from moving a node to another pool",
+  "priority": "High",
+  "requirements": "FR-02; NFR-S3; UC-03"
+ },
+ {
+  "id": "UT-006",
+  "title": "Schedule a job only on an online node with the required pool and OS",
+  "priority": "High",
+  "requirements": "FR-03, FR-06, FR-10, FR-17; UC-03, UC-04"
+ },
+ {
+  "id": "UT-007",
+  "title": "Prefer idle nodes and rotate equally loaded nodes",
+  "priority": "Medium",
+  "requirements": "FR-10; UC-04"
+ },
+ {
+  "id": "UT-008",
+  "title": "Recover lost jobs and stop after three placement attempts",
+  "priority": "High",
+  "requirements": "FR-13, FR-14; NFR-R6; UC-07"
+ },
+ {
+  "id": "UT-009",
+  "title": "Calculate job charges and exempt launch failures",
+  "priority": "Medium",
+  "requirements": "FR-18; UC-04"
+ },
+ {
+  "id": "UT-010",
+  "title": "Pay contribution credits once and settle offline minutes",
+  "priority": "Medium",
+  "requirements": "FR-18; UC-03"
+ },
+ {
+  "id": "UT-011",
+  "title": "Bound captured output without blocking writes",
+  "priority": "Medium",
+  "requirements": "FR-12; UC-06"
+ },
+ {
+  "id": "UT-012",
+  "title": "Report an execution deadline as a failed attempt",
+  "priority": "High",
+  "requirements": "FR-11; UC-04"
+ },
+ {
+  "id": "UT-013",
+  "title": "Retry result delivery before fetching more jobs",
+  "priority": "High",
+  "requirements": "NFR-R7, NFR-A5; UC-03, UC-06"
+ },
+ {
+  "id": "UT-014",
+  "title": "Return CLI job outcomes and keep local wait limits independent",
+  "priority": "Medium",
+  "requirements": "FR-12; UC-06"
+ },
+ {
+  "id": "UT-015",
+  "title": "Restrict pool listing to the server administrator",
+  "priority": "Medium",
+  "requirements": "FR-07; NFR-S3; UC-01"
+ },
+ {
+  "id": "UT-016",
+  "title": "Generate unique, unpredictable IDs and tokens",
+  "priority": "High",
+  "requirements": "DB-01; NFR-S6; UC-01"
+ },
+ {
+  "id": "UT-017",
+  "title": "Reject invalid and cross-pool database references",
+  "priority": "High",
+  "requirements": "DB-02; NFR-S3; UC-03, UC-04"
+ },
+ {
+  "id": "UT-018",
+  "title": "Enforce every allowed job-state transition",
+  "priority": "High",
+  "requirements": "DB-03; NFR-R4; UC-04, UC-07"
+ },
+ {
+  "id": "UT-019",
+  "title": "Keep the credit ledger append-only and balances derived",
+  "priority": "Medium",
+  "requirements": "DB-04; FR-18; UC-03, UC-04"
+ },
+ {
+  "id": "UT-020",
+  "title": "Apply command option, environment, and saved-login precedence",
+  "priority": "High",
+  "requirements": "OR-02; FR-35; UC-02"
+ },
+ {
+  "id": "UT-021",
+  "title": "Use UTC and the scheduler clock for stored events",
+  "priority": "High",
+  "requirements": "OR-07; FR-08, FR-20; UC-04"
+ },
+ {
+  "id": "UT-022",
+  "title": "Distinguish missing, wrong, and rotated join tokens",
+  "priority": "Medium",
+  "requirements": "NFR-S5; FR-28, FR-35; UC-02, UC-09"
+ },
+ {
+  "id": "UT-023",
+  "title": "Require authorization on every non-health handler",
+  "priority": "High",
+  "requirements": "NFR-S2; FR-26; UC-01 through UC-09"
+ },
+ {
+  "id": "UT-024",
+  "title": "Preserve every accepted job through state changes",
+  "priority": "High",
+  "requirements": "NFR-R4; DB-03; UC-04, UC-07"
+ },
+ {
+  "id": "UT-025",
+  "title": "Block file and network access inside a Linux sandbox",
+  "priority": "High",
+  "requirements": "FR-15; NFR-S4; UC-04"
+ },
+ {
+  "id": "UT-026",
+  "title": "Report sandbox fallback and enforce execution time limit",
+  "priority": "High",
+  "requirements": "FR-15; NFR-S4; UC-04"
+ },
+ {
+  "id": "UT-027",
+  "title": "Place higher-credit members first",
+  "priority": "Medium",
+  "requirements": "FR-19; FR-18; UC-04"
+ },
+ {
+  "id": "UT-028",
+  "title": "Keep equal-credit jobs in submission order",
+  "priority": "Medium",
+  "requirements": "FR-19; UC-04"
+ },
+ {
+  "id": "UT-029",
+  "title": "Protect tokens at creation, storage, and logging",
+  "priority": "High",
+  "requirements": "NFR-S6; FR-26, FR-28; UC-01, UC-09"
+ },
+ {
+  "id": "UT-030",
+  "title": "Reject each invalid job submission without saving it",
+  "priority": "High",
+  "requirements": "FR-08; NFR-R2; UC-04"
+ },
+ {
+  "id": "IT-001",
+  "title": "Create and persist an administrator-authorized pool",
+  "priority": "High",
+  "requirements": "FR-01, FR-20, FR-26; UC-01"
+ },
+ {
+  "id": "IT-002",
+  "title": "Save a CLI login only after API token validation",
+  "priority": "Medium",
+  "requirements": "FR-35; UC-02"
+ },
+ {
+  "id": "IT-003",
+  "title": "Persist authenticated job ownership and execution options",
+  "priority": "High",
+  "requirements": "FR-08; UC-04"
+ },
+ {
+  "id": "IT-004",
+  "title": "Schedule persisted jobs only to eligible nodes",
+  "priority": "High",
+  "requirements": "FR-10, FR-17; NFR-P3; UC-04"
+ },
+ {
+  "id": "IT-005",
+  "title": "Execute real commands and store results with credit charges",
+  "priority": "High",
+  "requirements": "FR-11, FR-12, FR-18; UC-04, UC-06"
+ },
+ {
+  "id": "IT-006",
+  "title": "Reject stale and sequential duplicate job results",
+  "priority": "High",
+  "requirements": "NFR-R4, NFR-R5; UC-07"
+ },
+ {
+  "id": "IT-007",
+  "title": "Requeue work when a contributor leaves voluntarily",
+  "priority": "High",
+  "requirements": "FR-25; UC-08"
+ },
+ {
+  "id": "IT-008",
+  "title": "Persist admin removal and prevent automatic rejoining",
+  "priority": "High",
+  "requirements": "FR-27; UC-09"
+ },
+ {
+  "id": "IT-009",
+  "title": "Replay a persisted result after a reporting outage",
+  "priority": "High",
+  "requirements": "FR-20; NFR-R7; UC-06"
+ },
+ {
+  "id": "IT-010",
+  "title": "Preserve an active assignment during scheduler restart",
+  "priority": "High",
+  "requirements": "FR-20; NFR-A2; UC-07"
+ },
+ {
+  "id": "IT-011",
+  "title": "Recover lost-node work and stop after three placements",
+  "priority": "High",
+  "requirements": "FR-13, FR-14; NFR-R6; UC-07"
+ },
+ {
+  "id": "IT-012",
+  "title": "Migrate an older database without losing jobs",
+  "priority": "Medium",
+  "requirements": "NFR-M4"
+ },
+ {
+  "id": "IT-013",
+  "title": "Post contribution earnings to the correct pool ledger",
+  "priority": "Medium",
+  "requirements": "FR-18; UC-03, UC-04"
+ },
+ {
+  "id": "IT-014",
+  "title": "Handle simultaneous heartbeat and scheduler database access",
+  "priority": "High",
+  "requirements": "DB-07; UC-03"
+ },
+ {
+  "id": "IT-015",
+  "title": "Refuse login when the join token is omitted",
+  "priority": "High",
+  "requirements": "FR-35; NFR-S5; UC-02"
+ },
+ {
+  "id": "IT-016",
+  "title": "Refuse login with an incorrect join token",
+  "priority": "High",
+  "requirements": "FR-35; NFR-S5; UC-02"
+ },
+ {
+  "id": "IT-017",
+  "title": "Accept a valid join token and use the saved profile",
+  "priority": "High",
+  "requirements": "FR-35; UC-02, UC-04"
+ },
+ {
+  "id": "IT-018",
+  "title": "Invalidate a saved profile after token rotation",
+  "priority": "High",
+  "requirements": "FR-28, FR-35; NFR-S5; UC-02, UC-09"
+ },
+ {
+  "id": "IT-019",
+  "title": "List pools through the administrator API only",
+  "priority": "Medium",
+  "requirements": "FR-07; NFR-S3; UC-01"
+ },
+ {
+  "id": "IT-020",
+  "title": "Send only approved agent heartbeat data",
+  "priority": "High",
+  "requirements": "NFR-S7; FR-02; UC-03"
+ },
+ {
+  "id": "IT-021",
+  "title": "Reject cross-pool node, job, and result access",
+  "priority": "High",
+  "requirements": "NFR-S3; FR-05, FR-09; UC-03, UC-05"
+ },
+ {
+  "id": "IT-022",
+  "title": "Retain confirmed data after abrupt scheduler stop",
+  "priority": "High",
+  "requirements": "NFR-R3; FR-20; UC-01, UC-03, UC-04"
+ },
+ {
+  "id": "IT-023",
+  "title": "Keep output from the most recent accepted attempt",
+  "priority": "High",
+  "requirements": "NFR-R5; NFR-S3; UC-07"
+ },
+ {
+  "id": "IT-024",
+  "title": "Keep scheduler and agents healthy after bad inputs",
+  "priority": "High",
+  "requirements": "NFR-R2; UC-03, UC-04"
+ },
+ {
+  "id": "IT-025",
+  "title": "Remove departed nodes without deleting retained history",
+  "priority": "Medium",
+  "requirements": "NFR-S8; DB-05; FR-25, FR-27; UC-08, UC-09"
+ },
+ {
+  "id": "IT-026",
+  "title": "Open databases from every earlier release",
+  "priority": "High",
+  "requirements": "NFR-M4; FR-20"
+ },
+ {
+  "id": "IT-027",
+  "title": "Reconcile jobs through random agent failures",
+  "priority": "High",
+  "requirements": "NFR-R4; FR-13, FR-14; UC-07"
+ },
+ {
+  "id": "IT-028",
+  "title": "Honor the scheduler restart grace window",
+  "priority": "High",
+  "requirements": "NFR-R8; NFR-R5; UC-07"
+ },
+ {
+  "id": "IT-029",
+  "title": "Log timestamped events outside the database",
+  "priority": "High",
+  "requirements": "OR-01; UC-03, UC-04"
+ },
+ {
+  "id": "IT-030",
+  "title": "Resolve effective CLI settings across sources",
+  "priority": "High",
+  "requirements": "OR-02; FR-35; UC-02"
+ },
+ {
+  "id": "ST-001",
+  "title": "Run jobs across the complete deployed Relay system",
+  "priority": "High",
+  "requirements": "FR-11; UC-04"
+ },
+ {
+  "id": "ST-002",
+  "title": "Keep concurrent pools isolated throughout execution",
+  "priority": "High",
+  "requirements": "NFR-S3; UC-04, UC-05"
+ },
+ {
+  "id": "ST-003",
+  "title": "Use compatible machines and continue draining a busy pool",
+  "priority": "High",
+  "requirements": "FR-03, FR-10, FR-17; UC-03, UC-04"
+ },
+ {
+  "id": "ST-004",
+  "title": "Recover a job after abrupt contributor loss",
+  "priority": "High",
+  "requirements": "FR-13, FR-14; NFR-R6; UC-07"
+ },
+ {
+  "id": "ST-005",
+  "title": "Restart the scheduler without losing active work or saved state",
+  "priority": "High",
+  "requirements": "FR-20; NFR-R3; UC-07"
+ },
+ {
+  "id": "ST-006",
+  "title": "Recover a completed result after a reporting outage and agent restart",
+  "priority": "High",
+  "requirements": "NFR-R7, NFR-A5; UC-06"
+ },
+ {
+  "id": "ST-007",
+  "title": "Revoke a join token and restore authorized pool access",
+  "priority": "High",
+  "requirements": "FR-28; NFR-S2; UC-09"
+ },
+ {
+  "id": "ST-008",
+  "title": "Run a remote pool through its public scheduler address",
+  "priority": "High",
+  "requirements": "FR-23; NFR-S1; UC-03, UC-04"
+ },
+ {
+  "id": "ST-009",
+  "title": "Measure local-network CLI command response time",
+  "priority": "Medium",
+  "requirements": "NFR-P5; UC-01, UC-02, UC-04, UC-05, UC-06, UC-08, UC-09"
+ },
+ {
+  "id": "ST-010",
+  "title": "Install Relay on Linux, macOS, and Windows",
+  "priority": "High",
+  "requirements": "FR-22, FR-24; NFR-PO1, NFR-PO2, NFR-PO3, NFR-PO4; UC-01, UC-03, UC-04"
+ },
+ {
+  "id": "ST-011",
+  "title": "Measure heartbeat processing latency",
+  "priority": "Medium",
+  "requirements": "NFR-P1; HW-02; UC-03"
+ },
+ {
+  "id": "ST-012",
+  "title": "Schedule under the 50-node and 500-job load",
+  "priority": "Medium",
+  "requirements": "NFR-P4; DB-06; HW-02; UC-03, UC-04"
+ },
+ {
+  "id": "ST-013",
+  "title": "Keep the database within storage capacity limits",
+  "priority": "Medium",
+  "requirements": "DB-06; UC-04, UC-06"
+ },
+ {
+  "id": "ST-014",
+  "title": "Time leave, remove, and token rotation",
+  "priority": "Medium",
+  "requirements": "NFR-P6; FR-25, FR-27, FR-28; UC-08, UC-09"
+ },
+ {
+  "id": "ST-015",
+  "title": "Run the scheduler continuously for seven days",
+  "priority": "High",
+  "requirements": "NFR-R1; UC-03, UC-04"
+ },
+ {
+  "id": "ST-016",
+  "title": "Measure 30-day scheduler availability",
+  "priority": "Medium",
+  "requirements": "NFR-A1; UC-03, UC-04"
+ },
+ {
+  "id": "ST-017",
+  "title": "Limit planned restart interruption to ten seconds",
+  "priority": "Medium",
+  "requirements": "NFR-A2; FR-20; UC-07"
+ },
+ {
+  "id": "ST-018",
+  "title": "Restart the per-user scheduler service after a crash",
+  "priority": "Medium",
+  "requirements": "NFR-A3; UC-07"
+ },
+ {
+  "id": "ST-019",
+  "title": "Reconnect all agents within ten seconds of return",
+  "priority": "High",
+  "requirements": "NFR-R7; UC-03, UC-07"
+ },
+ {
+  "id": "ST-020",
+  "title": "Keep other members available during node changes",
+  "priority": "High",
+  "requirements": "NFR-A4; UC-03, UC-04"
+ },
+ {
+  "id": "ST-021",
+  "title": "Reject new work during scheduler outage and save in-flight results",
+  "priority": "High",
+  "requirements": "NFR-A5; NFR-R7; UC-04, UC-06"
+ },
+ {
+  "id": "ST-022",
+  "title": "Protect public scheduler traffic with HTTPS",
+  "priority": "High",
+  "requirements": "NFR-S1; CM-08; UC-03, UC-04"
+ },
+ {
+  "id": "ST-023",
+  "title": "Isolate a Linux job from host files and network",
+  "priority": "High",
+  "requirements": "FR-15; NFR-S4; UC-04"
+ },
+ {
+  "id": "ST-024",
+  "title": "Keep heartbeats writable during dashboard reads",
+  "priority": "High",
+  "requirements": "DB-07; FR-21; UC-03, UC-05"
+ },
+ {
+  "id": "ST-025",
+  "title": "Restore a cold copy of the scheduler database",
+  "priority": "Low",
+  "requirements": "DB-08; FR-20; UC-07"
+ },
+ {
+  "id": "ST-026",
+  "title": "Set up a new developer in under thirty minutes",
+  "priority": "Medium",
+  "requirements": "NFR-M2; OR-03"
+ },
+ {
+  "id": "ST-027",
+  "title": "Check API documentation against live behavior",
+  "priority": "High",
+  "requirements": "NFR-M3; OR-03"
+ },
+ {
+  "id": "ST-028",
+  "title": "Gate each active requirement with automated regression and style checks",
+  "priority": "High",
+  "requirements": "NFR-M1, NFR-M5; OR-03"
+ },
+ {
+  "id": "ST-029",
+  "title": "Verify standard agent files and one-command install",
+  "priority": "Medium",
+  "requirements": "NFR-PO5; OR-04; FR-22, FR-25; UC-03, UC-08"
+ },
+ {
+  "id": "ST-030",
+  "title": "Check release versions and dependency licenses",
+  "priority": "Low",
+  "requirements": "OR-05, OR-06; FR-24"
+ },
+ {
+  "id": "UAT-001",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-002",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-003",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-004",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-005",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-006",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-007",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-008",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-009",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-010",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-011",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-012",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-013",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-014",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-015",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-016",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-017",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ },
+ {
+  "id": "UAT-018",
+  "title": "Acceptance case (steps not written in the test plan yet)",
+  "priority": "",
+  "requirements": ""
+ }
+]

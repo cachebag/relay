@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay test report</title>
+<style>
+:root {
+  --surface: #fcfcfb; --panel: #ffffff; --ink: #0b0b0b; --ink-2: #4a4a45; --muted: #77766e;
+  --hair: #e1e0d9; --ring: rgba(11,11,11,.10); --none: #c3c2b7;
+  --good: #0ca30c; --critical: #d03b3b; --warning: #fab219;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1a1a19; --panel: #222220; --ink: #f3f2ec; --ink-2: #c3c2b7; --muted: #8f8e85;
+    --hair: #2c2c2a; --ring: rgba(255,255,255,.10); --none: #55554f;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 22px; }
+a { color: inherit; }
+.tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.tile { background: var(--panel); border: 1px solid var(--ring); border-radius: 8px; padding: 12px 14px; }
+.tile .label { color: var(--ink-2); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.tile .value { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tile .of { color: var(--muted); font-size: 12px; }
+.groups { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 28px; margin-bottom: 22px; }
+.groups h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--ink-2); }
+.row { display: grid; grid-template-columns: 170px 1fr 92px; align-items: center; gap: 10px; margin-bottom: 7px; }
+.row .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .count { color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+.bar { display: flex; gap: 2px; height: 10px; }
+.bar span { height: 100%; border-radius: 2px; min-width: 2px; }
+.pass { background: var(--good); } .fail { background: var(--critical); }
+.blocked { background: var(--warning); } .notrun { background: var(--none); }
+.legend { display: flex; gap: 16px; color: var(--ink-2); font-size: 12px; margin: -6px 0 18px; }
+.legend i, .tile .label i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+select, input[type=search] { font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--ring); border-radius: 6px; padding: 6px 8px; }
+input[type=search] { flex: 1; min-width: 180px; }
+.filters .shown { color: var(--muted); font-size: 12px; margin-left: auto; }
+table { width: 100%; border-collapse: collapse; background: var(--panel);
+  border: 1px solid var(--ring); border-radius: 8px; overflow: hidden; }
+th { text-align: left; font-size: 12px; font-weight: 600; color: var(--ink-2); padding: 9px 10px;
+  border-bottom: 1px solid var(--hair); white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid var(--hair); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+td.id { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: nowrap; }
+td.req, td.small { color: var(--ink-2); font-size: 12px; }
+td.small { white-space: nowrap; }
+.verdict { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.verdict b { width: 16px; height: 16px; border-radius: 50%; display: inline-grid; place-items: center;
+  font-size: 11px; line-height: 1; color: #fff; }
+.verdict b.blocked { color: #0b0b0b; } .verdict b.notrun { color: var(--ink); }
+.note { color: var(--ink-2); font-size: 12px; overflow-wrap: anywhere; }
+.how { color: var(--ink-2); margin-top: 22px; font-size: 13px; }
+.how code { background: var(--panel); border: 1px solid var(--ring); border-radius: 4px; padding: 1px 5px; }
+.error { color: var(--critical); }
+@media (max-width: 860px) {
+  .tiles { grid-template-columns: repeat(2, 1fr); } .groups { grid-template-columns: 1fr; }
+  .hide-s { display: none; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>Relay test report</h1>
+  <p class="sub">CSC 4996 capstone. Verdicts for the 108 cases in the Relay test plan.
+    <span id="updated"></span></p>
+
+  <div class="tiles" id="tiles"></div>
+  <div class="legend" id="legend"></div>
+  <div class="groups">
+    <div><h2>By test level</h2><div id="by-level"></div></div>
+    <div><h2>By tester</h2><div id="by-tester"></div></div>
+  </div>
+
+  <div class="filters">
+    <select id="f-level" aria-label="Test level"></select>
+    <select id="f-tester" aria-label="Tester"></select>
+    <select id="f-verdict" aria-label="Verdict"></select>
+    <input id="f-text" type="search" placeholder="Search id, title or requirement">
+    <span class="shown" id="shown"></span>
+  </div>
+  <table>
+    <thead><tr>
+      <th>ID</th><th>Case</th><th class="hide-s">Requirements</th><th>Tester</th>
+      <th>Verdict</th><th class="hide-s">Date</th><th class="hide-s">Build</th><th>Notes</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="8">Loading…</td></tr></tbody>
+  </table>
+
+  <p class="how">To record a result, edit
+    <a href="https://github.com/cachebag/relay/edit/test-report/results.csv"><code>results.csv</code></a>
+    on the <code>test-report</code> branch and commit. Set <code>verdict</code> to Pass, Fail, Blocked
+    or Not run, and fill in the date, the build (commit or release tag) and a note or evidence link.
+    The page updates about a minute after the commit.</p>
+</main>
+
+<script>
+const VERDICTS = [
+  { key: "Pass", cls: "pass", icon: "✓" },
+  { key: "Fail", cls: "fail", icon: "✕" },
+  { key: "Blocked", cls: "blocked", icon: "!" },
+  { key: "Not run", cls: "notrun", icon: "–" },
+];
+const LEVELS = { UT: "Unit", IT: "Integration", ST: "System", UAT: "Acceptance" };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Quoted fields may hold commas, quotes ("") and newlines.
+function parseCsv(text) {
+  const rows = []; let row = [], cell = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.some((x) => x !== "")) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.some((x) => x !== "")) rows.push(row);
+  const head = rows.shift().map((h) => h.trim().toLowerCase());
+  return rows.map((r) => Object.fromEntries(head.map((h, i) => [h, (r[i] || "").trim()])));
+}
+
+function verdictOf(text) {
+  const t = (text || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (t.startsWith("pass")) return "Pass";
+  if (t.startsWith("fail")) return "Fail";
+  if (t.startsWith("block")) return "Blocked";
+  return "Not run";
+}
+
+function counts(cases) {
+  const n = Object.fromEntries(VERDICTS.map((v) => [v.key, 0]));
+  for (const c of cases) n[c.verdict]++;
+  return n;
+}
+
+function bar(cases) {
+  const n = counts(cases);
+  return '<div class="bar">' + VERDICTS.filter((v) => n[v.key]).map((v) =>
+    `<span class="${v.cls}" style="flex:${n[v.key]}" title="${v.key}: ${n[v.key]} of ${cases.length}"></span>`
+  ).join("") + "</div>";
+}
+
+function group(el, cases, keyOf, order) {
+  const groups = new Map(order.map((k) => [k, []]));
+  for (const c of cases) { const k = keyOf(c); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); }
+  el.innerHTML = [...groups].filter(([, g]) => g.length).map(([k, g]) => {
+    const done = g.filter((c) => c.verdict !== "Not run").length;
+    return `<div class="row"><span class="name" title="${esc(k)}">${esc(k)}</span>${bar(g)}` +
+      `<span class="count">${done} of ${g.length} run</span></div>`;
+  }).join("");
+}
+
+function linkify(text) {
+  return esc(text).replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}" rel="noopener">${u}</a>`);
+}
+
+function render(cases) {
+  const n = counts(cases), total = cases.length;
+  $("tiles").innerHTML =
+    `<div class="tile"><div class="label">Cases run</div><div class="value">${total - n["Not run"]}</div>` +
+    `<div class="of">of ${total}</div></div>` +
+    VERDICTS.map((v) => `<div class="tile"><div class="label"><i class="${v.cls}"></i>${v.key}</div>` +
+      `<div class="value">${n[v.key]}</div><div class="of">${Math.round(100 * n[v.key] / total)}% of cases</div></div>`).join("");
+  $("legend").innerHTML = VERDICTS.map((v) => `<span><i class="${v.cls}"></i> ${v.key}</span>`).join("");
+  group($("by-level"), cases, (c) => c.level, Object.values(LEVELS));
+  group($("by-tester"), cases, (c) => c.tester || "Unassigned", []);
+
+  const fill = (el, first, values) => {
+    el.innerHTML = `<option value="">${first}</option>` + values.map((v) => `<option>${esc(v)}</option>`).join("");
+  };
+  fill($("f-level"), "All levels", Object.values(LEVELS));
+  fill($("f-tester"), "All testers", [...new Set(cases.map((c) => c.tester).filter(Boolean))].sort());
+  fill($("f-verdict"), "All verdicts", VERDICTS.map((v) => v.key));
+
+  const draw = () => {
+    const level = $("f-level").value, tester = $("f-tester").value, verdict = $("f-verdict").value;
+    const text = $("f-text").value.trim().toLowerCase();
+    const shown = cases.filter((c) =>
+      (!level || c.level === level) && (!tester || c.tester === tester) && (!verdict || c.verdict === verdict) &&
+      (!text || `${c.id} ${c.title} ${c.requirements} ${c.notes}`.toLowerCase().includes(text)));
+    $("shown").textContent = `${shown.length} of ${total} cases`;
+    $("rows").innerHTML = shown.map((c) => {
+      const v = VERDICTS.find((x) => x.key === c.verdict);
+      return `<tr><td class="id">${esc(c.id)}</td><td>${esc(c.title)}</td>` +
+        `<td class="req hide-s">${esc(c.requirements)}</td><td class="small">${esc(c.tester)}</td>` +
+        `<td><span class="verdict"><b class="${v.cls}">${v.icon}</b>${v.key}</span></td>` +
+        `<td class="small hide-s">${esc(c.date)}</td><td class="small hide-s">${esc(c.build)}</td>` +
+        `<td class="note">${linkify(c.notes)}</td></tr>`;
+    }).join("") || '<tr><td colspan="8">No cases match.</td></tr>';
+  };
+  for (const id of ["f-level", "f-tester", "f-verdict", "f-text"]) $(id).addEventListener("input", draw);
+  draw();
+}
+
+async function load() {
+  const fresh = "?t=" + Date.now();
+  const [cases, csv] = await Promise.all([
+    fetch("cases.json" + fresh).then((r) => r.json()),
+    fetch("results.csv" + fresh).then((r) => r.text()),
+  ]);
+  const results = new Map(parseCsv(csv).map((r) => [r.id.toUpperCase(), r]));
+  render(cases.map((c) => {
+    const r = results.get(c.id) || {};
+    return { ...c, level: LEVELS[c.id.split("-")[0]], tester: r.tester || "", verdict: verdictOf(r.verdict),
+      date: r.date || "", build: r.build || "", notes: r.notes || "" };
+  }));
+  // The newest commit to results.csv, when GitHub's API lets an anonymous reader ask.
+  fetch("https://api.github.com/repos/cachebag/relay/commits?sha=test-report&path=results.csv&per_page=1")
+    .then((r) => (r.ok ? r.json() : []))
+    .then(([c]) => {
+      if (c) $("updated").textContent = "Last result recorded " +
+        new Date(c.commit.committer.date).toLocaleString() + " by " + c.commit.author.name + ".";
+    }).catch(() => {});
+}
+load().catch((e) => { $("rows").innerHTML = `<tr><td colspan="8" class="error">Could not load the results: ${esc(e.message)}</td></tr>`; });
+</script>
+</body>
+</html>
