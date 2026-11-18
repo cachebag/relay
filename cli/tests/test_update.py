@@ -276,6 +276,28 @@ def test_update_restarts_the_agents_that_were_running(
     assert "relay contribute --pool old" in captured.err
 
 
+def test_update_keeps_an_agent_started_without_the_sandbox(cfg, releases, monkeypatch):
+    installed(cfg, "relay-agent")
+    profile.save(
+        {"scheduler": "http://s", "pool_id": "p1", "pool_name": "lab", "name": "me"}
+    )
+    running = [
+        {"pid": 1, "pool_id": "p1", "pool_name": "lab", "scheduler": "http://s"}
+        | {"sandbox": False},
+    ]
+    monkeypatch.setattr(contribution, "statuses", lambda: running)
+    monkeypatch.setattr(contribution, "stop_all", lambda: None)
+    started = []
+
+    def start(prof, address, sandbox=True):
+        started.append((prof["pool_id"], sandbox))
+        return 99, cfg / "relay-agent.p1.log"
+
+    monkeypatch.setattr(contribution, "start", start)
+    run()
+    assert started == [("p1", False)]
+
+
 def test_a_failed_download_stops_nothing(cfg, releases, monkeypatch):
     bin_dir = installed(cfg, "relayd")
     relayd = Relayd(monkeypatch, cfg)

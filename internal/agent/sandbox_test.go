@@ -212,3 +212,39 @@ func TestSandboxStopsAJobAtItsDeadline(t *testing.T) {
 		t.Fatalf("exit %d, want -1", res.ExitCode)
 	}
 }
+
+// The whole path a real job takes: the agent makes the job's folder, runs
+// the command through the sandbox, and packs what it left in out/.
+func TestAgentRunsAJobInTheSandbox(t *testing.T) {
+	s := sandbox(t)
+	a := newAgent("http://scheduler", "token", store.Node{ID: "n1"}, t.TempDir())
+	a.UseSandbox(s)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	earlier, err := a.makeWorkdir("earlier")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(earlier, "data"), []byte("other-job"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := a.makeWorkdir("j1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `echo "home=$HOME" && echo result > out/result.txt && cat ` + filepath.Join(earlier, "data")
+	res := a.runInWorkdir(ctx, store.Job{ID: "j1", Command: []string{"sh", "-c", script}}, dir)
+
+	if !strings.Contains(res.Stdout, "home="+dir) {
+		t.Fatalf("HOME is not the job's folder: stdout %q, stderr %q", res.Stdout, res.Stderr)
+	}
+	if res.ExitCode == 0 || strings.Contains(res.Stdout, "other-job") {
+		t.Fatalf("the job read an earlier job's folder: exit %d, stdout %q", res.ExitCode, res.Stdout)
+	}
+	path, size, err := packOutput(dir)
+	if err != nil || path == "" || size == 0 {
+		t.Fatalf("out/ was not packed: path %q, size %d, err %v", path, size, err)
+	}
+}

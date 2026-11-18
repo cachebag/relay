@@ -164,9 +164,12 @@ def update_agents(dest: Path, tag: str) -> None:
         try:
             if prof is None:
                 raise contribution.ContributionError("its login is no longer saved")
-            pid, _ = contribution.start(
-                prof, state.get("scheduler") or prof.get("scheduler")
-            )
+            scheduler = state.get("scheduler") or prof.get("scheduler")
+            # An agent started with --no-sandbox comes back the same way.
+            if state.get("sandbox") is False:
+                pid, _ = contribution.start(prof, scheduler, sandbox=False)
+            else:
+                pid, _ = contribution.start(prof, scheduler)
         except contribution.ContributionError as exc:
             failed = True
             print(
