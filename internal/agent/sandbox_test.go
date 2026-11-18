@@ -48,9 +48,14 @@ func TestUseSandboxMarksTheNode(t *testing.T) {
 }
 
 // sandbox is this machine's real sandbox; the test is skipped without one.
+// CI sets RELAY_REQUIRE_SANDBOX on Linux, so a runner that loses bwrap fails
+// instead of quietly skipping every isolation test.
 func sandbox(t *testing.T) *Sandbox {
 	t.Helper()
 	s, err := FindSandbox()
+	if err != nil && os.Getenv("RELAY_REQUIRE_SANDBOX") != "" {
+		t.Fatalf("RELAY_REQUIRE_SANDBOX is set and there is no usable sandbox: %v", err)
+	}
 	if err != nil {
 		t.Skipf("no usable sandbox: %v", err)
 	}
