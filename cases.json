@@ -429,7 +429,10 @@
   "id": "ST-012",
   "title": "Schedule under the 50-node and 500-job load",
   "priority": "Medium",
-  "requirements": "NFR-P4; DB-06; HW-02; UC-03, UC-04"
+  "requirements": "NFR-P4; DB-06; HW-02; UC-03, UC-04",
+  "run": [
+   "RELAY_TIMED=1 go test ./internal/scheduler -run FiftyNodes -v -count=1"
+  ]
  },
  {
   "id": "ST-013",

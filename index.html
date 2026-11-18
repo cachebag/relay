@@ -59,6 +59,10 @@ td.small { white-space: nowrap; }
   font-size: 11px; line-height: 1; color: #fff; }
 .verdict b.blocked { color: #0b0b0b; } .verdict b.notrun { color: var(--ink); }
 .note { color: var(--ink-2); font-size: 12px; overflow-wrap: anywhere; }
+.run { display: block; margin-top: 4px; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace;
+  color: var(--ink-2); overflow-wrap: anywhere; }
+.run::before { content: "run: "; color: var(--muted); }
+.gap { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
 .how { color: var(--ink-2); margin-top: 22px; font-size: 13px; }
 .how code { background: var(--panel); border: 1px solid var(--ring); border-radius: 4px; padding: 1px 5px; }
 .error { color: var(--critical); }
@@ -200,7 +204,9 @@ function render(cases) {
     $("shown").textContent = `${shown.length} of ${total} cases`;
     $("rows").innerHTML = shown.map((c) => {
       const v = VERDICTS.find((x) => x.key === c.verdict);
-      return `<tr><td class="id">${esc(c.id)}</td><td>${esc(c.title)}</td>` +
+      const run = (c.run || []).map((r) => `<code class="run">${esc(r)}</code>`).join("") +
+        (c.gap ? `<span class="gap">Not covered by a test: ${esc(c.gap)}</span>` : "");
+      return `<tr><td class="id">${esc(c.id)}</td><td>${esc(c.title)}${run}</td>` +
         `<td class="req hide-s">${esc(c.requirements)}</td><td class="small">${esc(c.tester)}</td>` +
         `<td><span class="verdict"><b class="${v.cls}">${v.icon}</b>${v.key}</span></td>` +
         `<td class="small hide-s">${esc(c.date)}</td><td class="small hide-s">${esc(c.build)}</td>` +

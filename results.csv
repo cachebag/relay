@@ -73,8 +73,8 @@ ST-011,Abdoul Bah,Not run,,,
 ST-012,Abdoul Bah,Not run,,,
 ST-013,Abdoul Bah,Not run,,,
 ST-014,Abdoul Bah,Not run,,,
-ST-015,Abdoul Bah,Not run,,,
-ST-016,Abdoul Bah,Not run,,,
+ST-015,Abdoul Bah,Not run,,,Needs the scheduler left running for 7 days. Start the clock once punch is on 0.3.4 and do not restart it.
+ST-016,Abdoul Bah,Not run,,,"Needs 30 days of uptime monitoring, which ends after the semester. Reported as a coverage gap (test plan 4.2)."
 ST-017,Abdoul Bah,Not run,,,
 ST-018,Abdoul Bah,Not run,,,
 ST-019,Abdoul Bah,Not run,,,
