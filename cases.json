@@ -541,110 +541,110 @@
  },
  {
   "id": "UAT-001",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Create a pool and get its admin token",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-01; FR-26"
  },
  {
   "id": "UAT-002",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Log in to a pool",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-35"
  },
  {
   "id": "UAT-003",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Submit a job, have it run, and read its output",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-08; FR-11; FR-12"
  },
  {
   "id": "UAT-004",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Check a job's status",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-09"
  },
  {
   "id": "UAT-005",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Contribute a node, see it appear within 10 seconds, and leave",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-02; FR-04; FR-25; NFR-P2"
  },
  {
   "id": "UAT-006",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "See credits earned and spent",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-18"
  },
  {
   "id": "UAT-007",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Stay inside your own pool after logging in",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-35; NFR-S3"
  },
  {
   "id": "UAT-008",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Watch nodes and jobs in the live dashboard",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-21"
  },
  {
   "id": "UAT-009",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Rotate the join token",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-28"
  },
  {
   "id": "UAT-010",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "A job is stopped at its time limit",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-11; NFR-S4"
  },
  {
   "id": "UAT-011",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Clear message for a bad token at login (first case)",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-35; NFR-S5"
  },
  {
   "id": "UAT-012",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Clear message for a bad token at login (second case)",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-35; NFR-S5"
  },
  {
   "id": "UAT-013",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Submit a job after logging in",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-08; FR-35"
  },
  {
   "id": "UAT-014",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Clear message after the join token is rotated",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-28; FR-35; NFR-S5"
  },
  {
   "id": "UAT-015",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Submit a job",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-08"
  },
  {
   "id": "UAT-016",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "See only your own pool's jobs",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-09; NFR-S3"
  },
  {
   "id": "UAT-017",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "List jobs and read a finished job's output",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-09; FR-12"
  },
  {
   "id": "UAT-018",
-  "title": "Acceptance case (steps not written in the test plan yet)",
+  "title": "Admin actions need the admin token",
   "priority": "",
-  "requirements": ""
+  "requirements": "FR-26; FR-28; NFR-S2"
  }
 ]
