@@ -16,6 +16,12 @@ result you edit that file. No pull request is needed.
 
 The page updates about a minute later.
 
+## Running a case
+
+Each case on the page has a `run:` line under its title. Copy it, run it from
+the repo folder, and record what happened. Cases marked "Run by hand" have
+no automated test; follow their steps in the test plan.
+
 ## What a row looks like
 
 ```

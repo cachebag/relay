@@ -205,7 +205,7 @@ function render(cases) {
     $("rows").innerHTML = shown.map((c) => {
       const v = VERDICTS.find((x) => x.key === c.verdict);
       const run = (c.run || []).map((r) => `<code class="run">${esc(r)}</code>`).join("") +
-        (c.gap ? `<span class="gap">Not covered by a test: ${esc(c.gap)}</span>` : "");
+        (c.manual ? `<span class="gap">Run by hand: follow the steps for ${esc(c.id)} in the test plan.</span>` : "");
       return `<tr><td class="id">${esc(c.id)}</td><td>${esc(c.title)}${run}</td>` +
         `<td class="req hide-s">${esc(c.requirements)}</td><td class="small">${esc(c.tester)}</td>` +
         `<td><span class="verdict"><b class="${v.cls}">${v.icon}</b>${v.key}</span></td>` +
