@@ -27,6 +27,8 @@ type Node struct {
 	CPUs     int       `json:"cpus"`
 	MemBytes int64     `json:"mem_bytes"`
 	LastSeen time.Time `json:"last_seen"`
+	// Sandbox is whether the node runs jobs inside a sandbox.
+	Sandbox bool `json:"sandbox"`
 }
 
 // NodeTimeout is how long a node may go without a heartbeat before it is

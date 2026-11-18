@@ -11,6 +11,14 @@ without a pull request link their commit instead.
 
 ### Added
 
+- **Linux nodes run jobs in a bubblewrap sandbox.** When `bwrap` is
+  installed and able to start, every job runs inside it: `/usr` and `/etc`
+  read-only, the job's own folder read-write, and no home folder, agent
+  files, other jobs' folders or network. Without bubblewrap the agent logs
+  one line and runs jobs as before, and `relay-agent --no-sandbox` turns it
+  off for pools whose jobs need the network. Nodes report `sandbox` in
+  their heartbeat and in `GET /nodes`.
+  ([#189](https://github.com/cachebag/relay/pull/189))
 - **`o` on a job in the dash opens its fetched files.** After `f` fetches a
   job's output, `o` opens that folder in Finder, File Explorer or the
   desktop's file manager on Linux. Over SSH or Remote Desktop it says where
