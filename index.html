@@ -110,7 +110,7 @@ const VERDICTS = [
   { key: "Blocked", cls: "blocked", icon: "!" },
   { key: "Not run", cls: "notrun", icon: "–" },
 ];
-const LEVELS = { UT: "Unit", IT: "Integration", ST: "System", UAT: "Acceptance" };
+const LEVELS = { UT: "Unit", IT: "Integration", ST: "System" };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
