@@ -67,11 +67,11 @@ ST-005,Akrm Al-Hakimi,Not run,,,
 ST-006,Akrm Al-Hakimi,Not run,,,
 ST-007,Akrm Al-Hakimi,Not run,,,
 ST-008,Akrm Al-Hakimi,Not run,,,
-ST-009,Abdoul Bah,Not run,,,
-ST-010,Abdoul Bah,Not run,,,
-ST-011,Abdoul Bah,Not run,,,
-ST-012,Abdoul Bah,Not run,,,
-ST-013,Abdoul Bah,Not run,,,
+ST-009,Abdoul Bah,Pass,2026-11-18,v0.3.4,"All commands under 2s on Arch Linux over LAN address: login 0.24s, nodes 0.24s, jobs 0.24s, status 0.24s, fetch 0.24s, submit 0.37s, pool create 0.37s. dash and submit --wait excluded per NFR-P5"
+ST-010,Abdoul Bah,Pass,2026-11-18,v0.3.4,"One-command install with no admin rights on Linux (Arch), Windows and macOS; relay, relayd and relay-agent report 0.3.4 on each"
+ST-011,Abdoul Bah,Pass,2026-11-18,v0.3.4,"100 heartbeats accepted (HTTP 204): avg 0.8 ms, max 23.8 ms, under 50 ms per NFR-P1. Timed client-side with curl over LAN address since relayd log has no per-heartbeat timing. Ran on 16-core/24 GB machine, above HW-02 minimum"
+ST-012,Abdoul Bah,Pass,2026-11-18,v0.3.4,"RELAY_TIMED=1 go test ./internal/scheduler -run FiftyNodes: PASS, slowest of 10 rounds 12.4 ms (limit 1 s per NFR-P4)"
+ST-013,Abdoul Bah,Blocked,2026-11-18,v0.3.4,"Could not reach 10,000 jobs: Relay slowed from ~9 to ~0.6 jobs/s as finished jobs grew, see https://github.com/cachebag/relay/issues/193. At 2,263 jobs the DB was ~31 MB, on track for under 200 MB"
 ST-014,Abdoul Bah,Not run,,,
 ST-015,Abdoul Bah,Not run,,,Needs the scheduler left running for 7 days. Start the clock once punch is on 0.3.4 and do not restart it.
 ST-016,Abdoul Bah,Not run,,,"Needs 30 days of uptime monitoring, which ends after the semester. Reported as a coverage gap (test plan 4.2)."
