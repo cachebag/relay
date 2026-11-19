@@ -77,15 +77,15 @@ ST-015,Abdoul Bah,Not run,,,Needs the scheduler left running for 7 days. Start t
 ST-016,Abdoul Bah,Not run,,,"Needs 30 days of uptime monitoring, which ends after the semester. Reported as a coverage gap (test plan 4.2)."
 ST-017,Abdoul Bah,Pass,2026-11-18,v0.3.4,"Planned restart (relay scheduler stop and start) took 0.59s, healthz monitor showed 0.33s down (limit 10s), node, pool and done job all still present after restart, sleep 40 job kept running through the restart and finished done on attempt 1"
 ST-018,Abdoul Bah,Pass,2026-11-18,v0.3.4,"relay scheduler start --service installed a systemd user service with no sudo (Linger=yes), kill -9 on relayd, healthz monitor showed 10.0s down (limit 30s), systemd restarted it with a new PID (137571 to 138464), pool, node and jobs all still present, Linux only"
-ST-019,Abdoul Bah,Not run,,,
-ST-020,Abdoul Bah,Not run,,,
-ST-021,Abdoul Bah,Not run,,,
-ST-022,Abdoul Bah,Not run,,,
-ST-023,Abdoul Bah,Not run,,,
-ST-024,Abdoul Bah,Not run,,,
-ST-025,Abdoul Bah,Not run,,,
-ST-026,Abdoul Bah,Not run,,,
-ST-027,Abdoul Bah,Not run,,,
-ST-028,Abdoul Bah,Not run,,,
-ST-029,Abdoul Bah,Not run,,,
-ST-030,Abdoul Bah,Not run,,,
+ST-019,Abdoul Bah,Pass,2026-11-18,v0.3.4,
+ST-020,Abdoul Bah,Pass,2026-11-19,v0.3.4,"3 simulated nodes joined over the real API (all 204), n1 left (204), n2 removed by admin, n3 went offline, member ran relay jobs and relay nodes every second with 98 ok and 0 failures, real agent ran sleep 120 through the churn and finished done on attempt 1, agent PID 151687 unchanged so no restart needed, one real agent since a machine can only be in one pool"
+ST-021,Abdoul Bah,Pass,2026-11-19,v0.3.4,"Scheduler stopped at 16:08:18 while a sleep 30 job ran, relay submit during the outage was rejected (can not reach scheduler) and no job was created, job finished at 16:08:27 while scheduler was down, agent kept running and retried reporting the result, scheduler back and agent reconnected at 16:08:57 and reported the result, job done on attempt 1 and relay logs shows saved-during-outage"
+ST-022,Abdoul Bah,Pass,2026-11-19,v0.3.4,"Scheduler on public address https://relay-1.tail78c7e2.ts.net (Tailscale), agent and CLI used it, captured wlan0 for 40s while a job printed SECRET-ST022-MARKER, 37884 packets on 443, job output in 0 packets, join token in 0 packets, plain http returned 302 redirect to https (the 14 port 80 packets were that check), capture done with a Python raw socket script since tcpdump could not be installed"
+ST-023,Abdoul Bah,Fail,2026-11-19,v0.3.4,"No CPU or memory limits on Linux jobs, job saw 16 CPUs and unlimited memory with no cgroup limits, see https://github.com/cachebag/relay/issues/195, isolation itself passed: could not read home or agent files, write to home did not reach the real disk, no network, could not see another job folder, timeout 5s stopped the job and marked it failed"
+ST-024,Abdoul Bah,Pass,2026-11-19,v0.3.4,"8 parallel readers hit GET /jobs and GET /nodes for 40s with 300 jobs stored (31498 reads), 100 heartbeats sent during the reads all returned 204, avg 12.2 ms, max 154 ms, both nodes stayed online, reads never blocked a heartbeat, slower than idle (0.8 ms in ST-011) due to CPU load from the reader loops on the same machine"
+ST-025,Abdoul Bah,Pass,2026-11-19,v0.3.4,"Stopped scheduler and copied only relay.db (309 jobs), then added a job and a pool, then relay scheduler restore of the cold copy: all 309 jobs back (same IDs), post-backup job and pool gone (token invalid), agent reconnected with the same token with no setup, note: relay.db-wal (4 MB) and relay.db-shm stay after a clean stop but the one-file copy still had everything"
+ST-026,Abdoul Bah,Pass,2026-11-19,v0.3.4,"Used my gaming PC as the fresh setup, followed the docs/SETUP.md guide online"
+ST-027,Abdoul Bah,Pass,2026-11-19,v0.3.4,"docs/api.md matches a script i ran to test all of the apis"
+ST-028,Abdoul Bah,Pass,2026-11-19,v0.3.4,"go test ./... all ok, ruff All checks passed, pytest 380 passed 0 failed"
+ST-029,Abdoul Bah,Fail,2026-11-19,v0.3.4,"No uninstall command, see https://github.com/cachebag/relay/issues/196, relay has none, relay-agent uninstall ignored the word and started the agent instead (connected and ran a job), no systemd service entry, agent files stay in ~/.cache/relay, /tmp/relay-jobs and ~/.config/relay, one-command install works (see ST-010)"
+ST-030,Abdoul Bah,Fail,2026-11-19,v0.3.4,"Relay has no license"
