@@ -75,8 +75,8 @@ ST-013,Abdoul Bah,Blocked,2026-11-18,v0.3.4,"Could not reach 10,000 jobs: Relay 
 ST-014,Abdoul Bah,Fail,2026-11-18,v0.3.4,"Leave failed , i tested it twice, relay-agent leave printed left the pool in 0.005s but node b1124e41f96f stayed in relay nodes, leave uses a new random ID instead of the saved one, see https://github.com/cachebag/relay/issues/194. Remove 0.200s and rotate 0.263s passed (node gone on next request, old token 403)"
 ST-015,Abdoul Bah,Not run,,,Needs the scheduler left running for 7 days. Start the clock once punch is on 0.3.4 and do not restart it.
 ST-016,Abdoul Bah,Not run,,,"Needs 30 days of uptime monitoring, which ends after the semester. Reported as a coverage gap (test plan 4.2)."
-ST-017,Abdoul Bah,Not run,,,
-ST-018,Abdoul Bah,Not run,,,
+ST-017,Abdoul Bah,Pass,2026-11-18,v0.3.4,"Planned restart (relay scheduler stop and start) took 0.59s, healthz monitor showed 0.33s down (limit 10s), node, pool and done job all still present after restart, sleep 40 job kept running through the restart and finished done on attempt 1"
+ST-018,Abdoul Bah,Pass,2026-11-18,v0.3.4,"relay scheduler start --service installed a systemd user service with no sudo (Linger=yes), kill -9 on relayd, healthz monitor showed 10.0s down (limit 30s), systemd restarted it with a new PID (137571 to 138464), pool, node and jobs all still present, Linux only"
 ST-019,Abdoul Bah,Not run,,,
 ST-020,Abdoul Bah,Not run,,,
 ST-021,Abdoul Bah,Not run,,,
