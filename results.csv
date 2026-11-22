@@ -1,27 +1,27 @@
 id,tester,verdict,date,build,notes
-UT-001,Omar Almasri,Not run,,,
-UT-002,Omar Almasri,Not run,,,
-UT-003,Omar Almasri,Not run,,,
-UT-004,Omar Almasri,Not run,,,
-UT-005,Omar Almasri,Not run,,,
-UT-006,Omar Almasri,Not run,,,
-UT-007,Omar Almasri,Not run,,,
-UT-008,Omar Almasri,Not run,,,
-UT-009,Omar Almasri,Not run,,,
-UT-010,Omar Almasri,Not run,,,
-UT-011,Omar Almasri,Not run,,,
-UT-012,Omar Almasri,Not run,,,
-UT-013,Omar Almasri,Not run,,,
-UT-014,Omar Almasri,Not run,,,
-UT-015,Omar Almasri,Not run,,,
-UT-016,Omar Almasri,Not run,,,
-UT-017,Omar Almasri,Not run,,,
-UT-018,Omar Almasri,Not run,,,
-UT-019,Omar Almasri,Not run,,,
-UT-020,Omar Almasri,Not run,,,
-UT-021,Omar Almasri,Not run,,,
-UT-022,Omar Almasri,Not run,,,
-UT-023,Omar Almasri,Not run,,,
+UT-001,Omar Almasri,Pass,11/20/2026,v0.3.4,
+UT-002,Omar Almasri,Pass,11/20/2026,v0.3.4,
+UT-003,Omar Almasri,Pass,11/20/2026,v0.3.4,
+UT-004,Omar Almasri,Pass,11/20/2026,v0.3.4,
+UT-005,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-006,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-007,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-008,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-009,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-010,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-011,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-012,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-013,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-014,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-015,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-016,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-017,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-018,Omar Almasri,Failed,11/21/2026,v0.3.4,See issue #194: https://github.com/cachebag/relay/issues/194
+UT-019,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-020,Omar Almasri,Not run,11/21/2026,v0.3.4,"Results were unambigious, need to retest."
+UT-021,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-022,Omar Almasri,Pass,11/21/2026,v0.3.4,
+UT-023,Omar Almasri,Pass,11/21/2026,v0.3.4,
 UT-024,Akrm Al-Hakimi,Not run,,,
 UT-025,Akrm Al-Hakimi,Not run,,,
 UT-026,Akrm Al-Hakimi,Not run,,,
@@ -67,25 +67,25 @@ ST-005,Akrm Al-Hakimi,Not run,,,
 ST-006,Akrm Al-Hakimi,Not run,,,
 ST-007,Akrm Al-Hakimi,Not run,,,
 ST-008,Akrm Al-Hakimi,Not run,,,
-ST-009,Abdoul Bah,Pass,2026-11-18,v0.3.4,"All commands under 2s on Arch Linux over LAN address: login 0.24s, nodes 0.24s, jobs 0.24s, status 0.24s, fetch 0.24s, submit 0.37s, pool create 0.37s. dash and submit --wait excluded per NFR-P5"
-ST-010,Abdoul Bah,Pass,2026-11-18,v0.3.4,"One-command install with no admin rights on Linux (Arch), Windows and macOS; relay, relayd and relay-agent report 0.3.4 on each"
-ST-011,Abdoul Bah,Pass,2026-11-18,v0.3.4,"100 heartbeats accepted (HTTP 204): avg 0.8 ms, max 23.8 ms, under 50 ms per NFR-P1. Timed client-side with curl over LAN address since relayd log has no per-heartbeat timing. Ran on 16-core/24 GB machine, above HW-02 minimum"
-ST-012,Abdoul Bah,Pass,2026-11-18,v0.3.4,"RELAY_TIMED=1 go test ./internal/scheduler -run FiftyNodes: PASS, slowest of 10 rounds 12.4 ms (limit 1 s per NFR-P4)"
-ST-013,Abdoul Bah,Blocked,2026-11-18,v0.3.4,"Could not reach 10,000 jobs: Relay slowed from ~9 to ~0.6 jobs/s as finished jobs grew, see https://github.com/cachebag/relay/issues/193. At 2,263 jobs the DB was ~31 MB, on track for under 200 MB"
-ST-014,Abdoul Bah,Fail,2026-11-18,v0.3.4,"Leave failed , i tested it twice, relay-agent leave printed left the pool in 0.005s but node b1124e41f96f stayed in relay nodes, leave uses a new random ID instead of the saved one, see https://github.com/cachebag/relay/issues/194. Remove 0.200s and rotate 0.263s passed (node gone on next request, old token 403)"
+ST-009,Abdoul Bah,Pass,11/18/2026,v0.3.4,"All commands under 2s on Arch Linux over LAN address: login 0.24s, nodes 0.24s, jobs 0.24s, status 0.24s, fetch 0.24s, submit 0.37s, pool create 0.37s. dash and submit --wait excluded per NFR-P5"
+ST-010,Abdoul Bah,Pass,11/18/2026,v0.3.4,"One-command install with no admin rights on Linux (Arch), Windows and macOS; relay, relayd and relay-agent report 0.3.4 on each"
+ST-011,Abdoul Bah,Pass,11/18/2026,v0.3.4,"100 heartbeats accepted (HTTP 204): avg 0.8 ms, max 23.8 ms, under 50 ms per NFR-P1. Timed client-side with curl over LAN address since relayd log has no per-heartbeat timing. Ran on 16-core/24 GB machine, above HW-02 minimum"
+ST-012,Abdoul Bah,Pass,11/18/2026,v0.3.4,"RELAY_TIMED=1 go test ./internal/scheduler -run FiftyNodes: PASS, slowest of 10 rounds 12.4 ms (limit 1 s per NFR-P4)"
+ST-013,Abdoul Bah,Blocked,11/18/2026,v0.3.4,"Could not reach 10,000 jobs: Relay slowed from ~9 to ~0.6 jobs/s as finished jobs grew, see https://github.com/cachebag/relay/issues/193. At 2,263 jobs the DB was ~31 MB, on track for under 200 MB"
+ST-014,Abdoul Bah,Fail,11/18/2026,v0.3.4,"Leave failed , i tested it twice, relay-agent leave printed left the pool in 0.005s but node b1124e41f96f stayed in relay nodes, leave uses a new random ID instead of the saved one, see https://github.com/cachebag/relay/issues/194. Remove 0.200s and rotate 0.263s passed (node gone on next request, old token 403)"
 ST-015,Abdoul Bah,Not run,,,Needs the scheduler left running for 7 days. Start the clock once punch is on 0.3.4 and do not restart it.
 ST-016,Abdoul Bah,Not run,,,"Needs 30 days of uptime monitoring, which ends after the semester. Reported as a coverage gap (test plan 4.2)."
-ST-017,Abdoul Bah,Pass,2026-11-18,v0.3.4,"Planned restart (relay scheduler stop and start) took 0.59s, healthz monitor showed 0.33s down (limit 10s), node, pool and done job all still present after restart, sleep 40 job kept running through the restart and finished done on attempt 1"
-ST-018,Abdoul Bah,Pass,2026-11-18,v0.3.4,"relay scheduler start --service installed a systemd user service with no sudo (Linger=yes), kill -9 on relayd, healthz monitor showed 10.0s down (limit 30s), systemd restarted it with a new PID (137571 to 138464), pool, node and jobs all still present, Linux only"
-ST-019,Abdoul Bah,Pass,2026-11-18,v0.3.4,
-ST-020,Abdoul Bah,Pass,2026-11-19,v0.3.4,"3 simulated nodes joined over the real API (all 204), n1 left (204), n2 removed by admin, n3 went offline, member ran relay jobs and relay nodes every second with 98 ok and 0 failures, real agent ran sleep 120 through the churn and finished done on attempt 1, agent PID 151687 unchanged so no restart needed, one real agent since a machine can only be in one pool"
-ST-021,Abdoul Bah,Pass,2026-11-19,v0.3.4,"Scheduler stopped at 16:08:18 while a sleep 30 job ran, relay submit during the outage was rejected (can not reach scheduler) and no job was created, job finished at 16:08:27 while scheduler was down, agent kept running and retried reporting the result, scheduler back and agent reconnected at 16:08:57 and reported the result, job done on attempt 1 and relay logs shows saved-during-outage"
-ST-022,Abdoul Bah,Pass,2026-11-19,v0.3.4,"Scheduler on public address https://relay-1.tail78c7e2.ts.net (Tailscale), agent and CLI used it, captured wlan0 for 40s while a job printed SECRET-ST022-MARKER, 37884 packets on 443, job output in 0 packets, join token in 0 packets, plain http returned 302 redirect to https (the 14 port 80 packets were that check), capture done with a Python raw socket script since tcpdump could not be installed"
-ST-023,Abdoul Bah,Fail,2026-11-19,v0.3.4,"No CPU or memory limits on Linux jobs, job saw 16 CPUs and unlimited memory with no cgroup limits, see https://github.com/cachebag/relay/issues/195, isolation itself passed: could not read home or agent files, write to home did not reach the real disk, no network, could not see another job folder, timeout 5s stopped the job and marked it failed"
-ST-024,Abdoul Bah,Pass,2026-11-19,v0.3.4,"8 parallel readers hit GET /jobs and GET /nodes for 40s with 300 jobs stored (31498 reads), 100 heartbeats sent during the reads all returned 204, avg 12.2 ms, max 154 ms, both nodes stayed online, reads never blocked a heartbeat, slower than idle (0.8 ms in ST-011) due to CPU load from the reader loops on the same machine"
-ST-025,Abdoul Bah,Pass,2026-11-19,v0.3.4,"Stopped scheduler and copied only relay.db (309 jobs), then added a job and a pool, then relay scheduler restore of the cold copy: all 309 jobs back (same IDs), post-backup job and pool gone (token invalid), agent reconnected with the same token with no setup, note: relay.db-wal (4 MB) and relay.db-shm stay after a clean stop but the one-file copy still had everything"
-ST-026,Abdoul Bah,Pass,2026-11-19,v0.3.4,"Used my gaming PC as the fresh setup, followed the docs/SETUP.md guide online"
-ST-027,Abdoul Bah,Pass,2026-11-19,v0.3.4,"docs/api.md matches a script i ran to test all of the apis"
-ST-028,Abdoul Bah,Pass,2026-11-19,v0.3.4,"go test ./... all ok, ruff All checks passed, pytest 380 passed 0 failed"
-ST-029,Abdoul Bah,Fail,2026-11-19,v0.3.4,"No uninstall command, see https://github.com/cachebag/relay/issues/196, relay has none, relay-agent uninstall ignored the word and started the agent instead (connected and ran a job), no systemd service entry, agent files stay in ~/.cache/relay, /tmp/relay-jobs and ~/.config/relay, one-command install works (see ST-010)"
-ST-030,Abdoul Bah,Fail,2026-11-19,v0.3.4,"Relay has no license"
+ST-017,Abdoul Bah,Pass,11/18/2026,v0.3.4,"Planned restart (relay scheduler stop and start) took 0.59s, healthz monitor showed 0.33s down (limit 10s), node, pool and done job all still present after restart, sleep 40 job kept running through the restart and finished done on attempt 1"
+ST-018,Abdoul Bah,Pass,11/18/2026,v0.3.4,"relay scheduler start --service installed a systemd user service with no sudo (Linger=yes), kill -9 on relayd, healthz monitor showed 10.0s down (limit 30s), systemd restarted it with a new PID (137571 to 138464), pool, node and jobs all still present, Linux only"
+ST-019,Abdoul Bah,Pass,11/18/2026,v0.3.4,
+ST-020,Abdoul Bah,Pass,11/19/2026,v0.3.4,"3 simulated nodes joined over the real API (all 204), n1 left (204), n2 removed by admin, n3 went offline, member ran relay jobs and relay nodes every second with 98 ok and 0 failures, real agent ran sleep 120 through the churn and finished done on attempt 1, agent PID 151687 unchanged so no restart needed, one real agent since a machine can only be in one pool"
+ST-021,Abdoul Bah,Pass,11/19/2026,v0.3.4,"Scheduler stopped at 16:08:18 while a sleep 30 job ran, relay submit during the outage was rejected (can not reach scheduler) and no job was created, job finished at 16:08:27 while scheduler was down, agent kept running and retried reporting the result, scheduler back and agent reconnected at 16:08:57 and reported the result, job done on attempt 1 and relay logs shows saved-during-outage"
+ST-022,Abdoul Bah,Pass,11/19/2026,v0.3.4,"Scheduler on public address https://relay-1.tail78c7e2.ts.net (Tailscale), agent and CLI used it, captured wlan0 for 40s while a job printed SECRET-ST022-MARKER, 37884 packets on 443, job output in 0 packets, join token in 0 packets, plain http returned 302 redirect to https (the 14 port 80 packets were that check), capture done with a Python raw socket script since tcpdump could not be installed"
+ST-023,Abdoul Bah,Fail,11/19/2026,v0.3.4,"No CPU or memory limits on Linux jobs, job saw 16 CPUs and unlimited memory with no cgroup limits, see https://github.com/cachebag/relay/issues/195, isolation itself passed: could not read home or agent files, write to home did not reach the real disk, no network, could not see another job folder, timeout 5s stopped the job and marked it failed"
+ST-024,Abdoul Bah,Pass,11/19/2026,v0.3.4,"8 parallel readers hit GET /jobs and GET /nodes for 40s with 300 jobs stored (31498 reads), 100 heartbeats sent during the reads all returned 204, avg 12.2 ms, max 154 ms, both nodes stayed online, reads never blocked a heartbeat, slower than idle (0.8 ms in ST-011) due to CPU load from the reader loops on the same machine"
+ST-025,Abdoul Bah,Pass,11/19/2026,v0.3.4,"Stopped scheduler and copied only relay.db (309 jobs), then added a job and a pool, then relay scheduler restore of the cold copy: all 309 jobs back (same IDs), post-backup job and pool gone (token invalid), agent reconnected with the same token with no setup, note: relay.db-wal (4 MB) and relay.db-shm stay after a clean stop but the one-file copy still had everything"
+ST-026,Abdoul Bah,Pass,11/19/2026,v0.3.4,"Used my gaming PC as the fresh setup, followed the docs/SETUP.md guide online"
+ST-027,Abdoul Bah,Pass,11/19/2026,v0.3.4,docs/api.md matches a script i ran to test all of the apis
+ST-028,Abdoul Bah,Pass,11/19/2026,v0.3.4,"go test ./... all ok, ruff All checks passed, pytest 380 passed 0 failed"
+ST-029,Abdoul Bah,Fail,11/19/2026,v0.3.4,"No uninstall command, see https://github.com/cachebag/relay/issues/196, relay has none, relay-agent uninstall ignored the word and started the agent instead (connected and ran a job), no systemd service entry, agent files stay in ~/.cache/relay, /tmp/relay-jobs and ~/.config/relay, one-command install works (see ST-010)"
+ST-030,Abdoul Bah,Fail,11/19/2026,v0.3.4,Relay has no license
