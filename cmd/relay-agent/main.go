@@ -48,20 +48,20 @@ func printStartup(w io.Writer, n store.Node, scheduler string) {
 	)
 }
 
-// reportExit prints the one-line reason for a terminal exit and reports
-// whether err was one.
-func reportExit(w io.Writer, err error) bool {
-	var msg string
+// reportExit prints the reason for a known terminal condition and returns
+// its exit code. Administrative removal is a normal shutdown (0), while
+// a rejected token remains an error (1).
+func reportExit(w io.Writer, err error) (code int, handled bool) {
 	switch {
 	case errors.Is(err, agent.ErrRemoved):
-		msg = agent.RemovedExitMsg
+		fmt.Fprintln(w, agent.RemovedExitMsg)
+		return 0, true
 	case errors.Is(err, agent.ErrBadToken):
-		msg = agent.RejectedExitMsg
+		fmt.Fprintln(w, agent.RejectedExitMsg)
+		return 1, true
 	default:
-		return false
+		return 0, false
 	}
-	fmt.Fprintln(w, msg)
-	return true
 }
 
 // Returns RELAY_SCHEDULER if set, otherwise uses the default scheduler URL.
@@ -254,8 +254,11 @@ func main() {
 		log.Print("jobs run in a bubblewrap sandbox: their own folder, no other files of yours and no network")
 	}
 	if err := a.Run(ctx, 10*time.Second); err != nil && ctx.Err() == nil {
-		if reportExit(os.Stderr, err) {
-			os.Exit(1)
+		if code, handled := reportExit(os.Stderr, err); handled {
+			if code != 0 {
+				os.Exit(code)
+			}
+			return
 		}
 		log.Fatal(err)
 	}

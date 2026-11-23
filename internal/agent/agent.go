@@ -384,7 +384,7 @@ func (a *Agent) Run(ctx context.Context, interval time.Duration) error {
 	for {
 		a.Tick(ctx)
 		// Removed by the pool admin: stop the job and return ErrRemoved, so
-		// relay-agent exits 1 with a clear reason instead of retrying a
+		// relay-agent exits 0 with a clear reason instead of retrying a
 		// heartbeat that will never be accepted. The deferred wg.Wait lets
 		// the job wind down. A rejected token stops the same way with
 		// ErrBadToken.
