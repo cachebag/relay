@@ -32,11 +32,22 @@ func runLeave(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	id, err := agent.SavedNodeID()
+	if errors.Is(err, agent.ErrNoSavedID) {
+		fmt.Fprintln(stderr, "relay-agent leave: this machine has no saved node ID, so it hasn't joined a pool from here or it already left")
+		return 1
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "relay-agent leave: can't read this machine's node ID: %v\n", err)
+		return 1
+	}
+
 	node, err := agent.Collect()
 	if err != nil {
 		fmt.Fprintf(stderr, "relay-agent leave: %v\n", err)
 		return 1
 	}
+	node.ID = id
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	return leave(context.Background(), client, *scheduler, *poolToken, node, agent.ClearLocalData, stdout, stderr)
@@ -57,6 +68,10 @@ func leave(
 	err := agent.Leave(ctx, client, scheduler, node.ID, token)
 	var netErr *url.Error
 	switch {
+	case errors.Is(err, agent.ErrUnknownNode):
+		fmt.Fprintf(stderr, "relay-agent leave: the scheduler has no node %s, so this machine isn't in that pool\n", node.ID)
+		fmt.Fprintln(stderr, "nothing was changed")
+		return 1
 	case errors.Is(err, agent.ErrNotInPool):
 		fmt.Fprintln(stderr, "relay-agent leave: the pool token doesn't match this machine's pool")
 		return 1

@@ -35,18 +35,17 @@ func TestLeaveSendsDelete(t *testing.T) {
 	}
 }
 
-// TestLeaveResponses checks how each scheduler answer is treated: 204 and 404
-// are success, 403 is ErrNotInPool, and anything else is a plain error.
 func TestLeaveResponses(t *testing.T) {
 	cases := []struct {
 		status    int
 		wantErr   bool
 		notInPool bool
+		unknown   bool
 	}{
-		{http.StatusNoContent, false, false},
-		{http.StatusNotFound, false, false},
-		{http.StatusForbidden, true, true},
-		{http.StatusInternalServerError, true, false},
+		{http.StatusNoContent, false, false, false},
+		{http.StatusNotFound, true, false, true},
+		{http.StatusForbidden, true, true, false},
+		{http.StatusInternalServerError, true, false, false},
 	}
 	for _, c := range cases {
 		t.Run(http.StatusText(c.status), func(t *testing.T) {
@@ -61,6 +60,9 @@ func TestLeaveResponses(t *testing.T) {
 			}
 			if errors.Is(err, ErrNotInPool) != c.notInPool {
 				t.Errorf("errors.Is(err, ErrNotInPool) = %v, want %v", errors.Is(err, ErrNotInPool), c.notInPool)
+			}
+			if errors.Is(err, ErrUnknownNode) != c.unknown {
+				t.Errorf("errors.Is(err, ErrUnknownNode) = %v, want %v", errors.Is(err, ErrUnknownNode), c.unknown)
 			}
 		})
 	}
@@ -86,6 +88,28 @@ func TestLeaveUnreachable(t *testing.T) {
 // cache directory goes with it only when nothing else is in it, and that a
 // missing directory is not an error.
 func TestClearLocalData(t *testing.T) {
+	t.Run("removes saved node ID too", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "relay")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		pending := filepath.Join(dir, pendingFile)
+		id := filepath.Join(dir, nodeIDFile)
+		for _, p := range []string{pending, id} {
+			if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		removed, err := clearLocalData(dir)
+		if err != nil {
+			t.Fatalf("clearLocalData: %v", err)
+		}
+		if !slices.Equal(removed, []string{pending, id, dir}) {
+			t.Errorf("removed = %v, want [%s %s %s]", removed, pending, id, dir)
+		}
+	})
+
 	t.Run("removes pending file and empty dir", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "relay")
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -152,5 +176,27 @@ func TestLeaveTrailingSlash(t *testing.T) {
 	}
 	if gotPath != "/nodes/n1" {
 		t.Errorf("leave went to %q, want /nodes/n1", gotPath)
+	}
+}
+
+func TestSavedNodeID(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := savedNodeID(dir); !errors.Is(err, ErrNoSavedID) {
+		t.Fatalf("missing file: err = %v, want ErrNoSavedID", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, nodeIDFile), []byte("  \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := savedNodeID(dir); !errors.Is(err, ErrNoSavedID) {
+		t.Fatalf("empty file: err = %v, want ErrNoSavedID", err)
+	}
+
+	want := loadOrCreateNodeID(dir+"-new", "abc123")
+	got, err := savedNodeID(dir + "-new")
+	if err != nil || got != want {
+		t.Fatalf("savedNodeID = %q, %v, want %q", got, err, want)
+	}
+	if _, err := savedNodeID(""); !errors.Is(err, ErrNoSavedID) {
+		t.Fatalf("no cache dir: err = %v, want ErrNoSavedID", err)
 	}
 }

@@ -24,11 +24,8 @@ func statusServer(t *testing.T, status int) *httptest.Server {
 	return srv
 }
 
-// TestLeaveSuccess checks that 204 and 404 both count as having left, that
-// local data is cleared and each removed path is printed, and that the exit
-// code is 0.
 func TestLeaveSuccess(t *testing.T) {
-	for _, status := range []int{http.StatusNoContent, http.StatusNotFound} {
+	for _, status := range []int{http.StatusNoContent} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			srv := statusServer(t, status)
 			cleared := false
@@ -55,9 +52,6 @@ func TestLeaveSuccess(t *testing.T) {
 	}
 }
 
-// TestLeaveFailures checks that a wrong token, an unreachable scheduler, and
-// local data that can't be removed all exit 1, and that local data is kept
-// when the machine didn't actually leave.
 func TestLeaveFailures(t *testing.T) {
 	down := httptest.NewServer(http.NotFoundHandler())
 	downURL := down.URL
@@ -71,6 +65,7 @@ func TestLeaveFailures(t *testing.T) {
 		wantStderr  string
 	}{
 		{"wrong token", statusServer(t, http.StatusForbidden).URL, nil, false, "doesn't match this machine's pool"},
+		{"unknown node", statusServer(t, http.StatusNotFound).URL, nil, false, "isn't in that pool"},
 		{"scheduler down", downURL, nil, false, "can't reach the scheduler"},
 		{"server error", statusServer(t, http.StatusInternalServerError).URL, nil, false, "returned 500"},
 		{"clear fails", statusServer(t, http.StatusNoContent).URL, errors.New("permission denied"), true, "couldn't remove"},
