@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -33,6 +34,80 @@ func TestSandboxArgv(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("Argv:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestSandboxArgvWithLimits(t *testing.T) {
+	s := &Sandbox{
+		bwrap:      "/usr/bin/bwrap",
+		limits:     Limits{CPUs: 2, MemBytes: 1 << 30},
+		systemdRun: "/usr/bin/systemd-run",
+		taskset:    "/usr/bin/taskset",
+	}
+	got := s.Argv([]string{"true"}, "/j")
+	wantPrefix := []string{
+		"/usr/bin/systemd-run", "--user", "--scope", "--quiet", "--collect",
+		"-p", "MemoryMax=1073741824", "-p", "MemorySwapMax=0",
+		"/usr/bin/taskset", "-c", "0-1",
+		"/usr/bin/bwrap",
+	}
+	if !slices.Equal(got[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("Argv with systemd:\n got %q\nwant prefix %q", got, wantPrefix)
+	}
+
+	s.systemdRun, s.prlimit, s.taskset = "", "/usr/bin/prlimit", ""
+	got = s.Argv([]string{"true"}, "/j")
+	wantPrefix = []string{"/usr/bin/prlimit", "--data=1073741824", "--", "/usr/bin/bwrap"}
+	if !slices.Equal(got[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("Argv with prlimit:\n got %q\nwant prefix %q", got, wantPrefix)
+	}
+}
+
+func TestDefaultLimits(t *testing.T) {
+	got := DefaultLimits(store.Node{CPUs: 16, MemBytes: 24 << 30})
+	if got.CPUs != 8 || got.MemBytes != 12<<30 {
+		t.Fatalf("DefaultLimits(16 CPUs, 24 GB) = %+v, want 8 CPUs and 12 GB", got)
+	}
+	if got := DefaultLimits(store.Node{CPUs: 1}); got.CPUs != 1 {
+		t.Fatalf("a 1-CPU node must still give the job 1 CPU, got %d", got.CPUs)
+	}
+}
+
+func TestExplainKill(t *testing.T) {
+	l := Limits{MemBytes: 2 << 30}
+	got := explainKill(Result{ExitCode: 137}, false, l)
+	if got.ExitCode != 137 || !strings.Contains(got.Stderr, "memory limit of 2.0 GB") {
+		t.Fatalf("killed job: got %+v", got)
+	}
+	for _, c := range []struct {
+		name     string
+		res      Result
+		canceled bool
+		l        Limits
+	}{
+		{"normal failure", Result{ExitCode: 1}, false, l},
+		{"deadline", Result{ExitCode: 137}, true, l},
+		{"no memory cap", Result{ExitCode: 137}, false, Limits{}},
+	} {
+		if got := explainKill(c.res, c.canceled, c.l); got.Stderr != "" {
+			t.Errorf("%s: should add nothing, got %q", c.name, got.Stderr)
+		}
+	}
+}
+
+func TestSandboxEnforcesCPULimit(t *testing.T) {
+	s, err := FindSandbox()
+	if s == nil || err != nil || runtime.NumCPU() < 2 {
+		t.Skip("needs a working sandbox and at least 2 CPUs")
+	}
+	if _, err := exec.LookPath("taskset"); err != nil {
+		t.Skip("taskset not installed")
+	}
+	s.SetLimits(Limits{CPUs: 1})
+	dir := t.TempDir()
+	res := s.Run(context.Background(), []string{"nproc"}, dir)
+	if strings.TrimSpace(res.Stdout) != "1" {
+		t.Fatalf("nproc in a 1-CPU sandbox = %q (stderr %q), want 1", res.Stdout, res.Stderr)
 	}
 }
 

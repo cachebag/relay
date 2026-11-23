@@ -7,8 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cachebag/relay/internal/store"
 )
 
 // ErrNoBubblewrap is FindSandbox's error when bwrap is not installed.
@@ -22,6 +25,93 @@ type Sandbox struct {
 	// root is the bwrap arguments for the top-level names that lead into
 	// /usr (/bin, /lib and so on), which differ from one distro to the next.
 	root []string
+
+	limits     Limits
+	systemdRun string
+	prlimit    string
+	taskset    string
+}
+
+type Limits struct {
+	CPUs     int
+	MemBytes int64
+}
+
+func DefaultLimits(n store.Node) Limits {
+	return Limits{CPUs: max(1, n.CPUs/2), MemBytes: n.MemBytes / 2}
+}
+
+func (s *Sandbox) SetLimits(l Limits) string {
+	s.limits = l
+	s.systemdRun, s.prlimit, s.taskset = "", "", ""
+
+	if l.CPUs > 0 && l.CPUs < runtime.NumCPU() {
+		if path, err := exec.LookPath("taskset"); err == nil {
+			s.taskset = path
+		}
+	}
+	if l.MemBytes > 0 {
+		if path, err := exec.LookPath("systemd-run"); err == nil && systemdScopeWorks(path) {
+			s.systemdRun = path
+		} else if path, err := exec.LookPath("prlimit"); err == nil {
+			s.prlimit = path
+		}
+	}
+
+	var parts []string
+	switch {
+	case l.CPUs <= 0 || l.CPUs >= runtime.NumCPU():
+		parts = append(parts, "all CPUs")
+	case s.taskset != "":
+		parts = append(parts, fmt.Sprintf("%d CPUs", l.CPUs))
+	default:
+		parts = append(parts, "all CPUs (taskset not found)")
+	}
+	switch {
+	case l.MemBytes <= 0:
+		parts = append(parts, "no memory limit")
+	case s.systemdRun != "":
+		parts = append(parts, formatBytes(l.MemBytes)+" of memory (systemd scope)")
+	case s.prlimit != "":
+		parts = append(parts, formatBytes(l.MemBytes)+" of memory (prlimit)")
+	default:
+		parts = append(parts, "no memory limit (neither systemd-run nor prlimit works here)")
+	}
+	return "each job is limited to " + strings.Join(parts, " and ")
+}
+
+func systemdScopeWorks(systemdRun string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, systemdRun,
+		"--user", "--scope", "--quiet", "--collect", "-p", "MemoryMax=64M",
+		"sh", "-c", `cat "/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/memory.max"`,
+	).Output()
+	return err == nil && strings.TrimSpace(string(out)) == strconv.Itoa(64<<20)
+}
+
+func (s *Sandbox) limitArgv() []string {
+	var out []string
+	if s.systemdRun != "" {
+		out = append(out, s.systemdRun,
+			"--user", "--scope", "--quiet", "--collect",
+			"-p", "MemoryMax="+strconv.FormatInt(s.limits.MemBytes, 10),
+			"-p", "MemorySwapMax=0",
+		)
+	} else if s.prlimit != "" {
+		out = append(out, s.prlimit, "--data="+strconv.FormatInt(s.limits.MemBytes, 10), "--")
+	}
+	if s.taskset != "" {
+		out = append(out, s.taskset, "-c", fmt.Sprintf("0-%d", s.limits.CPUs-1))
+	}
+	return out
+}
+
+func formatBytes(n int64) string {
+	if n >= 1<<30 {
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	}
+	return fmt.Sprintf("%d MB", n>>20)
 }
 
 // FindSandbox returns the sandbox this machine can run jobs in, or an error
@@ -79,12 +169,12 @@ func rootArgs() []string {
 // Argv is the bwrap command line that runs argv in dir. dir keeps its path
 // inside the sandbox, so the entry script and HOME mean the same in both.
 func (s *Sandbox) Argv(argv []string, dir string) []string {
-	out := []string{
+	out := append(s.limitArgv(),
 		s.bwrap,
 		"--unshare-all", "--die-with-parent", "--new-session",
 		"--ro-bind", "/usr", "/usr",
 		"--ro-bind", "/etc", "/etc",
-	}
+	)
 	out = append(out, s.root...)
 	// /tmp comes before dir, which may be under it.
 	out = append(out,
@@ -107,5 +197,13 @@ func (s *Sandbox) Run(ctx context.Context, argv []string, dir string) Result {
 	if why, ok := strings.CutPrefix(res.Stderr, "bwrap: execvp "); ok && res.ExitCode == 1 {
 		return Result{ExitCode: -1, Stderr: "exec: " + why}
 	}
+	return explainKill(res, ctx.Err() != nil, s.limits)
+}
+
+func explainKill(res Result, canceled bool, l Limits) Result {
+	if canceled || l.MemBytes <= 0 || res.ExitCode != 128+9 {
+		return res
+	}
+	res.Stderr += fmt.Sprintf("relay: job was killed (signal 9), most likely for going over its memory limit of %s\n", formatBytes(l.MemBytes))
 	return res
 }
