@@ -607,7 +607,7 @@ If no node has that ID:
 404 Not Found
 ```
 
-`relay-agent leave` treats a 404 as success because it means the node is already gone.
+`relay-agent leave` sends the node ID the agent saved when it joined. A 404 means that ID isn't registered, so `relay-agent leave` reports that the machine isn't in the pool and changes nothing.
 
 If the node or its jobs cannot be read or updated:
 

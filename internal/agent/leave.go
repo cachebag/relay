@@ -16,9 +16,34 @@ import (
 // token doesn't belong to the node's pool.
 var ErrNotInPool = errors.New("pool token doesn't match this machine's pool")
 
+var ErrUnknownNode = errors.New("the scheduler has no node with this machine's ID")
+
+var ErrNoSavedID = errors.New("this machine has no saved node ID")
+
+func SavedNodeID() (string, error) {
+	return savedNodeID(defaultCacheDir())
+}
+
+func savedNodeID(dir string) (string, error) {
+	if dir == "" {
+		return "", ErrNoSavedID
+	}
+	data, err := os.ReadFile(filepath.Join(dir, nodeIDFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", ErrNoSavedID
+	}
+	if err != nil {
+		return "", err
+	}
+	id := strings.TrimSpace(string(data))
+	if id == "" {
+		return "", ErrNoSavedID
+	}
+	return id, nil
+}
+
 // Leave asks the scheduler to remove the node with the given ID from its
-// pool. A node the scheduler doesn't know counts as success, since it is
-// already gone.
+// pool.
 func Leave(
 	ctx context.Context,
 	client *http.Client,
@@ -43,8 +68,10 @@ func Leave(
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
-	case http.StatusNoContent, http.StatusNotFound:
+	case http.StatusNoContent:
 		return nil
+	case http.StatusNotFound:
+		return ErrUnknownNode
 	case http.StatusForbidden:
 		return ErrNotInPool
 	default:
@@ -67,11 +94,13 @@ func clearLocalData(dir string) ([]string, error) {
 	}
 
 	var removed []string
-	path := filepath.Join(dir, pendingFile)
-	if err := os.Remove(path); err == nil {
-		removed = append(removed, path)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return removed, err
+	for _, name := range []string{pendingFile, nodeIDFile} {
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err == nil {
+			removed = append(removed, path)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return removed, err
+		}
 	}
 
 	entries, err := os.ReadDir(dir)
