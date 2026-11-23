@@ -102,5 +102,7 @@ type JobStore interface {
 	Create(ctx context.Context, j Job) error
 	Get(ctx context.Context, id string) (Job, error)
 	List(ctx context.Context) ([]Job, error)
+	ListActive(ctx context.Context) ([]Job, error)
+	ListPool(ctx context.Context, poolID string) ([]Job, error)
 	Update(ctx context.Context, j Job) error
 }

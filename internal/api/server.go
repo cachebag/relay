@@ -296,7 +296,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 
 		// Requeue before deleting, so a failure halfway leaves the node in
 		// place instead of orphaning its jobs.
-		all, err := jobs.List(r.Context())
+		all, err := jobs.ListActive(r.Context())
 		if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
@@ -501,7 +501,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 				return
 			}
 
-			all, err := jobs.List(r.Context())
+			all, err := jobs.ListActive(r.Context())
 			if err != nil {
 				http.Error(w, "store error", http.StatusInternalServerError)
 				return
@@ -565,7 +565,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 			return
 		}
 
-		all, err := jobs.List(r.Context())
+		all, err := jobs.ListPool(r.Context(), p.ID)
 		if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
@@ -639,7 +639,7 @@ func NewHandler(reg store.Registry, pools store.PoolStore, jobs store.JobStore, 
 		}
 
 		// Get the next job for the node, prioritizing the oldest assigned or running job.
-		all, err := jobs.List(r.Context())
+		all, err := jobs.ListActive(r.Context())
 		if err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return

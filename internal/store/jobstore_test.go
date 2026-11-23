@@ -116,8 +116,71 @@ func testJobRoundTrip(t *testing.T, js JobStore) {
 	}
 }
 
+func testJobFilters(t *testing.T, js JobStore) {
+	t.Helper()
+	ctx := context.Background()
+	base := time.Now().UTC().Truncate(time.Second)
+
+	add := func(id string, status JobStatus, pool string, age int) {
+		t.Helper()
+		j := Job{
+			ID:        id,
+			Command:   []string{"true"},
+			Status:    status,
+			PoolID:    pool,
+			Submitter: "alice",
+			CreatedAt: base.Add(time.Duration(age) * time.Second),
+			Stdout:    "out-" + id,
+		}
+		if err := js.Create(ctx, j); err != nil {
+			t.Fatalf("create %s: %v", id, err)
+		}
+	}
+	add("f-done", JobDone, "pool-a", 0)
+	add("f-queued", JobQueued, "pool-a", 1)
+	add("f-failed", JobFailed, "pool-b", 2)
+	add("f-assigned", JobAssigned, "pool-b", 3)
+	add("f-running", JobRunning, "pool-a", 4)
+
+	ids := func(jobs []Job) []string {
+		out := make([]string, len(jobs))
+		for i, j := range jobs {
+			out[i] = j.ID
+		}
+		return out
+	}
+
+	active, err := js.ListActive(ctx)
+	if err != nil {
+		t.Fatalf("list active: %v", err)
+	}
+	if want := []string{"f-queued", "f-assigned", "f-running"}; !slices.Equal(ids(active), want) {
+		t.Fatalf("ListActive: want %v, got %v", want, ids(active))
+	}
+	if active[0].Stdout != "out-f-queued" {
+		t.Fatalf("ListActive must return complete rows, got stdout %q", active[0].Stdout)
+	}
+
+	poolA, err := js.ListPool(ctx, "pool-a")
+	if err != nil {
+		t.Fatalf("list pool: %v", err)
+	}
+	if want := []string{"f-done", "f-queued", "f-running"}; !slices.Equal(ids(poolA), want) {
+		t.Fatalf("ListPool: want %v, got %v", want, ids(poolA))
+	}
+	for _, j := range poolA {
+		if j.Stdout != "" || j.Stderr != "" {
+			t.Fatalf("ListPool must leave output empty, got stdout %q for %s", j.Stdout, j.ID)
+		}
+	}
+	if got, _ := js.ListPool(ctx, "no-such-pool"); len(got) != 0 {
+		t.Fatalf("ListPool for an unknown pool: want none, got %v", ids(got))
+	}
+}
+
 func TestMemJobs(t *testing.T) {
 	testJobRoundTrip(t, NewMemJobs())
+	testJobFilters(t, NewMemJobs())
 }
 
 func TestSQLiteJobs(t *testing.T) {
@@ -135,4 +198,19 @@ func TestSQLiteJobs(t *testing.T) {
 	}
 
 	testJobRoundTrip(t, jobs)
+}
+
+func TestSQLiteJobFilters(t *testing.T) {
+	db, err := NewSQLite(filepath.Join(t.TempDir(), "relay.db"))
+	if err != nil {
+		t.Fatalf("new sqlite: %v", err)
+	}
+	defer db.Close()
+
+	jobs, err := NewSQLiteJobs(db.DB())
+	if err != nil {
+		t.Fatalf("new sqlite jobs: %v", err)
+	}
+
+	testJobFilters(t, jobs)
 }

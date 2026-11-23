@@ -104,7 +104,7 @@ func (s *Scheduler) Tick(ctx context.Context, now time.Time) error {
 	}
 
 	// Retrieve jobs in oldest-first order.
-	jobs, err := s.jobs.List(ctx)
+	jobs, err := s.jobs.ListActive(ctx)
 	if err != nil {
 		return err
 	}
@@ -326,7 +326,7 @@ func (s *Scheduler) requeueLost(ctx context.Context, now time.Time, nodes []stor
 		}
 	}
 
-	jobs, err := s.jobs.List(ctx)
+	jobs, err := s.jobs.ListActive(ctx)
 	if err != nil {
 		return err
 	}
