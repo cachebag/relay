@@ -389,10 +389,17 @@ def run(args) -> None:
         )
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 403:
-            print(
-                "relay: invalid pool token. Run 'relay login' again.",
-                file=sys.stderr,
-            )
+            if "pool token was rotated" in exc.response.text.lower():
+                print(
+                    "relay: pool token was rotated; ask the admin for the new invite. "
+                    "Run 'relay login' with the new token.",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "relay: invalid pool token. Run 'relay login' again.",
+                    file=sys.stderr,
+                )
         elif exc.response.status_code in (400, 413, 503):
             # The scheduler says what was wrong with the files.
             print(f"relay: {exc.response.text.strip()}", file=sys.stderr)
