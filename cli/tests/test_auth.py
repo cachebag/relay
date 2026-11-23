@@ -66,6 +66,60 @@ def test_run_login_invalid_token_exits_1(cfg, monkeypatch, capsys):
     assert not cfg.exists()
 
 
+@pytest.mark.parametrize("token", ["", "  \t "])
+def test_run_login_missing_prompted_token_exits_1(cfg, monkeypatch, capsys, token):
+    """A blank token prompt gets a useful error without contacting the scheduler."""
+    monkeypatch.setattr(auth.getpass, "getpass", lambda prompt: token)
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: pytest.fail("missing token must not create an HTTP client"),
+    )
+    args = argparse.Namespace(
+        scheduler="http://localhost:9090",
+        scheduler_given=True,
+        pool_token=None,
+        name="omar",
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        auth.run_login(args)
+
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "pool token is required" in err
+    assert "Illegal header value" not in err
+    assert not cfg.exists()
+
+
+@pytest.mark.parametrize("token", ["", "  \t "])
+def test_run_login_missing_flagged_token_exits_1(cfg, monkeypatch, capsys, token):
+    """An explicitly empty --pool-token fails without prompting or an HTTP request."""
+    monkeypatch.setattr(
+        auth.getpass,
+        "getpass",
+        lambda prompt: pytest.fail("an explicit token flag must not prompt"),
+    )
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kwargs: pytest.fail("missing token must not create an HTTP client"),
+    )
+    args = argparse.Namespace(
+        scheduler="http://localhost:9090",
+        scheduler_given=True,
+        pool_token=token,
+        name="omar",
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        auth.run_login(args)
+
+    assert exc.value.code == 1
+    assert "pool token is required" in capsys.readouterr().err
+    assert not cfg.exists()
+
+
 def test_logout_removes_file(cfg):
     profile.save({"name": "omar"})
     auth.run_logout(argparse.Namespace())
