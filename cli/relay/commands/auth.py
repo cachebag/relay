@@ -67,7 +67,20 @@ def run_login(args) -> None:
     scheduler = args.scheduler
     if not args.scheduler_given:
         scheduler = input(f"scheduler URL [{scheduler}]: ").strip() or scheduler
-    token = args.pool_token or getpass.getpass("pool token: ")
+    # A blank join token is not a valid Bearer header. Report the missing
+    # token before making a request instead of showing an HTTP protocol error.
+    token = (
+        args.pool_token
+        if args.pool_token is not None
+        else getpass.getpass("pool token: ")
+    )
+    token = token.strip()
+    if not token:
+        print(
+            "pool token is required; use --pool-token or enter a token when prompted",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     name = args.name or getpass.getuser()
 
     try:
