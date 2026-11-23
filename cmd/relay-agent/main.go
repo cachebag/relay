@@ -182,6 +182,17 @@ func main() {
 		"on Linux, run jobs as your own user even when bubblewrap is installed",
 	)
 
+	jobCPUs := flag.Int(
+		"job-cpus",
+		0,
+		"CPUs each sandboxed job may use (0 = half of this machine, -1 = no limit)",
+	)
+	jobMemoryMB := flag.Int(
+		"job-memory-mb",
+		0,
+		"memory in MB each sandboxed job may use (0 = half of this machine, -1 = no limit)",
+	)
+
 	// Replaces the default help output with Relay-specific usage information and an example showing how to join a pool.
 	flag.Usage = func() {
 		printUsage(flag.CommandLine.Output(), flag.CommandLine)
@@ -250,8 +261,17 @@ func main() {
 	case err != nil:
 		log.Printf("%v, jobs will run without a sandbox", err)
 	case sandbox != nil:
+		limits := agent.DefaultLimits(node)
+		if *jobCPUs != 0 {
+			limits.CPUs = max(*jobCPUs, 0)
+		}
+		if *jobMemoryMB != 0 {
+			limits.MemBytes = int64(max(*jobMemoryMB, 0)) << 20
+		}
+		how := sandbox.SetLimits(limits)
 		a.UseSandbox(sandbox)
 		log.Print("jobs run in a bubblewrap sandbox: their own folder, no other files of yours and no network")
+		log.Print(how)
 	}
 	if err := a.Run(ctx, 10*time.Second); err != nil && ctx.Err() == nil {
 		if code, handled := reportExit(os.Stderr, err); handled {
