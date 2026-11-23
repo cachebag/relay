@@ -108,7 +108,7 @@ func handleRemoveNode(reg store.Registry, pools store.PoolStore, jobs store.JobS
 // the requeue in the leave handler (DELETE /nodes/{id}). That code is left
 // as it is, so this is a separate copy.
 func requeueNodeJobs(ctx context.Context, jobs store.JobStore, nodeID, why string) error {
-	all, err := jobs.List(ctx)
+	all, err := jobs.ListActive(ctx)
 	if err != nil {
 		return err
 	}

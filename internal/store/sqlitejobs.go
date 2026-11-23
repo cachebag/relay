@@ -119,6 +119,15 @@ func NewSQLiteJobs(db *sql.DB) (*SQLiteJobs, error) {
 		}
 	}
 
+	for _, stmt := range []string{
+		`CREATE INDEX IF NOT EXISTS jobs_status_created ON jobs (status, created_at, id)`,
+		`CREATE INDEX IF NOT EXISTS jobs_pool_created ON jobs (pool_id, created_at, id)`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return nil, err
+		}
+	}
+
 	return &SQLiteJobs{db: db}, nil
 }
 
@@ -319,11 +328,28 @@ func (s *SQLiteJobs) Get(ctx context.Context, id string) (Job, error) {
 // ID is used as a secondary sort key so the result remains deterministic when
 // two jobs have the same creation timestamp.
 func (s *SQLiteJobs) List(ctx context.Context) ([]Job, error) {
+	return s.query(ctx, true, ``)
+}
+
+func (s *SQLiteJobs) ListActive(ctx context.Context) ([]Job, error) {
+	return s.query(ctx, true, `WHERE status IN (?, ?, ?)`, JobQueued, JobAssigned, JobRunning)
+}
+
+func (s *SQLiteJobs) ListPool(ctx context.Context, poolID string) ([]Job, error) {
+	return s.query(ctx, false, `WHERE pool_id = ?`, poolID)
+}
+
+func (s *SQLiteJobs) query(ctx context.Context, withOutput bool, where string, args ...any) ([]Job, error) {
+	output := `stdout, stderr`
+	if !withOutput {
+		output = `'' AS stdout, '' AS stderr`
+	}
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, command, timeout_seconds, requires, status, node_id, pool_id, submitter, attempts, created_at, exit_code, stdout, stderr, started_at, finished_at, entry, bundle_bytes, output_bytes, output_files
-		 FROM jobs
+		`SELECT id, command, timeout_seconds, requires, status, node_id, pool_id, submitter, attempts, created_at, exit_code, `+output+`, started_at, finished_at, entry, bundle_bytes, output_bytes, output_files
+		 FROM jobs `+where+`
 		 ORDER BY created_at ASC, id ASC`,
+		args...,
 	)
 	if err != nil {
 		return nil, err

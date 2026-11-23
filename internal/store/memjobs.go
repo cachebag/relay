@@ -68,6 +68,34 @@ func (m *MemJobs) List(_ context.Context) ([]Job, error) {
 	return out, nil
 }
 
+func (m *MemJobs) ListActive(ctx context.Context) ([]Job, error) {
+	return m.filter(ctx, func(j Job) bool {
+		return j.Status == JobQueued || j.Status == JobAssigned || j.Status == JobRunning
+	})
+}
+
+func (m *MemJobs) ListPool(ctx context.Context, poolID string) ([]Job, error) {
+	jobs, err := m.filter(ctx, func(j Job) bool { return j.PoolID == poolID })
+	for i := range jobs {
+		jobs[i].Stdout, jobs[i].Stderr = "", ""
+	}
+	return jobs, err
+}
+
+func (m *MemJobs) filter(ctx context.Context, keep func(Job) bool) ([]Job, error) {
+	all, err := m.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := all[:0]
+	for _, j := range all {
+		if keep(j) {
+			out = append(out, j)
+		}
+	}
+	return out, nil
+}
+
 // Update refuses an ID that isn't there rather than creating it, so a stale
 // caller updating a job that no longer exists gets an error instead of
 // resurrecting a half-filled record.
