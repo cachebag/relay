@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -170,28 +171,40 @@ func uninstall(d uninstallDirs, self int, stdout, stderr io.Writer) int {
 }
 
 func stopAgent(pid int) (bool, error) {
-	if runtime.GOOS != "linux" {
-		return false, errors.New("can't confirm it is relay-agent on this OS")
-	}
-	cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
-	if err != nil {
-		return false, nil
-	}
-	if !strings.Contains(string(cmdline), "relay-agent") {
+	if !isRelayAgent(pid) {
 		return false, nil
 	}
 	p, err := os.FindProcess(pid)
 	if err != nil {
 		return false, err
 	}
-	if err := p.Signal(syscall.SIGTERM); err != nil {
+	if runtime.GOOS == "windows" {
+		err = p.Kill()
+	} else {
+		err = p.Signal(syscall.SIGTERM)
+	}
+	if err != nil {
 		return false, err
 	}
 	for range 50 {
-		if _, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); err != nil {
+		if !isRelayAgent(pid) {
 			return true, nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return false, errors.New("still running 5 seconds after SIGTERM")
+	return false, errors.New("still running 5 seconds after being told to stop")
+}
+
+func isRelayAgent(pid int) bool {
+	switch runtime.GOOS {
+	case "linux":
+		cmdline, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+		return err == nil && strings.Contains(string(cmdline), "relay-agent")
+	case "windows":
+		out, err := exec.Command("tasklist", "/FO", "CSV", "/NH", "/FI", fmt.Sprintf("PID eq %d", pid)).Output()
+		return err == nil && strings.Contains(strings.ToLower(string(out)), "relay-agent")
+	default:
+		out, err := exec.Command("ps", "-o", "comm=", "-p", strconv.Itoa(pid)).Output()
+		return err == nil && strings.Contains(string(out), "relay-agent")
+	}
 }
