@@ -120,6 +120,8 @@ func ownerFlag(fs *flag.FlagSet) *string {
 // Prints command-line usage information and an example showing how to join a Relay pool.
 func printUsage(w io.Writer, fs *flag.FlagSet) {
 	fmt.Fprintln(w, "Usage: relay-agent [options]")
+	fmt.Fprintln(w, "       relay-agent leave [--scheduler URL] [--pool-token TOKEN]")
+	fmt.Fprintln(w, "       relay-agent uninstall [--scheduler URL --pool-token TOKEN]")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Example:")
 	fmt.Fprintln(
@@ -142,6 +144,9 @@ func main() {
 	// runs the agent as before.
 	if len(os.Args) > 1 && os.Args[1] == "leave" {
 		os.Exit(runLeave(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "uninstall" {
+		os.Exit(runUninstall(os.Args[2:], os.Stdout, os.Stderr))
 	}
 
 	// Creation of version flag.
@@ -200,6 +205,11 @@ func main() {
 
 	// Makes the 'flag' package inspect command-line arguments.
 	flag.Parse()
+
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "relay-agent: unknown command %q; the commands are leave and uninstall, run relay-agent -h for options\n", flag.Arg(0))
+		os.Exit(2)
+	}
 
 	// Prints the version and exits if the --version flag is passed.
 	if *version {

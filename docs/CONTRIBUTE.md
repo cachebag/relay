@@ -149,3 +149,13 @@ Stop the agent first (Ctrl-C), then run `leave` with the same scheduler and toke
 ```
 
 The machine disappears from `relay nodes` right away, any job it was running goes to another machine, and the agent deletes the files it kept on this machine. If the agent is still running, its next heartbeat joins the pool again.
+
+## Uninstall the agent
+
+`uninstall` removes everything the agent put on this machine. Give it the scheduler and token to leave the pool at the same time:
+
+```sh
+./relay-agent uninstall --scheduler http://<scheduler address>:8080 --pool-token <pool token>
+```
+
+It stops the agents `relay contribute` started (on Linux), then deletes the agent's cache folder (`~/.cache/relay` on Linux, `~/Library/Caches/relay` on macOS, `%LocalAppData%\relay` on Windows), the per-job temp folders (`relay-jobs` in the system temp folder), the `relay-agent.*` files next to the `relay` login, and any `relay-agent` service entry. It lists each thing it removed, and finally prints where the agent file itself is so you can delete it. The `relay` command's login and the scheduler's files are left alone. On macOS and Windows, run `relay contribute stop --all` first.

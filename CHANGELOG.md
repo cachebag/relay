@@ -9,6 +9,18 @@ without a pull request link their commit instead.
 
 ## [Unreleased]
 
+### Added
+
+- **`relay-agent uninstall`** removes everything the agent put on the
+  machine (FR-29), optionally leaving the pool first, and lists what it
+  removed. ([#196](https://github.com/cachebag/relay/issues/196))
+
+### Fixed
+
+- `relay-agent` refuses a word it doesn't know instead of ignoring it and
+  starting the agent, so `relay-agent uninstall` on an older habit no
+  longer contributes the machine. ([#196](https://github.com/cachebag/relay/issues/196))
+
 ## [0.3.4] - 2026-11-18
 
 ### Added
