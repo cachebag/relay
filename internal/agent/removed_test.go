@@ -35,7 +35,7 @@ func TestSendRemoved(t *testing.T) {
 }
 
 // TestRunStopsWhenRemoved verifies that a 410 heartbeat makes Run return
-// ErrRemoved right away, so relay-agent exits 1 instead of retrying, and that
+// ErrRemoved right away, so relay-agent exits 0 instead of retrying, and that
 // it prints why.
 func TestRunStopsWhenRemoved(t *testing.T) {
 	var heartbeats atomic.Int32
@@ -70,7 +70,7 @@ func TestRunStopsWhenRemoved(t *testing.T) {
 	select {
 	case err := <-done:
 		if !errors.Is(err, ErrRemoved) {
-			t.Fatalf("expected Run to return ErrRemoved so the agent exits 1, got %v", err)
+			t.Fatalf("expected Run to return ErrRemoved so the agent exits 0, got %v", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run kept going after the scheduler said the machine was removed")

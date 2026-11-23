@@ -28,7 +28,7 @@ func TestStartupSaysConnecting(t *testing.T) {
 	}
 }
 
-func TestRemovedAgentExitsLoudly(t *testing.T) {
+func TestRemovedAgentExitsCleanly(t *testing.T) {
 	// Keep the node-id file out of the real user cache directory.
 	cache := t.TempDir()
 	t.Setenv("XDG_CACHE_HOME", cache)
@@ -51,8 +51,9 @@ func TestRemovedAgentExitsLoudly(t *testing.T) {
 	defer cancel()
 	err := agent.New(srv.URL, "tok", store.Node{Hostname: "n1"}).Run(ctx, 10*time.Millisecond)
 
-	if !reportExit(&out, err) {
-		t.Fatalf("expected a removed agent to exit 1, Run returned %v", err)
+	code, handled := reportExit(&out, err)
+	if !handled || code != 0 {
+		t.Fatalf("expected removal to exit 0, got code=%d handled=%v (Run returned %v)", code, handled, err)
 	}
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -63,21 +64,23 @@ func TestRemovedAgentExitsLoudly(t *testing.T) {
 
 func TestReportExit(t *testing.T) {
 	cases := []struct {
-		name string
-		err  error
-		want string
-		exit bool
+		name    string
+		err     error
+		want    string
+		code    int
+		handled bool
 	}{
-		{"removed", fmt.Errorf("%w: scheduler returned 410", agent.ErrRemoved), agent.RemovedExitMsg + "\n", true},
-		{"rejected", fmt.Errorf("%w: scheduler returned 403", agent.ErrBadToken), agent.RejectedExitMsg + "\n", true},
-		{"other", errors.New("disk full"), "", false},
-		{"nil", nil, "", false},
+		{"removed", fmt.Errorf("%w: scheduler returned 410", agent.ErrRemoved), agent.RemovedExitMsg + "\n", 0, true},
+		{"rejected", fmt.Errorf("%w: scheduler returned 403", agent.ErrBadToken), agent.RejectedExitMsg + "\n", 1, true},
+		{"other", errors.New("disk full"), "", 0, false},
+		{"nil", nil, "", 0, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var out bytes.Buffer
-			if got := reportExit(&out, c.err); got != c.exit {
-				t.Errorf("reportExit = %v, want %v", got, c.exit)
+			code, handled := reportExit(&out, c.err)
+			if code != c.code || handled != c.handled {
+				t.Errorf("reportExit = (%d, %v), want (%d, %v)", code, handled, c.code, c.handled)
 			}
 			if out.String() != c.want {
 				t.Errorf("output = %q, want %q", out.String(), c.want)
