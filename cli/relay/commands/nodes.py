@@ -1,3 +1,4 @@
+import sys
 from datetime import UTC, datetime
 
 import httpx
@@ -29,7 +30,23 @@ def status(iso: str) -> str:
 
 def run(args) -> None:
     prof = profile.require_login()
-    rows = fetch(args.scheduler, prof["pool_token"])
+    try:
+        rows = fetch(args.scheduler, prof["pool_token"])
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 403:
+            raise
+        if "pool token was rotated" in exc.response.text.lower():
+            print(
+                "relay: pool token was rotated; ask the admin for the new invite. "
+                "Run 'relay login' with the new token.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "relay: invalid pool token. Run 'relay login' again.",
+                file=sys.stderr,
+            )
+        sys.exit(1)
     print(
         f"{'HOST':<16} {'ID':<12} {'STATUS':<8} {'OS/ARCH':<14} {'CPU':>4} {'MEM':>8}  {'SEEN':>9}  {'POOL':<16}"
     )
